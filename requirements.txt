@@ -1,0 +1,57 @@
+# Web framework
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+python-multipart==0.0.9
+websockets==13.0
+
+# LangGraph + LangChain — pinned to 0.x ecosystem (compatible with openai==1.54.0)
+langgraph==0.2.66
+langchain==0.3.14
+langchain-openai==0.2.9
+langchain-groq==1.1.3
+langchain-community==0.3.14
+
+# OpenAI
+openai==1.54.0
+
+# STT — Deepgram
+deepgram-sdk==3.7.3
+
+# TTS — ElevenLabs
+elevenlabs==1.9.0
+
+# VAD — barge-in detection
+webrtcvad-wheels==2.0.14        # pre-built wheels, no compiler needed
+
+# Redis — session state
+redis[hiredis]==5.1.1
+
+# PostgreSQL checkpoint (LangGraph persistent memory)
+psycopg[async,binary]>=3.3.4
+langgraph-checkpoint-postgres>=3.1.0
+
+# RAG — vector store
+pgvector==0.3.5
+psycopg2-binary==2.9.9
+sqlalchemy==2.0.35
+
+# Twilio helper
+twilio==9.3.5
+
+# Audio processing
+numpy>=1.26.0,<2.0.0
+# audioop is built-in on Python 3.12 (removed in 3.13 only)
+
+# HTTP client
+aiohttp==3.10.10
+httpx==0.27.2
+
+# Config
+pydantic-settings==2.5.2
+python-dotenv==1.0.1
+
+# Utils
+structlog==24.4.0
+
+# Testing / dev
+fakeredis==2.26.2         # in-memory Redis drop-in for unit tests
