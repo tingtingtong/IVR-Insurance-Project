@@ -45,6 +45,24 @@ variable "db_password" {
   sensitive   = true
 }
 
+variable "llm_provider" {
+  description = "LLM provider: groq or bedrock"
+  type        = string
+  default     = "groq"
+}
+
+variable "groq_model" {
+  description = "Groq model for service nodes"
+  type        = string
+  default     = "qwen/qwen3.8-27b"
+}
+
+variable "router_model" {
+  description = "Groq model for intent router"
+  type        = string
+  default     = "qwen/qwen3.8-27b"
+}
+
 variable "app_port" {
   description = "Container application port"
   type        = number

@@ -14,13 +14,13 @@ class Settings(BaseSettings):
     # LLM provider toggle: "groq" (default) or "bedrock"
     llm_provider: str = "groq"
     aws_region: str = "us-east-1"
-    bedrock_model: str = "anthropic.claude-3-5-haiku-20241022-v1:0"
-    router_bedrock_model: str = "anthropic.claude-3-5-haiku-20241022-v1:0"
+    bedrock_model: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
+    router_bedrock_model: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
 
     # Groq (used for all LLM inference nodes)
     groq_api_key: str = ""
-    groq_model: str = "llama-3.3-70b-versatile"      # FAQ, policy, loan, payment, beneficiary
-    router_model: str = "llama-3.1-8b-instant"        # router only — fast single-word classifier
+    groq_model: str = "qwen/qwen3.8-27b"              # FAQ, policy, loan, payment, beneficiary
+    router_model: str = "qwen/qwen3.8-27b"            # router only — fast single-word classifier
 
     # Feature flags (tune at runtime via env vars, no deploy needed)
     enable_rag: bool = True                    # False → skip pgvector, use canned FAQ fallback

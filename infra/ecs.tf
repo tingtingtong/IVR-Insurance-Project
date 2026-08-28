@@ -35,7 +35,9 @@ resource "aws_ecs_task_definition" "app" {
     }]
     environment = [
       { name = "ENVIRONMENT",   value = var.environment },
-      { name = "LLM_PROVIDER",  value = "bedrock" },
+      { name = "LLM_PROVIDER",  value = var.llm_provider },
+      { name = "GROQ_MODEL",    value = var.groq_model },
+      { name = "ROUTER_MODEL",  value = var.router_model },
       { name = "AWS_REGION",    value = var.aws_region },
       { name = "REDIS_URL",     value = local.redis_url },
       { name = "DATABASE_URL",  value = local.db_url },
@@ -61,6 +63,10 @@ resource "aws_ecs_task_definition" "app" {
       {
         name      = "TWILIO_AUTH_TOKEN"
         valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:TWILIO_AUTH_TOKEN::"
+      },
+      {
+        name      = "GROQ_API_KEY"
+        valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:GROQ_API_KEY::"
       },
     ]
     logConfiguration = {
