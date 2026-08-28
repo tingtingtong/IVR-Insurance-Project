@@ -11,8 +11,14 @@ class Settings(BaseSettings):
     openai_api_key: str
     openai_embedding_model: str = "text-embedding-3-small"
 
+    # LLM provider toggle: "groq" (default) or "bedrock"
+    llm_provider: str = "groq"
+    aws_region: str = "us-east-1"
+    bedrock_model: str = "anthropic.claude-3-5-haiku-20241022-v1:0"
+    router_bedrock_model: str = "anthropic.claude-3-5-haiku-20241022-v1:0"
+
     # Groq (used for all LLM inference nodes)
-    groq_api_key: str
+    groq_api_key: str = ""
     groq_model: str = "llama-3.3-70b-versatile"      # FAQ, policy, loan, payment, beneficiary
     router_model: str = "llama-3.1-8b-instant"        # router only — fast single-word classifier
 

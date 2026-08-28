@@ -1,18 +1,13 @@
 import time
-from langchain_groq import ChatGroq
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from core.graph.state import CNOState
 from core.prompts.system_prompt import CNO_SYSTEM_PROMPT
 from services.rag import search_knowledge
+from core.llm_factory import get_llm
 from config import settings  # feature flags: enable_rag, faq_fallback_to_escalate
 from utils.call_logger import log_event
 
-_llm = ChatGroq(
-    model=settings.groq_model,
-    temperature=0.4,
-    api_key=settings.groq_api_key,
-    max_tokens=200,
-)
+_llm = get_llm(temperature=0.4, max_tokens=200)
 
 
 async def faq_node(state: CNOState) -> dict:

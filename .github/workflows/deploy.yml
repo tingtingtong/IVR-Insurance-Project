@@ -1,151 +1,187 @@
 name: Deploy
 
 on:
-  # Staging auto-deploys on every push to master (after CI passes)
   push:
     branches: [master]
 
-  # Production is manual-only — requires explicit trigger
   workflow_dispatch:
     inputs:
       environment:
         description: "Target environment"
         required: true
-        default: "staging"
+        default: "dev"
         type: choice
-        options: [staging, production]
-      image_tag:
-        description: "Docker image tag to deploy (default: latest master SHA)"
-        required: false
+        options: [dev, prod]
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPO: ivr-app
 
 jobs:
-  # ── Build and push Docker image to GitHub Container Registry ─────────────────
+  # ── Build and push Docker image to ECR ─────────────────────────────────────
   build:
     name: Build & Push Image
     runs-on: ubuntu-latest
-
     outputs:
-      image_tag: ${{ steps.meta.outputs.version }}
+      image_tag: ${{ steps.meta.outputs.image_tag }}
+      ecr_image: ${{ steps.meta.outputs.ecr_image }}
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
 
-      - name: Extract image metadata
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, push image
         id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository }}
-          tags: |
-            type=sha,prefix=sha-,format=short
-            type=ref,event=branch
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' }}
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+        run: |
+          IMAGE_TAG="sha-$(git rev-parse --short HEAD)"
+          ECR_IMAGE="${ECR_REGISTRY}/${ECR_REPO}:${IMAGE_TAG}"
+          docker build -t "${ECR_IMAGE}" .
+          docker tag "${ECR_IMAGE}" "${ECR_REGISTRY}/${ECR_REPO}:latest"
+          docker push "${ECR_IMAGE}"
+          docker push "${ECR_REGISTRY}/${ECR_REPO}:latest"
+          echo "image_tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "ecr_image=${ECR_IMAGE}" >> "$GITHUB_OUTPUT"
 
-      - name: Build and push
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  # ── Deploy to Staging ─────────────────────────────────────────────────────────
-  deploy-staging:
-    name: Deploy → Staging
+  # ── Deploy to Dev ──────────────────────────────────────────────────────────
+  deploy-dev:
+    name: Deploy to Dev
     runs-on: ubuntu-latest
     needs: build
-    environment: staging
-    # Auto-deploy on master push; also deploy when manually targeting staging
+    environment: dev
     if: |
       github.event_name == 'push' ||
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev')
 
     steps:
-      - name: Install Railway CLI
-        run: npm install -g @railway/cli
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
 
-      - name: Deploy to Railway (staging)
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_STAGING }}
+      - name: Update ECS service (dev)
         run: |
-          railway up \
-            --service cno-ivr-staging \
-            --detach
+          aws ecs update-service \
+            --cluster ivr-cluster \
+            --service dev-ivr-svc \
+            --force-new-deployment \
+            --region ${{ env.AWS_REGION }}
 
-      - name: Wait for staging to be healthy
+      - name: Wait for dev service stable
         run: |
-          echo "Waiting for staging to come up..."
+          aws ecs wait services-stable \
+            --cluster ivr-cluster \
+            --services dev-ivr-svc \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Health check (dev)
+        run: |
+          DEV_URL="${{ secrets.DEV_ALB_URL }}"
           for i in $(seq 1 12); do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" ${{ secrets.STAGING_URL }}/health)
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${DEV_URL}/health")
             if [ "$STATUS" = "200" ]; then
-              echo "Staging healthy after $((i * 5))s"
+              echo "Dev healthy after $((i * 5))s"
               exit 0
             fi
             echo "  attempt $i: status=$STATUS, retrying in 5s..."
             sleep 5
           done
-          echo "Staging failed to become healthy within 60s"
+          echo "Dev failed to become healthy within 60s"
           exit 1
 
-      - name: Smoke test — /health
-        run: |
-          curl -sf ${{ secrets.STAGING_URL }}/health | python3 -c "
-          import sys, json
-          d = json.load(sys.stdin)
-          assert d.get('status') == 'ok', f'Unexpected health response: {d}'
-          print('Health check passed:', d)
-          "
-
-  # ── Deploy to Production ──────────────────────────────────────────────────────
-  deploy-production:
-    name: Deploy → Production
+  # ── E2E test against dev ───────────────────────────────────────────────────
+  e2e-test-dev:
+    name: E2E Test (Dev)
     runs-on: ubuntu-latest
-    needs: [build, deploy-staging]
-    environment: production      # GitHub environment with required reviewers gate
+    needs: deploy-dev
+    if: github.event_name == 'push'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run E2E tests against dev
+        env:
+          LLM_PROVIDER: "bedrock"
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ env.AWS_REGION }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          DEEPGRAM_API_KEY: ${{ secrets.DEEPGRAM_API_KEY }}
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
+          TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
+          TWILIO_PHONE_NUMBER: ${{ secrets.TWILIO_PHONE_NUMBER }}
+          TWILIO_BASE_URL: ${{ secrets.DEV_ALB_URL }}
+          ENVIRONMENT: "ci"
+          ENABLE_RAG: "false"
+        run: python tests/eval_e2e_twilio.py
+
+  # ── Deploy to Prod (manual trigger only) ───────────────────────────────────
+  deploy-prod:
+    name: Deploy to Prod
+    runs-on: ubuntu-latest
+    needs: build
+    environment: production  # GitHub environment with required reviewers gate
     if: |
       github.event_name == 'workflow_dispatch' &&
-      github.event.inputs.environment == 'production'
+      github.event.inputs.environment == 'prod'
 
     steps:
-      - name: Install Railway CLI
-        run: npm install -g @railway/cli
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
 
-      - name: Deploy to Railway (production)
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_PROD }}
+      - name: Update ECS service (prod)
         run: |
-          railway up \
-            --service cno-ivr-prod \
-            --detach
+          aws ecs update-service \
+            --cluster ivr-cluster \
+            --service prod-ivr-svc \
+            --force-new-deployment \
+            --region ${{ env.AWS_REGION }}
 
-      - name: Wait for production to be healthy
+      - name: Wait for prod service stable
         run: |
-          echo "Waiting for production to come up..."
+          aws ecs wait services-stable \
+            --cluster ivr-cluster \
+            --services prod-ivr-svc \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Health check (prod)
+        run: |
+          PROD_URL="${{ secrets.PROD_ALB_URL }}"
           for i in $(seq 1 18); do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" ${{ secrets.PROD_URL }}/health)
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${PROD_URL}/health")
             if [ "$STATUS" = "200" ]; then
-              echo "Production healthy after $((i * 5))s"
+              echo "Prod healthy after $((i * 5))s"
               exit 0
             fi
             echo "  attempt $i: status=$STATUS, retrying in 5s..."
             sleep 5
           done
-          echo "Production failed to become healthy within 90s"
+          echo "Prod failed to become healthy within 90s"
           exit 1
-
-      - name: Notify deployment
-        if: always()
-        run: |
-          STATUS="${{ job.status }}"
-          MSG="*CNO IVR Production Deploy* — $STATUS\nImage: \`ghcr.io/${{ github.repository }}:sha-${{ github.sha }}\`\nBy: ${{ github.actor }}"
-          curl -s -X POST ${{ secrets.SLACK_WEBHOOK_URL }} \
-            -H 'Content-type: application/json' \
-            -d "{\"text\": \"$MSG\"}" || true

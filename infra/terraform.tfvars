@@ -1,0 +1,6 @@
+environment = "dev"
+aws_region  = "us-east-1"
+project     = "ivr"
+image_tag   = "latest"
+db_username = "ivradmin"
+# db_password — set via TF_VAR_db_password or -var="db_password=..."

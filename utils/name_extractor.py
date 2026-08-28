@@ -1,14 +1,9 @@
 """LLM-based name extraction and fuzzy matching for IVR auth."""
 import difflib
-from langchain_groq import ChatGroq
 from langchain_core.messages import SystemMessage, HumanMessage
-from config import settings
+from core.llm_factory import get_llm
 
-_llm = ChatGroq(
-    model=settings.groq_model,
-    temperature=0,
-    api_key=settings.groq_api_key,
-)
+_llm = get_llm(temperature=0, max_tokens=50)
 
 _SYSTEM = (
     "Extract the person's first and last name from the caller's utterance.\n"

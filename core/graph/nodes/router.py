@@ -1,16 +1,12 @@
 import asyncio
-from langchain_groq import ChatGroq
 from langchain_core.messages import SystemMessage, HumanMessage
 from core.graph.state import CNOState
 from core.prompts.system_prompt import ROUTER_PROMPT
+from core.llm_factory import get_router_llm
 from config import settings
 from utils.call_logger import log_event
 
-_llm = ChatGroq(
-    model=settings.router_model,   # fast 8b model — single-word intent classification only
-    temperature=0,
-    api_key=settings.groq_api_key,
-)
+_llm = get_router_llm()
 
 VALID_INTENTS = {
     "policy_info", "payment", "otp", "loan", "beneficiary",
@@ -123,8 +119,12 @@ async def _invoke_llm_with_retry(messages: list, max_attempts: int = 3) -> objec
             return await _llm.ainvoke(messages)
         except Exception as exc:
             err_str = str(exc).lower()
-            # Only retry on transient capacity/rate-limit errors
-            if any(code in err_str for code in ("503", "429", "overloaded", "capacity", "rate limit")):
+            err_type = type(exc).__name__
+            # Retry on transient Groq errors (503, 429) and Bedrock throttling
+            retryable_strings = ("503", "429", "overloaded", "capacity", "rate limit")
+            retryable_types = ("ThrottlingException", "ModelTimeoutException",
+                               "ServiceUnavailableException")
+            if any(code in err_str for code in retryable_strings) or err_type in retryable_types:
                 last_exc = exc
                 if attempt < max_attempts - 1:
                     delay = 2 ** attempt  # 1s, 2s

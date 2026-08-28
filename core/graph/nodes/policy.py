@@ -1,21 +1,16 @@
 import time
-from langchain_groq import ChatGroq
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from core.graph.state import CNOState
 from core.graph.auth_guard import ensure_authenticated, apply_auth_state, merge_auth_state
 from core.tools.holding_inquiry import holding_inquiry
 from core.prompts.system_prompt import CNO_SYSTEM_PROMPT
 from core.prompts.retry_prompts import PROMPTS
+from core.llm_factory import get_llm
 from config import settings
 from utils.date_utils import format_date_natural
 from utils.call_logger import log_event
 
-_llm = ChatGroq(
-    model=settings.groq_model,
-    temperature=0.3,
-    api_key=settings.groq_api_key,
-    max_tokens=200,
-)
+_llm = get_llm(temperature=0.3, max_tokens=200)
 
 
 async def policy_node(state: CNOState) -> dict:
