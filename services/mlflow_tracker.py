@@ -123,6 +123,19 @@ def _log_metrics(mlflow, call: dict) -> None:
                 if key not in metrics or latency > metrics[key]:
                     metrics[key] = float(latency)
 
+    # Pipeline latency aggregates (from Layer 2 instrumentation)
+    _pipeline_events = ("stt_complete", "graph_complete", "tts_first_byte", "tts_complete", "turn_complete")
+    events = call.get("events", [])
+    for evt_type in _pipeline_events:
+        matching = [e for e in events if e.get("event_type") == evt_type]
+        if matching:
+            vals = [e.get("latency_ms") or e.get("round_trip_ms") for e in matching]
+            vals = [v for v in vals if v is not None]
+            if vals:
+                metrics[f"avg_{evt_type}_ms"] = float(sum(vals) / len(vals))
+                sorted_vals = sorted(vals)
+                metrics[f"p95_{evt_type}_ms"] = float(sorted_vals[min(int(len(sorted_vals) * 0.95), len(sorted_vals) - 1)])
+
     mlflow.log_metrics(metrics)
 
 

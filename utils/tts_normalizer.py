@@ -86,8 +86,17 @@ def normalize_tts_text(text: str) -> str:
         t,
     )
 
-    # Step 10: Policy/case numbers (letter + digits)
-    t = re.sub(r"\b([A-Z]{1,3}\d{5,12})\b", lambda m: " ".join(list(m.group(1))), t)
+    # Step 10a: Policy/case numbers (letter + digits) — spell character by character
+    t = re.sub(r"\b([A-Z]{1,3}\d{5,12})\b", lambda m: _spell_alphanumeric(m.group(1)), t)
+
+    # Step 10b: Pure numeric policy/reference numbers (5-9 or 11+ digits) — spell digit by digit
+    # 10-digit already handled as phone (step 9); 1-4 digit numbers are normal speech
+    t = re.sub(r"\b(\d{11,15})\b", lambda m: _spell_digits(m.group(1)), t)
+    t = re.sub(r"\b(\d{5,9})\b", lambda m: _spell_digits(m.group(1)), t)
+
+    # Step 10c: "ending in NNNN" or "last four NNNN" — spell the trailing digits
+    t = re.sub(r"(?i)(ending in|last (?:four|4)(?: digits)?)\s+(\d{4})\b",
+               lambda m: m.group(1) + " " + _spell_digits(m.group(2)), t)
 
     # Step 11: Dates MM/DD/YYYY
     t = re.sub(r"\b(\d{1,2})/(\d{1,2})/(\d{4})\b",
@@ -122,6 +131,11 @@ def normalize_tts_text(text: str) -> str:
 
 def _spell_digits(s: str) -> str:
     return " ".join(_DIGIT_WORDS.get(c, c) for c in s)
+
+
+def _spell_alphanumeric(s: str) -> str:
+    """Spell out a policy/case number character by character with digit words."""
+    return ", ".join(_DIGIT_WORDS.get(c, c) for c in s)
 
 
 def _ordinal(n: int) -> str:

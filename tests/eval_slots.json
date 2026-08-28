@@ -1,0 +1,19 @@
+[
+  {"input": "five five five one two three four five six seven", "slot": "phone", "expected": "5551234567"},
+  {"input": "555-123-4567", "slot": "phone", "expected": "5551234567"},
+  {"input": "5551234567", "slot": "phone", "expected": "5551234567"},
+  {"input": "one five five five one two three four five six seven", "slot": "phone", "expected": "5551234567"},
+  {"input": "five five five nine nine nine eight eight eight eight", "slot": "phone", "expected": "5559998888"},
+  {"input": "oh five five three three three four four four four", "slot": "phone", "expected": "0553334444"},
+
+  {"input": "P three zero zero one two three four five six", "slot": "policy", "expected": "P300123456"},
+  {"input": "P 3 0 0 6 5 4 3 2 1", "slot": "policy", "expected": "P300654321"},
+  {"input": "P300123456", "slot": "policy", "expected": "P300123456"},
+  {"input": "LP three zero zero one two three four five six", "slot": "policy", "expected": "LP300123456"},
+
+  {"input": "July fifteenth nineteen sixty five", "slot": "dob", "expected_pattern": "1965-07-15"},
+  {"input": "January first two thousand", "slot": "dob", "expected_pattern": "2000-01-01"},
+  {"input": "March 22nd 1950", "slot": "dob", "expected_pattern": "1950-03-22"},
+  {"input": "November eighth nineteen forty five", "slot": "dob", "expected_pattern": "1945-11-08"},
+  {"input": "12/25/1990", "slot": "dob", "expected_pattern": "1990-12-25"}
+]

@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [master, staging]
+  pull_request:
+    branches: [master]
+
+jobs:
+  # ── Job 1: Pure unit tests — no API keys needed ──────────────────────────────
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run unit tests
+        env:
+          # Required by pydantic-settings to load; not actually called in unit tests
+          OPENAI_API_KEY: "sk-dummy"
+          GROQ_API_KEY: "gsk-dummy"
+          DEEPGRAM_API_KEY: "dg-dummy"
+          ELEVENLABS_API_KEY: "el-dummy"
+          TWILIO_ACCOUNT_SID: "ACdummy"
+          TWILIO_AUTH_TOKEN: "dummy"
+        run: python tests/test_utils.py
+
+  # ── Job 2: Call flow integration tests — needs real Groq key ────────────────
+  call-flow-tests:
+    name: Call Flow Tests
+    runs-on: ubuntu-latest
+    needs: unit-tests          # only run if unit tests pass
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run call flow integration tests
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          # OpenAI is used for pgvector embeddings only; RAG silently skips on failure
+          # so a dummy value is fine — scenarios A-E don't exercise the FAQ/RAG path
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || 'sk-dummy' }}
+          # Not called during graph tests — dummy values satisfy pydantic-settings
+          DEEPGRAM_API_KEY: "dg-ci-dummy"
+          ELEVENLABS_API_KEY: "el-ci-dummy"
+          TWILIO_ACCOUNT_SID: "ACcidummy00000000000000000000000"
+          TWILIO_AUTH_TOKEN: "ci-dummy-token"
+          # CI environment — disables pgvector (RAG returns "" gracefully)
+          DATABASE_URL: "postgresql://ci:ci@localhost:5432/ci"
+          REDIS_URL: "redis://localhost:6379/0"
+          ENVIRONMENT: "ci"
+          # Feature flags
+          ENABLE_RAG: "false"       # no pgvector in CI — FAQ uses canned fallback
+          MAX_AUTH_ATTEMPTS: "3"
+        run: python tests/test_call_flow.py

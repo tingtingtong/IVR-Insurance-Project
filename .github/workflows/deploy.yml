@@ -1,0 +1,151 @@
+name: Deploy
+
+on:
+  # Staging auto-deploys on every push to master (after CI passes)
+  push:
+    branches: [master]
+
+  # Production is manual-only — requires explicit trigger
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        default: "staging"
+        type: choice
+        options: [staging, production]
+      image_tag:
+        description: "Docker image tag to deploy (default: latest master SHA)"
+        required: false
+
+jobs:
+  # ── Build and push Docker image to GitHub Container Registry ─────────────────
+  build:
+    name: Build & Push Image
+    runs-on: ubuntu-latest
+
+    outputs:
+      image_tag: ${{ steps.meta.outputs.version }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=sha,prefix=sha-,format=short
+            type=ref,event=branch
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ── Deploy to Staging ─────────────────────────────────────────────────────────
+  deploy-staging:
+    name: Deploy → Staging
+    runs-on: ubuntu-latest
+    needs: build
+    environment: staging
+    # Auto-deploy on master push; also deploy when manually targeting staging
+    if: |
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
+
+    steps:
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Deploy to Railway (staging)
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_STAGING }}
+        run: |
+          railway up \
+            --service cno-ivr-staging \
+            --detach
+
+      - name: Wait for staging to be healthy
+        run: |
+          echo "Waiting for staging to come up..."
+          for i in $(seq 1 12); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" ${{ secrets.STAGING_URL }}/health)
+            if [ "$STATUS" = "200" ]; then
+              echo "Staging healthy after $((i * 5))s"
+              exit 0
+            fi
+            echo "  attempt $i: status=$STATUS, retrying in 5s..."
+            sleep 5
+          done
+          echo "Staging failed to become healthy within 60s"
+          exit 1
+
+      - name: Smoke test — /health
+        run: |
+          curl -sf ${{ secrets.STAGING_URL }}/health | python3 -c "
+          import sys, json
+          d = json.load(sys.stdin)
+          assert d.get('status') == 'ok', f'Unexpected health response: {d}'
+          print('Health check passed:', d)
+          "
+
+  # ── Deploy to Production ──────────────────────────────────────────────────────
+  deploy-production:
+    name: Deploy → Production
+    runs-on: ubuntu-latest
+    needs: [build, deploy-staging]
+    environment: production      # GitHub environment with required reviewers gate
+    if: |
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.environment == 'production'
+
+    steps:
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Deploy to Railway (production)
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_PROD }}
+        run: |
+          railway up \
+            --service cno-ivr-prod \
+            --detach
+
+      - name: Wait for production to be healthy
+        run: |
+          echo "Waiting for production to come up..."
+          for i in $(seq 1 18); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" ${{ secrets.PROD_URL }}/health)
+            if [ "$STATUS" = "200" ]; then
+              echo "Production healthy after $((i * 5))s"
+              exit 0
+            fi
+            echo "  attempt $i: status=$STATUS, retrying in 5s..."
+            sleep 5
+          done
+          echo "Production failed to become healthy within 90s"
+          exit 1
+
+      - name: Notify deployment
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+          MSG="*CNO IVR Production Deploy* — $STATUS\nImage: \`ghcr.io/${{ github.repository }}:sha-${{ github.sha }}\`\nBy: ${{ github.actor }}"
+          curl -s -X POST ${{ secrets.SLACK_WEBHOOK_URL }} \
+            -H 'Content-type: application/json' \
+            -d "{\"text\": \"$MSG\"}" || true

@@ -1,282 +1,4 @@
-"""
-CNO IVR Dashboard — served at /dashboard
-Tabs: WebChat | Calls | Softphone | Codebase | Graph | Logs | Config
-"""
-import secrets
-from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse, JSONResponse
-from services.conversation_store import get_calls, get_call
-from webhooks.security import require_dashboard_auth
-
-router = APIRouter(
-    prefix="/dashboard",
-    tags=["dashboard"],
-    dependencies=[Depends(require_dashboard_auth)],
-)
-
-
-@router.get("/calls")
-async def api_calls():
-    return JSONResponse({"calls": get_calls()})
-
-
-@router.get("/calls/{call_sid}")
-async def api_call_detail(call_sid: str):
-    return JSONResponse(get_call(call_sid))
-
-
-@router.get("/calls/{call_sid}/events")
-async def get_call_events(call_sid: str):
-    from services.conversation_store import get_call
-    call = get_call(call_sid)
-    return JSONResponse({"call_sid": call_sid, "events": call.get("events", [])})
-
-
-@router.get("/config")
-async def api_config():
-    from config import settings
-    from services.realtime_auth import REALTIME_URL, REALTIME_VOICE
-
-    def mask(v: str) -> str:
-        v = str(v)
-        if len(v) <= 8:
-            return "****"
-        return v[:4] + "****" + v[-4:]
-
-    realtime_model = REALTIME_URL.split("model=")[-1] if "model=" in REALTIME_URL else "unknown"
-
-    return JSONResponse({
-        "llm": {
-            "GROQ_MODEL":            settings.groq_model,
-            "ROUTER_MODEL":          settings.router_model,
-            "GROQ_API_KEY":          mask(settings.groq_api_key),
-            "OPENAI_EMBEDDING_MODEL": settings.openai_embedding_model,
-        },
-        "realtime": {
-            "AUTH_MODE":      settings.auth_mode,
-            "OPENAI_API_KEY": mask(settings.openai_api_key),
-            "REALTIME_MODEL": realtime_model,
-            "REALTIME_VOICE": REALTIME_VOICE,
-            "REALTIME_URL":   REALTIME_URL,
-        },
-        "stt": {
-            "DEEPGRAM_API_KEY":           mask(settings.deepgram_api_key),
-            "DEEPGRAM_MODEL":             settings.deepgram_model,
-            "DEEPGRAM_LANGUAGE":          settings.deepgram_language,
-            "DEEPGRAM_ENCODING":          settings.deepgram_encoding,
-            "DEEPGRAM_SAMPLE_RATE":       str(settings.deepgram_sample_rate),
-            "DEEPGRAM_CHANNELS":          str(settings.deepgram_channels),
-            "DEEPGRAM_ENDPOINTING":       str(settings.deepgram_endpointing),
-            "DEEPGRAM_UTTERANCE_END_MS":  str(settings.deepgram_utterance_end_ms),
-            "DEEPGRAM_SMART_FORMAT":      str(settings.deepgram_smart_format),
-            "DEEPGRAM_INTERIM_RESULTS":   str(settings.deepgram_interim_results),
-            "DEEPGRAM_PUNCTUATE":         str(settings.deepgram_punctuate),
-            "DEEPGRAM_NO_DELAY":          str(settings.deepgram_no_delay),
-        },
-        "tts": {
-            "OPENAI_TTS_MODEL":                      settings.openai_tts_model,
-            "OPENAI_TTS_VOICE":                      settings.openai_tts_voice,
-            "OPENAI_TTS_FORMAT":                     "PCM 24kHz → mulaw 8kHz (hardcoded)",
-            "WEBHOOK_TTS_VOICE":                     "Polly.Joanna",
-            "ELEVENLABS_API_KEY":                    mask(settings.elevenlabs_api_key),
-            "ELEVENLABS_VOICE_ID":                   settings.elevenlabs_voice_id,
-            "ELEVENLABS_MODEL":                      settings.elevenlabs_model,
-            "ELEVENLABS_STABILITY":                  str(settings.elevenlabs_stability),
-            "ELEVENLABS_SIMILARITY_BOOST":           str(settings.elevenlabs_similarity_boost),
-            "ELEVENLABS_OPTIMIZE_STREAMING_LATENCY": str(settings.elevenlabs_optimize_streaming_latency),
-        },
-        "twilio": {
-            "TWILIO_PHONE_NUMBER":        settings.twilio_phone_number,
-            "TWILIO_AGENT_PHONE_NUMBER":  settings.twilio_agent_phone_number,
-            "TWILIO_TWIML_APP_SID":       settings.twilio_twiml_app_sid,
-            "TWILIO_ACCOUNT_SID":         mask(settings.twilio_account_sid),
-            "TWILIO_AUTH_TOKEN":          mask(settings.twilio_auth_token),
-            "TWILIO_API_KEY":             mask(settings.twilio_api_key),
-            "TWILIO_API_SECRET":          mask(settings.twilio_api_secret),
-        },
-        "backend": {
-            "CNO_API_BASE_URL": settings.cno_api_base_url,
-            "CNO_API_KEY":      mask(settings.cno_api_key) if settings.cno_api_key else "(not set)",
-            "CNO_JWT_SECRET":   mask(settings.cno_jwt_secret) if settings.cno_jwt_secret else "(not set)",
-        },
-        "feature_flags": {
-            "ENABLE_RAG":               str(settings.enable_rag),
-            "FAQ_FALLBACK_TO_ESCALATE": str(settings.faq_fallback_to_escalate),
-            "MAX_AUTH_ATTEMPTS":        str(settings.max_auth_attempts),
-        },
-        "security": {
-            "DASHBOARD_USERNAME":          settings.dashboard_username,
-            "DASHBOARD_PASSWORD":          "****" if settings.dashboard_password else "(not set)",
-            "VALIDATE_TWILIO_SIGNATURE":   str(settings.validate_twilio_signature),
-            "TWILIO_BASE_URL":             settings.twilio_base_url or "(not set)",
-            "WS_AUTH_TOKEN":               mask(settings.ws_auth_token) if settings.ws_auth_token else "(not set)",
-            "ALLOWED_ORIGINS":             settings.allowed_origins,
-        },
-        "infra": {
-            "REDIS_URL":    settings.redis_url,
-            "DATABASE_URL": settings.database_url.replace(settings.database_url.split("@")[-1], "***") if "@" in settings.database_url else settings.database_url,
-            "ENVIRONMENT":  settings.environment,
-            "LOG_LEVEL":    settings.log_level,
-            "APP_HOST":     settings.app_host,
-            "APP_PORT":     str(settings.app_port),
-        },
-        # These keys are computed/hardcoded — not writable via the dashboard
-        "_readonly": ["REALTIME_MODEL", "REALTIME_URL", "OPENAI_TTS_FORMAT", "WEBHOOK_TTS_VOICE"],
-    })
-
-
-_ENV_PATH = __file__  # resolved below
-import pathlib as _pl
-_ENV_FILE = _pl.Path(__file__).parent.parent / ".env"
-
-def _update_env_file(key: str, value: str) -> None:
-    """Write or update KEY=VALUE in the .env file."""
-    lines = _ENV_FILE.read_text(encoding="utf-8").splitlines() if _ENV_FILE.exists() else []
-    updated = False
-    for i, line in enumerate(lines):
-        stripped = line.strip()
-        if stripped.startswith(f"{key}=") or stripped.startswith(f"{key} ="):
-            lines[i] = f"{key}={value}"
-            updated = True
-            break
-    if not updated:
-        lines.append(f"{key}={value}")
-    _ENV_FILE.write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-
-from fastapi import Body
-
-@router.post("/config")
-async def api_config_update(payload: dict = Body(...)):
-    """Update a single .env key. Requires password."""
-    password = payload.get("password", "")
-    key      = payload.get("key", "").strip().upper()
-    value    = payload.get("value", "")
-
-    from config import settings as _settings
-    cfg_pw = _settings.dashboard_password
-    if not cfg_pw or not secrets.compare_digest(password.encode("utf-8"), cfg_pw.encode("utf-8")):
-        return JSONResponse({"ok": False, "error": "Invalid password"}, status_code=403)
-
-    readonly = {"REALTIME_MODEL", "REALTIME_URL", "OPENAI_TTS_FORMAT", "WEBHOOK_TTS_VOICE"}
-    if key in readonly:
-        return JSONResponse({"ok": False, "error": f"{key} is read-only (hardcoded in source)"}, status_code=400)
-
-    if not key:
-        return JSONResponse({"ok": False, "error": "key is required"}, status_code=400)
-
-    _update_env_file(key, value)
-    return JSONResponse({"ok": True, "restart_required": True,
-                         "message": f"{key} updated. Restart the server for changes to take effect."})
-
-
-@router.get("/call/{call_sid}", response_class=HTMLResponse)
-async def call_detail_page(call_sid: str):
-    """Standalone shareable page for a single call — can be sent to others."""
-    call = get_call(call_sid)
-    if not call:
-        return HTMLResponse("<h2>Call not found</h2>", status_code=404)
-
-    turns_html = ""
-    for t in call.get("turns", []):
-        role_label = "YOU" if t["role"] == "human" else "BOT"
-        role_cls   = t["role"]
-        ts         = t["ts"][11:19]
-        intent_badge = f'<span style="font-size:10px;background:rgba(56,189,248,.15);color:#38bdf8;padding:1px 6px;border-radius:3px;margin-left:6px">{t.get("intent","")}</span>' if t.get("intent") else ""
-        node_badge   = f'<span style="font-size:10px;background:rgba(34,197,94,.1);color:#22c55e;padding:1px 6px;border-radius:3px;margin-left:4px">{t.get("node","")}</span>' if t.get("node") else ""
-        turns_html += f"""
-        <div style="display:flex;gap:10px;margin-bottom:12px">
-          <div style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:3px;flex-shrink:0;min-width:38px;text-align:center;margin-top:2px;{'background:rgba(59,130,246,.2);color:#3b82f6' if role_cls=='human' else 'background:rgba(167,139,250,.2);color:#a78bfa'}">{role_label}</div>
-          <div style="flex:1">
-            <div style="color:#e2e8f0;font-size:13px;line-height:1.5">{t["text"]}</div>
-            <div style="font-size:11px;color:#475569;margin-top:3px">{ts}{intent_badge}{node_badge}</div>
-          </div>
-        </div>"""
-
-    events_html = ""
-    for ev in call.get("events", []):
-        import datetime as _dt
-        ts_ev = _dt.datetime.fromtimestamp(ev.get("ts", 0)).strftime("%H:%M:%S") if ev.get("ts") else ""
-        extras = " ".join(f"{k}={str(v)[:30]}" for k, v in ev.items() if k not in ("ts", "ts_str", "event_type"))
-        events_html += f'<div style="font-size:11px;font-family:monospace;padding:2px 0;border-bottom:1px solid #1e293b"><span style="color:#475569;display:inline-block;width:80px">{ts_ev}</span><span style="color:#38bdf8;display:inline-block;width:160px">{ev.get("event_type","")}</span><span style="color:#94a3b8">{extras}</span></div>'
-
-    pii = call.get("pii_captured", {})
-    status_color = "#22c55e" if call.get("status") == "active" else "#64748b"
-    status_label = "&#9679; Live" if call.get("status") == "active" else "Ended"
-
-    html = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Call {call_sid[:16]} — insuranceCompany IVR</title>
-<style>
-*{{box-sizing:border-box;margin:0;padding:0}}
-body{{background:#0f172a;color:#e2e8f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:24px;max-width:900px;margin:0 auto}}
-h1{{font-size:18px;font-weight:700;margin-bottom:4px}}
-.sub{{font-size:12px;color:#64748b;margin-bottom:20px}}
-.card{{background:#1e293b;border-radius:10px;padding:16px 20px;margin-bottom:16px}}
-.card h3{{font-size:11px;font-weight:700;color:#38bdf8;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px}}
-.meta-row{{display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.04)}}
-.meta-row:last-child{{border-bottom:none}}
-.lbl{{color:#64748b}} .val{{font-family:monospace;color:#e2e8f0}}
-.copy-all{{float:right;background:rgba(59,130,246,.15);border:1px solid rgba(59,130,246,.3);color:#60a5fa;border-radius:5px;padding:4px 12px;font-size:11px;cursor:pointer}}
-.copy-all:hover{{background:rgba(59,130,246,.3)}}
-</style>
-</head>
-<body>
-<h1>Call Transcript</h1>
-<p class="sub">
-  <span style="font-family:monospace;font-size:11px;color:#94a3b8">{call_sid}</span>
-  &nbsp;&middot;&nbsp;
-  <span style="color:{status_color}">{status_label}</span>
-  &nbsp;&middot;&nbsp; Started {call.get("started_at","")[:19]}
-  &nbsp;&middot;&nbsp; From {call.get("from_number","").replace("client:","").replace("+1","")}
-</p>
-
-<div class="card">
-  <h3>Auth &amp; PII <button class="copy-all" onclick="cpySection('meta-sec')">&#x2398; Copy</button></h3>
-  <div id="meta-sec">
-  <div class="meta-row"><span class="lbl">Authenticated</span><span class="val">{"Yes" if call.get("authenticated") else "No"}</span></div>
-  <div class="meta-row"><span class="lbl">Auth Step</span><span class="val">{call.get("auth_step","&mdash;")}</span></div>
-  <div class="meta-row"><span class="lbl">Caller Name</span><span class="val">{call.get("caller_name","&mdash;")}</span></div>
-  <div class="meta-row"><span class="lbl">Persona</span><span class="val">{call.get("caller_persona","&mdash;")}</span></div>
-  <div class="meta-row"><span class="lbl">Phone</span><span class="val">{pii.get("phoneNumber",{{}}).get("raw","&mdash;")}</span></div>
-  <div class="meta-row"><span class="lbl">Policy</span><span class="val">{pii.get("policyNumber",{{}}).get("raw","&mdash;")}</span></div>
-  <div class="meta-row"><span class="lbl">DOB</span><span class="val">{pii.get("dateOfBirth",{{}}).get("raw","&mdash;")}</span></div>
-  </div>
-</div>
-
-<div class="card">
-  <h3>Transcript <button class="copy-all" onclick="cpySection('turns-sec')">&#x2398; Copy</button></h3>
-  <div id="turns-sec">{turns_html or '<div style="color:#475569;padding:10px 0">No turns recorded.</div>'}</div>
-</div>
-
-<div class="card">
-  <h3>Event Timeline <button class="copy-all" onclick="cpySection('ev-sec')">&#x2398; Copy</button></h3>
-  <div id="ev-sec">{events_html or '<div style="color:#475569;font-size:12px;padding:8px 0">No events recorded.</div>'}</div>
-</div>
-
-<script>
-function cpySection(id) {{
-  const el = document.getElementById(id);
-  const btn = event.target;
-  navigator.clipboard.writeText(el.innerText).then(() => {{
-    const orig = btn.textContent; btn.textContent = 'Copied!';
-    setTimeout(() => btn.textContent = orig, 1500);
-  }});
-}}
-</script>
-</body>
-</html>"""
-    return HTMLResponse(html)
-
-
-@router.get("", response_class=HTMLResponse)
-async def dashboard():
-    return _HTML
-
-
-_HTML = """<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -480,6 +202,31 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;backgrou
 .ll.ht{color:#475569}
 .ll.ok{color:#22c55e}
 .ll.in{color:#94a3b8}
+
+/* ── DB QUERY ── */
+.db-wrap{display:flex;width:100%;height:100%}
+.db-side{width:270px;background:#1e293b;border-right:1px solid #334155;display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto}
+.db-side-hdr{padding:10px 14px;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #334155;flex-shrink:0}
+.db-sample{padding:9px 14px;cursor:pointer;border-bottom:1px solid rgba(255,255,255,.04);font-size:11px;color:#94a3b8;line-height:1.5}
+.db-sample:hover{background:rgba(255,255,255,.04);color:#e2e8f0}
+.db-sample-name{font-weight:700;color:#38bdf8;display:block;font-size:11px;margin-bottom:2px}
+.db-main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.db-editor{flex-shrink:0;border-bottom:1px solid #334155}
+.db-sql{width:100%;background:#0a0f1a;color:#e2e8f0;border:none;padding:14px 16px;font-family:Consolas,'Courier New',monospace;font-size:12px;line-height:1.6;resize:vertical;outline:none;min-height:110px;max-height:240px;display:block}
+.db-toolbar{display:flex;align-items:center;gap:8px;padding:7px 14px;border-bottom:1px solid #334155;flex-shrink:0;background:#111827}
+.db-run-btn{background:#3b82f6;color:#fff;border:none;border-radius:6px;padding:5px 16px;font-size:12px;font-weight:700;cursor:pointer}
+.db-run-btn:hover{background:#2563eb}
+.db-run-btn:disabled{opacity:.4;cursor:not-allowed}
+.db-clear-btn{background:#334155;color:#94a3b8;border:none;border-radius:6px;padding:5px 12px;font-size:12px;cursor:pointer}
+.db-clear-btn:hover{background:#475569;color:#e2e8f0}
+.db-status{font-size:11px;color:#64748b;margin-left:6px;flex:1}
+.db-results{flex:1;overflow:auto}
+.db-tbl{width:100%;border-collapse:collapse;font-size:12px;font-family:Consolas,'Courier New',monospace}
+.db-tbl th{background:#1e293b;color:#38bdf8;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:7px 12px;border-bottom:1px solid #334155;text-align:left;position:sticky;top:0;white-space:nowrap}
+.db-tbl td{padding:5px 12px;border-bottom:1px solid rgba(255,255,255,.04);color:#e2e8f0;white-space:pre;max-width:340px;overflow:hidden;text-overflow:ellipsis;vertical-align:top}
+.db-tbl tr:hover td{background:rgba(255,255,255,.03)}
+.db-empty{padding:48px;color:#475569;text-align:center;font-size:13px}
+.db-error{padding:16px 20px;color:#f87171;font-size:12px;font-family:monospace;white-space:pre-wrap;line-height:1.6}
 </style>
 </head>
 <body>
@@ -498,6 +245,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;backgrou
   <div class="tab" data-pane="graph">Graph</div>
   <div class="tab" data-pane="logs">Live Logs</div>
   <div class="tab" data-pane="cfg">⚙️ Config</div>
+  <div class="tab" data-pane="db">🗄 DB Query</div>
 </div>
 
 <div class="body">
@@ -730,7 +478,7 @@ collecting_name → LLM extract_name() → check_auth_success(phone + name)
             <li>Use <code>otp_data</code> dict to track sub-steps: contact_step, new_address, new_phone etc.</li>
             <li>Return <code>active_flow="contact"</code> to lock router until complete or cancelled</li>
             <li>Cancel detection at every step: "no", "cancel", "never mind", "don't want" → _exit_response()</li>
-            <li>contact.py uses word-boundary regex <code>r'\b(address|street|zip)\b'</code> so "I don't want to update the contact address" doesn't trigger collecting_address</li>
+            <li>contact.py uses word-boundary regex <code>r'(address|street|zip)'</code> so "I don't want to update the contact address" doesn't trigger collecting_address</li>
           </ul>
         </div>
         <div class="block">
@@ -866,6 +614,29 @@ collecting_name → LLM extract_name() → check_auth_success(phone + name)
   </div>
 </div>
 
+<!-- DB QUERY -->
+<div class="pane" id="pane-db">
+  <div class="db-wrap">
+    <div class="db-side">
+      <div class="db-side-hdr">Sample Queries</div>
+      <div id="db-sample-list"></div>
+    </div>
+    <div class="db-main">
+      <div class="db-editor">
+        <textarea class="db-sql" id="db-sql" placeholder="SELECT call_sid, started_at, data->>'status' AS status FROM ivr_call_records ORDER BY started_at DESC LIMIT 20;"></textarea>
+      </div>
+      <div class="db-toolbar">
+        <button class="db-run-btn" id="db-run-btn" onclick="dbRun()">▶ Run</button>
+        <button class="db-clear-btn" onclick="dbClear()">Clear</button>
+        <span class="db-status" id="db-status">Enter a SELECT query and click Run. Results capped at 200 rows.</span>
+      </div>
+      <div class="db-results" id="db-results">
+        <div class="db-empty">No results yet.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
 </div><!-- end body -->
 
 <script>
@@ -876,7 +647,7 @@ document.querySelectorAll('.tab').forEach(t => {
     document.querySelectorAll('.pane').forEach(x => x.classList.remove('on'));
     t.classList.add('on');
     document.getElementById('pane-' + t.dataset.pane).classList.add('on');
-    if (t.dataset.pane === 'calls') startCallsPoll(); else stopCallsPoll();
+    if (t.dataset.pane === 'calls') loadCalls();
   });
 });
 
@@ -894,7 +665,7 @@ document.querySelectorAll('.code-nav-item').forEach(n => {
 let sid = null;
 const sessions = {};
 
-function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\\n/g,'<br>'); }
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>'); }
 
 function copyToClipboard(text, btn) {
   navigator.clipboard.writeText(text).then(() => {
@@ -933,7 +704,7 @@ function updateSidebar() {
   el.innerHTML = keys.map(k => {
     const turns = sessions[k];
     const last = turns.filter(t => t.r === 'u').pop();
-    return '<div class="sess-item' + (k===sid?' on':'') + '" onclick="loadSess(\\''+k+'\\')"><div class="sid">'
+    return '<div class="sess-item' + (k===sid?' on':'') + '" onclick="loadSess(\''+k+'\')"><div class="sid">'
       + k.slice(-10) + '</div><div class="prev">' + esc(last ? last.t.slice(0,40) : 'New chat') + '</div></div>';
   }).join('');
 }
@@ -1028,16 +799,6 @@ document.getElementById('inp').addEventListener('keydown', e => {
 
 // ── Calls ─────────────────────────────────────────────────────
 let selCall = null;
-let _callsPollTimer = null;
-
-function startCallsPoll() {
-  if (_callsPollTimer) return;
-  loadCalls();
-  _callsPollTimer = setInterval(loadCalls, 3000);
-}
-function stopCallsPoll() {
-  if (_callsPollTimer) { clearInterval(_callsPollTimer); _callsPollTimer = null; }
-}
 
 async function loadCalls() {
   try {
@@ -1051,16 +812,14 @@ async function loadCalls() {
       return;
     }
     el.innerHTML = calls.map(c => {
-      const from = (c.from_number||'').replace('client:','').replace('+1','');
+      const from = c.from_number.replace('client:','').replace('+1','');
       const active = c.status === 'active';
       const sel = c.call_sid === selCall ? ' on' : '';
-      return '<div class="call-item'+sel+'" onclick="selCallFn(\\''+c.call_sid+'\\')"><div class="csid">'+c.call_sid.slice(0,24)+'</div>'
-        + '<div class="cfrom">'+(from||'Softphone')+'</div>'
+      return '<div class="call-item'+sel+'" onclick="selCallFn(\''+c.call_sid+'\')"><div class="csid">'+c.call_sid.slice(0,24)+'</div>'
+        + '<div class="cfrom">'+esc(from)+'</div>'
         + '<div class="cmeta"><span class="dot '+(active?'active':'ended')+'"></span>'+(active?'Active':'Ended')
         + ' &nbsp; '+c.turns.length+' turns &nbsp; '+c.started_at.slice(11,16)+'</div></div>';
     }).join('');
-    // Auto-refresh selected call detail during polling
-    if (selCall) refreshCallDetail(selCall);
   } catch(e) { console.error('loadCalls error', e); }
 }
 
@@ -1117,11 +876,12 @@ function renderStatePanel(call) {
   document.getElementById('call-state-panel').innerHTML = authCard + piiCard + flowCard + intentModelCard;
 }
 
-async function refreshCallDetail(csid) {
+async function selCallFn(csid) {
+  selCall = csid;
+  loadCalls();
   try {
     const res = await fetch('/dashboard/calls/' + csid);
     const call = await res.json();
-    if (!call.call_sid) return;
     const from = (call.from_number||'').replace('client:','');
     const status = call.status === 'active'
       ? '<span style="color:#22c55e;font-size:11px;margin-left:8px">● Live</span>'
@@ -1130,7 +890,7 @@ async function refreshCallDetail(csid) {
       ? ' <a href="'+call.recording_url+'" target="_blank" style="font-size:11px;color:#22c55e;margin-left:8px">▶ Recording</a>'
       : '';
     document.getElementById('call-hdr').innerHTML =
-      esc(from || 'Softphone') + ' — ' + (call.started_at||'').slice(0,19) + status + recBadge;
+      esc(from) + ' — ' + (call.started_at||'').slice(0,19) + status + recBadge;
 
     // Share button — opens standalone call URL
     const shareBtn = '<a href="/dashboard/call/'+csid+'" target="_blank" style="font-size:11px;color:#a78bfa;margin-left:10px;text-decoration:none;border:1px solid rgba(167,139,250,.3);padding:2px 8px;border-radius:4px">&#x2197; Share</a>';
@@ -1166,7 +926,7 @@ async function refreshCallDetail(csid) {
       const tBtn = document.createElement('button');
       tBtn.className = 'copy-btn'; tBtn.textContent = '⎘ Copy Transcript';
       tBtn.onclick = () => {
-        const lines = (call.turns || []).map(t => (t.role==='human'?'USER: ':'BOT:  ') + t.text).join('\\n');
+        const lines = (call.turns || []).map(t => (t.role==='human'?'USER: ':'BOT:  ') + t.text).join('\n');
         copyToClipboard(lines, tBtn);
       };
       turnsEl.insertBefore(tBtn, turnsEl.firstChild);
@@ -1191,17 +951,7 @@ async function refreshCallDetail(csid) {
       idBtn.onclick = () => copyToClipboard(csid, idBtn);
       hdrEl.appendChild(idBtn);
     }
-  } catch(e) { console.error('refreshCallDetail error', e); }
-}
-
-async function selCallFn(csid) {
-  selCall = csid;
-  // Re-render list to update selection highlight, then load detail
-  const el = document.getElementById('call-list');
-  el.querySelectorAll('.call-item').forEach(i => {
-    i.classList.toggle('on', i.getAttribute('onclick').includes(csid));
-  });
-  await refreshCallDetail(csid);
+  } catch(e) { console.error('selCall error', e); }
 }
 
 async function renderEventTimeline(csid) {
@@ -1247,7 +997,7 @@ async function renderEventTimeline(csid) {
         const ts = d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
         const extra = Object.entries(ev).filter(([k])=>!['ts','ts_str','event_type'].includes(k)).map(([k,v])=>k+'='+String(v).slice(0,40)).join(' ');
         return '['+ts+'] '+ev.event_type+' '+extra;
-      }).join('\\n');
+      }).join('\n');
       copyToClipboard(txt, evBtn);
     };
     wrap.style.position = 'relative';
@@ -1401,10 +1151,8 @@ document.querySelectorAll('.tab').forEach(t=>{
 // ── Config ────────────────────────────────────────────────────
 const CFG_META = {
   // LLM
-  GROQ_MODEL:              {desc:'LLM for all service nodes (policy, payment, loan, FAQ, beneficiary).',                       best:'llama-3.3-70b-versatile — fastest + most accurate on Groq for IVR tasks.'},
-  ROUTER_MODEL:            {desc:'Fast LLM for single-word intent classification in the router node.',                         best:'llama-3.1-8b-instant — lightweight, sub-200ms classification.'},
+  GROQ_MODEL:              {desc:'LLM for intent classification and all service nodes (policy, payment, loan, FAQ).',          best:'llama-3.3-70b-versatile — fastest + most accurate on Groq for IVR tasks.'},
   GROQ_API_KEY:            {desc:'Groq API key for LLM inference.',                                                           best:'Keep secret. Rotate every 90 days.'},
-  OPENAI_EMBEDDING_MODEL:  {desc:'OpenAI embedding model for RAG vector search.',                                             best:'text-embedding-3-small — good accuracy/cost ratio for FAQ retrieval.'},
   // Realtime
   AUTH_MODE:               {desc:'"standard" uses Deepgram STT + LangGraph auth node. "realtime" uses OpenAI Realtime API.',  best:'"realtime" — lower latency, more natural auth conversation.'},
   OPENAI_API_KEY:          {desc:'OpenAI API key. Used for Realtime API auth and OpenAI TTS in the stream path.',             best:'Required for realtime mode and stream TTS. Keep secret.'},
@@ -1443,28 +1191,13 @@ const CFG_META = {
   TWILIO_ACCOUNT_SID:      {desc:'Twilio Account SID. Identifies your Twilio account.',                                    best:'Found in Twilio Console dashboard. Keep secret.'},
   TWILIO_AUTH_TOKEN:       {desc:'Twilio Auth Token for REST API authentication.',                                          best:'Keep secret. Rotate if compromised.'},
   TWILIO_API_KEY:          {desc:'Twilio API Sub-Key for generating browser client tokens.',                                best:'Create separate API Key in Console, not the main auth token.'},
-  TWILIO_API_SECRET:       {desc:'Twilio API Secret paired with TWILIO_API_KEY for browser token generation.',             best:'Generated alongside the API Key in Twilio Console. Keep secret.'},
   // Backend
-  CNO_API_BASE_URL:        {desc:'Base URL for the backend API (party search, holding, payments).',                         best:'http://localhost:8001 for dev mock. Use production URL in prod.'},
-  CNO_API_KEY:             {desc:'API key for authenticating with the backend insurance API.',                              best:'Keep secret. Set in prod deployment.'},
-  CNO_JWT_SECRET:          {desc:'JWT signing secret for backend API token verification.',                                  best:'Use a strong random string (32+ chars). Keep secret.'},
-  // Feature Flags
-  ENABLE_RAG:              {desc:'Enable pgvector RAG for FAQ answers. False = skip vector search, use canned fallback.',   best:'True in prod (requires pgvector). False for quick dev without Postgres.'},
-  FAQ_FALLBACK_TO_ESCALATE:{desc:'When RAG finds no match: True = transfer to agent, False = canned "I can help with…".',  best:'False — avoids unnecessary agent transfers for edge-case questions.'},
-  MAX_AUTH_ATTEMPTS:        {desc:'Max PII verification retries before escalating to a live agent.',                         best:'3 — gives callers enough tries without frustrating loops.'},
-  // Security
-  DASHBOARD_USERNAME:      {desc:'HTTP Basic username for dashboard and browser client access.',                            best:'"admin" for dev. Use a unique username in prod.'},
-  DASHBOARD_PASSWORD:      {desc:'HTTP Basic password for dashboard access. Empty = no auth (dev only).',                   best:'Set a strong password in prod. Never leave empty in production.'},
-  VALIDATE_TWILIO_SIGNATURE:{desc:'Validate X-Twilio-Signature on webhook requests to prevent spoofing.',                  best:'True in prod. Requires TWILIO_BASE_URL to be set.'},
-  TWILIO_BASE_URL:         {desc:'Public base URL for Twilio signature validation (e.g. ngrok or prod domain).',            best:'https://your-domain.com — must match the URL Twilio uses to call your webhooks.'},
-  WS_AUTH_TOKEN:           {desc:'Token for authenticating WebSocket /stream connections. Empty = skip (dev only).',         best:'Set a strong token in prod. Add as ?token= param in TwiML Media Stream URL.'},
-  ALLOWED_ORIGINS:         {desc:'CORS allowed origins. Comma-separated list or "*" for all.',                              best:'"*" for dev. Restrict to your domain in prod.'},
+  CNO_API_BASE_URL:        {desc:'Base URL for the CNO backend API (party search, holding, payments).',                    best:'http://localhost:8001 for dev mock. Use production URL in prod.'},
   // Infra
   REDIS_URL:               {desc:'Redis URL for session state and LangGraph MemorySaver checkpointing.',                   best:'redis://localhost:6379/0 for dev. Redis Cloud or ElastiCache in prod.'},
   DATABASE_URL:            {desc:'PostgreSQL connection string for pgvector RAG knowledge base.',                           best:'Managed Postgres + pgvector in prod (Supabase, Neon, or RDS).'},
   ENVIRONMENT:             {desc:'Deployment environment tag. Controls logging and safety checks.',                         best:'"dev" locally. "prod" in production. Never run dev mode in prod.'},
   LOG_LEVEL:               {desc:'Logging verbosity.',                                                                      best:'"INFO" in dev and prod. "DEBUG" only for deep troubleshooting.'},
-  APP_HOST:                {desc:'Network interface the server binds to.',                                                   best:'"0.0.0.0" to accept all interfaces. "127.0.0.1" for local-only.'},
   APP_PORT:                {desc:'HTTP port the FastAPI/uvicorn server listens on.',                                        best:'8888 for dev. Use 443 behind nginx in prod.'},
 };
 
@@ -1512,7 +1245,7 @@ function cfgEditRow(btn, key) {
 
 function cfgCancelRow(key, origHtml) {
   const valSpan = document.getElementById('cfgval-' + key);
-  valSpan.innerHTML = decodeURIComponent(origHtml.replace(/&#(\\d+);/g,(_,n)=>String.fromCharCode(n)));
+  valSpan.innerHTML = decodeURIComponent(origHtml.replace(/&#(\d+);/g,(_,n)=>String.fromCharCode(n)));
   valSpan.innerHTML = origHtml;
   delete valSpan.dataset.editing;
   const row = document.getElementById('cfgrow-' + key);
@@ -1577,8 +1310,6 @@ async function loadConfig() {
       + cfgSection('Text-to-Speech — ElevenLabs TTS', {...Object.fromEntries(Object.entries(d.tts).filter(([k])=>k.startsWith('ELEVENLABS')))}, _cfgReadonly)
       + cfgSection('Telephony (Twilio)', d.twilio, _cfgReadonly)
       + cfgSection('Backend API', d.backend, _cfgReadonly)
-      + cfgSection('Feature Flags', d.feature_flags, _cfgReadonly)
-      + cfgSection('Security', d.security, _cfgReadonly)
       + cfgSection('Infrastructure', d.infra, _cfgReadonly);
   } catch(e) {
     document.getElementById('cfg-body').innerHTML = '<div class="empty-msg" style="padding:40px">Failed to load config: '+esc(e.message)+'</div>';
@@ -1590,6 +1321,180 @@ document.querySelectorAll('.tab').forEach(t => {
   if (t.dataset.pane === 'cfg') t.addEventListener('click', loadConfig);
 });
 
+// ── DB Query ──────────────────────────────────────────────────
+const DB_SAMPLES = [
+  {
+    name: 'Recent calls (20)',
+    sql:  `SELECT call_sid, started_at,
+       data->>'from_number'   AS from_number,
+       data->>'status'        AS status,
+       data->>'authenticated' AS authed,
+       data->>'caller_persona' AS persona
+FROM ivr_call_records
+ORDER BY started_at DESC
+LIMIT 20;`
+  },
+  {
+    name: 'Authenticated calls today',
+    sql:  `SELECT call_sid, started_at,
+       data->>'caller_name'   AS caller_name,
+       data->>'caller_persona' AS persona,
+       data->>'from_number'   AS from_number
+FROM ivr_call_records
+WHERE data->>'authenticated' = 'true'
+  AND started_at >= CURRENT_DATE
+ORDER BY started_at DESC;`
+  },
+  {
+    name: 'Intent breakdown (all time)',
+    sql:  `SELECT intent, COUNT(*) AS count
+FROM ivr_call_records,
+     jsonb_array_elements_text(data->'intent_history') AS intent
+GROUP BY intent
+ORDER BY count DESC;`
+  },
+  {
+    name: 'Full transcript for a call',
+    sql:  `SELECT t->>'ts' AS ts, t->>'role' AS role,
+       t->>'intent' AS intent, t->>'text' AS text
+FROM ivr_call_records,
+     jsonb_array_elements(data->'turns') AS t
+WHERE call_sid = 'REPLACE_CALL_SID'
+ORDER BY t->>'ts';`
+  },
+  {
+    name: 'Calls that escalated',
+    sql:  `SELECT call_sid, started_at, data->>'from_number' AS from_number
+FROM ivr_call_records
+WHERE data->'intent_history' ? 'escalate'
+ORDER BY started_at DESC
+LIMIT 50;`
+  },
+  {
+    name: 'Auth failures / max attempts',
+    sql:  `SELECT call_sid, started_at,
+       data->>'auth_step'     AS auth_step,
+       data->>'auth_attempts' AS attempts,
+       data->>'from_number'   AS from_number
+FROM ivr_call_records
+WHERE data->>'auth_step' = 'failed'
+   OR (data->>'auth_attempts')::int >= 3
+ORDER BY started_at DESC
+LIMIT 50;`
+  },
+  {
+    name: 'Calls by persona',
+    sql:  `SELECT data->>'caller_persona' AS persona, COUNT(*) AS count
+FROM ivr_call_records
+WHERE data->>'caller_persona' IS NOT NULL
+  AND data->>'caller_persona' != ''
+GROUP BY persona
+ORDER BY count DESC;`
+  },
+  {
+    name: 'Average turns per call',
+    sql:  `SELECT ROUND(AVG(jsonb_array_length(data->'turns')), 2) AS avg_turns,
+       MAX(jsonb_array_length(data->'turns'))                AS max_turns,
+       COUNT(*)                                              AS total_calls
+FROM ivr_call_records;`
+  },
+  {
+    name: 'Calls with OTP / payment intent',
+    sql:  `SELECT call_sid, started_at, data->>'caller_name' AS caller_name
+FROM ivr_call_records
+WHERE data->'intent_history' ? 'otp'
+   OR data->'intent_history' ? 'payment'
+ORDER BY started_at DESC
+LIMIT 50;`
+  },
+  {
+    name: 'Row count + date range',
+    sql:  `SELECT COUNT(*)       AS total_calls,
+       MIN(started_at) AS oldest,
+       MAX(started_at) AS newest
+FROM ivr_call_records;`
+  },
+];
+
+function dbInitSamples() {
+  const el = document.getElementById('db-sample-list');
+  if (!el) return;
+  el.innerHTML = DB_SAMPLES.map((s, i) =>
+    `<div class="db-sample" onclick="dbUseSample(${i})">
+      <span class="db-sample-name">${esc(s.name)}</span>
+      ${esc(s.sql.split('\n')[0].slice(0, 60))}${s.sql.length > 60 ? '...' : ''}
+    </div>`
+  ).join('');
+}
+
+function dbUseSample(i) {
+  document.getElementById('db-sql').value = DB_SAMPLES[i].sql;
+  document.getElementById('db-status').textContent = 'Query loaded — click Run to execute.';
+}
+
+async function dbRun() {
+  const sql = document.getElementById('db-sql').value.trim();
+  if (!sql) return;
+  const btn = document.getElementById('db-run-btn');
+  const statusEl = document.getElementById('db-status');
+  btn.disabled = true;
+  statusEl.textContent = 'Running…';
+  const t0 = Date.now();
+  try {
+    const res = await fetch('/dashboard/query', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({sql}),
+    });
+    const d = await res.json();
+    const ms = Date.now() - t0;
+    if (!d.ok) {
+      document.getElementById('db-results').innerHTML = `<div class="db-error">${esc(d.error)}</div>`;
+      statusEl.textContent = 'Error.';
+    } else {
+      statusEl.textContent = `${d.count} row${d.count !== 1 ? 's' : ''} · ${ms}ms${d.count === 200 ? ' (capped at 200)' : ''}`;
+      dbRenderTable(d.columns, d.rows);
+    }
+  } catch(e) {
+    document.getElementById('db-results').innerHTML = `<div class="db-error">${esc(e.message)}</div>`;
+    statusEl.textContent = 'Request failed.';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function dbRenderTable(cols, rows) {
+  if (!cols.length) {
+    document.getElementById('db-results').innerHTML = '<div class="db-empty">Query returned no rows.</div>';
+    return;
+  }
+  const hdr = cols.map(c => `<th>${esc(c)}</th>`).join('');
+  const body = rows.map(row =>
+    '<tr>' + row.map(cell => {
+      const s = cell === null ? '<em style="color:#475569">NULL</em>' : esc(typeof cell === 'object' ? JSON.stringify(cell, null, 2) : String(cell));
+      return `<td title="${typeof cell === 'string' ? esc(cell) : ''}">${s}</td>`;
+    }).join('') + '</tr>'
+  ).join('');
+  document.getElementById('db-results').innerHTML =
+    `<table class="db-tbl"><thead><tr>${hdr}</tr></thead><tbody>${body}</tbody></table>`;
+}
+
+function dbClear() {
+  document.getElementById('db-sql').value = '';
+  document.getElementById('db-results').innerHTML = '<div class="db-empty">No results yet.</div>';
+  document.getElementById('db-status').textContent = 'Enter a SELECT query and click Run. Results capped at 200 rows.';
+}
+
+// Ctrl+Enter to run
+document.getElementById('db-sql').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); dbRun(); }
+});
+
+// Init samples on tab click
+document.querySelectorAll('.tab').forEach(t => {
+  if (t.dataset.pane === 'db') t.addEventListener('click', () => { dbInitSamples(); });
+});
+
 // ── Init ──────────────────────────────────────────────────────
 connectLogs();
 loadCalls();
@@ -1597,4 +1502,4 @@ setInterval(loadCalls, 10000);
 initChats();
 </script>
 </body>
-</html>"""
+</html>

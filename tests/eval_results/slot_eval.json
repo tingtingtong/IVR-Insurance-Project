@@ -1,0 +1,129 @@
+{
+  "accuracy": 100.0,
+  "correct": 15,
+  "total": 15,
+  "by_slot": {
+    "phone": {
+      "correct": 6,
+      "total": 6,
+      "accuracy": 100.0
+    },
+    "policy": {
+      "correct": 4,
+      "total": 4,
+      "accuracy": 100.0
+    },
+    "dob": {
+      "correct": 5,
+      "total": 5,
+      "accuracy": 100.0
+    }
+  },
+  "predictions": [
+    {
+      "slot": "phone",
+      "input": "five five five one two three four five six seven",
+      "expected": "5551234567",
+      "predicted": "5551234567",
+      "correct": true
+    },
+    {
+      "slot": "phone",
+      "input": "555-123-4567",
+      "expected": "5551234567",
+      "predicted": "5551234567",
+      "correct": true
+    },
+    {
+      "slot": "phone",
+      "input": "5551234567",
+      "expected": "5551234567",
+      "predicted": "5551234567",
+      "correct": true
+    },
+    {
+      "slot": "phone",
+      "input": "one five five five one two three four five six seven",
+      "expected": "5551234567",
+      "predicted": "5551234567",
+      "correct": true
+    },
+    {
+      "slot": "phone",
+      "input": "five five five nine nine nine eight eight eight eight",
+      "expected": "5559998888",
+      "predicted": "5559998888",
+      "correct": true
+    },
+    {
+      "slot": "phone",
+      "input": "oh five five three three three four four four four",
+      "expected": "0553334444",
+      "predicted": "0553334444",
+      "correct": true
+    },
+    {
+      "slot": "policy",
+      "input": "P three zero zero one two three four five six",
+      "expected": "P300123456",
+      "predicted": "P300123456",
+      "correct": true
+    },
+    {
+      "slot": "policy",
+      "input": "P 3 0 0 6 5 4 3 2 1",
+      "expected": "P300654321",
+      "predicted": "P300654321",
+      "correct": true
+    },
+    {
+      "slot": "policy",
+      "input": "P300123456",
+      "expected": "P300123456",
+      "predicted": "P300123456",
+      "correct": true
+    },
+    {
+      "slot": "policy",
+      "input": "LP three zero zero one two three four five six",
+      "expected": "LP300123456",
+      "predicted": "LP300123456",
+      "correct": true
+    },
+    {
+      "slot": "dob",
+      "input": "July fifteenth nineteen sixty five",
+      "expected": "1965-07-15",
+      "predicted": "1965-07-15",
+      "correct": true
+    },
+    {
+      "slot": "dob",
+      "input": "January first two thousand",
+      "expected": "2000-01-01",
+      "predicted": "2000-01-01",
+      "correct": true
+    },
+    {
+      "slot": "dob",
+      "input": "March 22nd 1950",
+      "expected": "1950-03-22",
+      "predicted": "1950-03-22",
+      "correct": true
+    },
+    {
+      "slot": "dob",
+      "input": "November eighth nineteen forty five",
+      "expected": "1945-11-08",
+      "predicted": "1945-11-08",
+      "correct": true
+    },
+    {
+      "slot": "dob",
+      "input": "12/25/1990",
+      "expected": "1990-12-25",
+      "predicted": "1990-12-25",
+      "correct": true
+    }
+  ]
+}

@@ -1,0 +1,1362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CNO IVR → Dialogflow CX | Migration Architecture</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600;700;800;900&family=DM+Sans:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg-deep:#060a1a;--bg-primary:#0a0e27;--bg-secondary:#111638;--bg-card:#151a3a;
+  --bg-card-hover:#1a2045;--bg-glass:rgba(15,20,50,0.65);
+  --cyan:#00d4ff;--purple:#7c3aed;--green:#10b981;--amber:#f59e0b;--rose:#f43f5e;
+  --cyan-dim:rgba(0,212,255,0.15);--purple-dim:rgba(124,58,237,0.15);--green-dim:rgba(16,185,129,0.15);
+  --text-primary:#e8eaf6;--text-secondary:#8892b0;--text-muted:#4a5578;
+  --border:rgba(100,120,180,0.12);--border-bright:rgba(0,212,255,0.25);
+  --font-display:'Outfit',sans-serif;--font-body:'DM Sans',sans-serif;--font-mono:'JetBrains Mono',monospace;
+  --sidebar-w:260px;--glow-cyan:0 0 30px rgba(0,212,255,0.3);--glow-purple:0 0 30px rgba(124,58,237,0.3);
+}
+html{scroll-behavior:smooth;scrollbar-width:thin;scrollbar-color:var(--purple) var(--bg-deep)}
+body{font-family:var(--font-body);background:var(--bg-deep);color:var(--text-primary);line-height:1.7;overflow-x:hidden}
+::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:var(--bg-deep)}::-webkit-scrollbar-thumb{background:var(--purple);border-radius:3px}
+
+/* ── Noise overlay ── */
+body::before{content:'';position:fixed;inset:0;background:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");pointer-events:none;z-index:9999;opacity:.4}
+
+/* ── Sidebar ── */
+.sidebar{position:fixed;left:0;top:0;width:var(--sidebar-w);height:100vh;background:var(--bg-primary);border-right:1px solid var(--border);z-index:100;display:flex;flex-direction:column;padding:24px 0}
+.sidebar-logo{padding:0 20px 20px;border-bottom:1px solid var(--border);margin-bottom:12px}
+.sidebar-logo span{font-family:var(--font-display);font-weight:800;font-size:15px;background:linear-gradient(135deg,var(--cyan),var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.sidebar-logo small{display:block;font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:2px;margin-top:4px}
+.nav-links{flex:1;overflow-y:auto;padding:0 12px}
+.nav-link{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;color:var(--text-secondary);text-decoration:none;font-size:12.5px;font-weight:500;transition:all .2s;position:relative;margin-bottom:2px}
+.nav-link:hover{color:var(--text-primary);background:var(--cyan-dim)}
+.nav-link.active{color:var(--cyan);background:var(--cyan-dim)}
+.nav-link.active::before{content:'';position:absolute;left:-12px;top:50%;transform:translateY(-50%);width:3px;height:20px;background:var(--cyan);border-radius:0 3px 3px 0}
+.nav-link .nav-icon{width:18px;height:18px;flex-shrink:0;opacity:.6}
+.nav-link.active .nav-icon{opacity:1}
+.nav-progress{padding:12px 20px;border-top:1px solid var(--border);margin-top:auto}
+.nav-progress-bar{height:3px;background:var(--bg-secondary);border-radius:3px;overflow:hidden}
+.nav-progress-fill{height:100%;background:linear-gradient(90deg,var(--cyan),var(--purple));border-radius:3px;transition:width .3s;width:0}
+.nav-progress small{display:block;color:var(--text-muted);font-size:10px;margin-top:6px;text-align:center}
+
+/* ── Main ── */
+.main{margin-left:var(--sidebar-w);min-height:100vh}
+section{padding:80px 60px;border-bottom:1px solid var(--border);position:relative}
+section:last-child{border-bottom:none}
+
+/* ── Typography ── */
+.section-label{font-family:var(--font-mono);font-size:11px;color:var(--cyan);text-transform:uppercase;letter-spacing:3px;margin-bottom:12px;display:flex;align-items:center;gap:10px}
+.section-label::before{content:'';width:20px;height:1px;background:var(--cyan)}
+h2{font-family:var(--font-display);font-size:36px;font-weight:800;margin-bottom:12px;line-height:1.15}
+h2 .grad{background:linear-gradient(135deg,var(--cyan),var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+h3{font-family:var(--font-display);font-size:22px;font-weight:700;margin-bottom:16px}
+.section-desc{color:var(--text-secondary);font-size:15px;max-width:640px;margin-bottom:40px}
+p{color:var(--text-secondary);margin-bottom:12px}
+
+/* ── Hero ── */
+.hero{min-height:100vh;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;position:relative;overflow:hidden;padding:60px 40px}
+.hero::before{content:'';position:absolute;width:600px;height:600px;background:radial-gradient(circle,rgba(0,212,255,0.08) 0%,transparent 70%);top:-100px;right:-100px;pointer-events:none}
+.hero::after{content:'';position:absolute;width:500px;height:500px;background:radial-gradient(circle,rgba(124,58,237,0.06) 0%,transparent 70%);bottom:-100px;left:-50px;pointer-events:none}
+.hero-badge{display:inline-flex;align-items:center;gap:8px;padding:6px 16px;border:1px solid var(--border-bright);border-radius:100px;font-family:var(--font-mono);font-size:11px;color:var(--cyan);margin-bottom:32px;backdrop-filter:blur(10px);background:var(--cyan-dim);animation:fadeDown .8s ease-out}
+.hero-badge .dot{width:6px;height:6px;background:var(--green);border-radius:50%;animation:pulse 2s infinite}
+.hero h1{font-family:var(--font-display);font-size:clamp(42px,6vw,72px);font-weight:900;line-height:1.05;margin-bottom:20px;animation:fadeDown .8s ease-out .1s both}
+.hero h1 .arrow{color:var(--cyan);margin:0 12px;font-weight:300}
+.hero h1 .dfcx{background:linear-gradient(135deg,var(--cyan),var(--purple),var(--green));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.hero-sub{font-size:18px;color:var(--text-secondary);max-width:560px;margin:0 auto 40px;animation:fadeDown .8s ease-out .2s both}
+.hero-stats{display:flex;gap:40px;animation:fadeDown .8s ease-out .3s both}
+.hero-stat{text-align:center}
+.hero-stat .val{font-family:var(--font-display);font-size:32px;font-weight:800;color:var(--text-primary)}
+.hero-stat .val .unit{font-size:16px;color:var(--cyan);margin-left:2px}
+.hero-stat .lbl{font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1.5px;margin-top:2px}
+
+/* ── Cards ── */
+.card{background:var(--bg-card);border:1px solid var(--border);border-radius:16px;padding:28px;transition:all .3s;position:relative;overflow:hidden}
+.card:hover{border-color:var(--border-bright);transform:translateY(-2px);box-shadow:var(--glow-cyan)}
+.card::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(0,212,255,0.03),transparent 50%);pointer-events:none}
+.glass{backdrop-filter:blur(16px);background:var(--bg-glass);border:1px solid rgba(100,120,180,0.15)}
+
+/* ── Grid layouts ── */
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+.grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
+.grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:20px}
+
+/* ── Architecture Diagram ── */
+.arch-diagram{background:var(--bg-secondary);border:1px solid var(--border);border-radius:20px;padding:50px 40px;position:relative;overflow:hidden}
+.arch-flow{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;margin-bottom:40px}
+.arch-node{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:16px 22px;text-align:center;position:relative;min-width:120px;transition:all .3s}
+.arch-node:hover{border-color:var(--cyan);box-shadow:var(--glow-cyan)}
+.arch-node .icon{font-size:24px;margin-bottom:6px}
+.arch-node .name{font-family:var(--font-display);font-size:13px;font-weight:600;color:var(--text-primary)}
+.arch-node .sub{font-size:10px;color:var(--text-muted);margin-top:2px}
+.arch-node.highlight{border-color:var(--cyan);background:linear-gradient(135deg,rgba(0,212,255,0.08),var(--bg-card))}
+.arch-arrow{color:var(--cyan);font-size:20px;animation:arrowPulse 2s infinite;flex-shrink:0}
+.arch-branches{display:flex;justify-content:center;gap:24px;margin-top:20px;flex-wrap:wrap}
+.arch-branch{display:flex;flex-direction:column;align-items:center;gap:8px}
+.arch-branch .connector{width:1px;height:24px;background:linear-gradient(to bottom,var(--cyan),transparent);position:relative}
+.arch-branch .connector::before{content:'';width:6px;height:6px;background:var(--cyan);border-radius:50%;position:absolute;top:0;left:50%;transform:translateX(-50%)}
+
+/* ── Comparison ── */
+.compare-card{padding:32px}
+.compare-card h3{display:flex;align-items:center;gap:10px;font-size:18px;margin-bottom:20px}
+.compare-card.current{border-color:rgba(244,63,94,0.3)}
+.compare-card.current h3 .badge{background:var(--rose);color:#fff;padding:2px 10px;border-radius:100px;font-size:10px;font-weight:600}
+.compare-card.dfcx{border-color:rgba(0,212,255,0.3)}
+.compare-card.dfcx h3 .badge{background:var(--cyan);color:var(--bg-deep);padding:2px 10px;border-radius:100px;font-size:10px;font-weight:600}
+.stack-item{display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:10px;margin-bottom:6px;background:var(--bg-secondary);transition:background .2s}
+.stack-item:hover{background:var(--bg-card-hover)}
+.stack-item .role{font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;width:80px;flex-shrink:0}
+.stack-item .tech{font-family:var(--font-mono);font-size:12.5px;color:var(--text-primary);font-weight:500}
+
+/* ── Flow Diagram ── */
+.flow-container{background:var(--bg-secondary);border:1px solid var(--border);border-radius:20px;padding:40px;overflow-x:auto}
+.flow-row{display:flex;align-items:flex-start;gap:16px;margin-bottom:24px;flex-wrap:wrap}
+.flow-node{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:14px 18px;min-width:140px;text-align:center;transition:all .3s;position:relative}
+.flow-node:hover{transform:translateY(-3px);box-shadow:var(--glow-cyan)}
+.flow-node.router{border-color:var(--cyan);background:linear-gradient(135deg,rgba(0,212,255,0.1),var(--bg-card))}
+.flow-node.auth{border-color:var(--purple);background:linear-gradient(135deg,rgba(124,58,237,0.1),var(--bg-card))}
+.flow-node.service{border-color:var(--green);background:linear-gradient(135deg,rgba(16,185,129,0.06),var(--bg-card))}
+.flow-node.open{border-color:var(--amber);background:linear-gradient(135deg,rgba(245,158,11,0.06),var(--bg-card))}
+.flow-node .flow-name{font-family:var(--font-display);font-size:12px;font-weight:600;margin-bottom:2px}
+.flow-node .flow-type{font-family:var(--font-mono);font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px}
+.flow-arrow-h{color:var(--text-muted);font-size:16px;align-self:center;flex-shrink:0}
+.flow-group{border:1px dashed var(--border);border-radius:16px;padding:16px;position:relative}
+.flow-group-label{position:absolute;top:-10px;left:16px;background:var(--bg-secondary);padding:0 8px;font-family:var(--font-mono);font-size:10px;color:var(--purple);text-transform:uppercase;letter-spacing:1px}
+.auth-pages{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.auth-page{background:var(--bg-secondary);border:1px solid rgba(124,58,237,0.2);border-radius:8px;padding:8px 12px;font-size:10px;color:var(--text-secondary);font-family:var(--font-mono)}
+
+/* ── Table ── */
+.data-table{width:100%;border-collapse:separate;border-spacing:0;border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.data-table thead{background:var(--bg-secondary)}
+.data-table th{padding:12px 16px;text-align:left;font-family:var(--font-display);font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:1px;border-bottom:1px solid var(--border)}
+.data-table td{padding:11px 16px;font-size:13px;border-bottom:1px solid var(--border);color:var(--text-secondary)}
+.data-table tr:last-child td{border-bottom:none}
+.data-table tr:hover td{background:var(--bg-card)}
+.data-table .intent-name{font-family:var(--font-mono);color:var(--cyan);font-size:12px;font-weight:500}
+.data-table .phrase{font-style:italic;color:var(--text-muted);font-size:12px}
+.entity-badge{display:inline-flex;padding:3px 10px;border-radius:6px;font-family:var(--font-mono);font-size:11px;background:var(--purple-dim);color:var(--purple);border:1px solid rgba(124,58,237,0.2);margin:2px}
+
+/* ── Auth Detail ── */
+.auth-detail{position:relative}
+.auth-steps{display:flex;flex-direction:column;gap:0}
+.auth-step{display:flex;gap:24px;position:relative;padding:24px 0}
+.auth-step:not(:last-child)::after{content:'';position:absolute;left:23px;top:72px;bottom:0;width:2px;background:linear-gradient(to bottom,var(--purple),rgba(124,58,237,0.2))}
+.auth-step-num{width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:800;font-size:18px;flex-shrink:0;background:var(--purple-dim);color:var(--purple);border:1px solid rgba(124,58,237,0.3)}
+.auth-step-content{flex:1}
+.auth-step-content h4{font-family:var(--font-display);font-size:16px;font-weight:700;margin-bottom:6px}
+.auth-step-content p{font-size:13px;margin-bottom:8px}
+.auth-webhook{display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:6px;background:var(--green-dim);border:1px solid rgba(16,185,129,0.2);font-family:var(--font-mono);font-size:11px;color:var(--green)}
+.auth-param{display:inline-flex;padding:2px 8px;border-radius:4px;font-family:var(--font-mono);font-size:10px;background:var(--cyan-dim);color:var(--cyan);margin:2px}
+.auth-route{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:6px;background:var(--bg-secondary);border:1px solid var(--border);font-size:11px;color:var(--text-secondary);margin:3px}
+.auth-route .arr{color:var(--cyan)}
+
+/* ── Code blocks ── */
+.code-block{background:var(--bg-deep);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin:16px 0}
+.code-header{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:var(--bg-secondary);border-bottom:1px solid var(--border)}
+.code-header span{font-family:var(--font-mono);font-size:11px;color:var(--text-muted)}
+.code-header .lang{color:var(--cyan);background:var(--cyan-dim);padding:2px 8px;border-radius:4px;font-size:10px}
+.code-body{padding:16px;overflow-x:auto;font-family:var(--font-mono);font-size:12px;line-height:1.7;color:var(--text-secondary)}
+.code-body .key{color:var(--cyan)}
+.code-body .str{color:var(--green)}
+.code-body .comment{color:var(--text-muted);font-style:italic}
+.code-body .tag{color:var(--purple)}
+.code-body .attr{color:var(--amber)}
+
+/* ── Telephony Cards ── */
+.tel-card{padding:28px;position:relative}
+.tel-card.recommended{border-color:var(--cyan);box-shadow:var(--glow-cyan)}
+.tel-card.recommended::after{content:'RECOMMENDED';position:absolute;top:16px;right:16px;font-family:var(--font-mono);font-size:9px;letter-spacing:2px;color:var(--bg-deep);background:var(--cyan);padding:3px 10px;border-radius:4px;font-weight:600}
+.tel-card h3{font-size:16px;margin-bottom:4px}
+.tel-card .tel-sub{font-size:12px;color:var(--text-muted);margin-bottom:16px}
+.tel-card .tel-flow{font-family:var(--font-mono);font-size:11px;color:var(--text-secondary);background:var(--bg-secondary);padding:12px;border-radius:8px;margin-bottom:16px;line-height:1.8}
+.tel-card .pros{list-style:none}
+.tel-card .pros li{padding:4px 0;font-size:12.5px;color:var(--text-secondary)}
+.tel-card .pros li::before{content:'✓ ';color:var(--green);font-weight:700}
+.tel-card .cons li::before{content:'✗ ';color:var(--rose);font-weight:700}
+
+/* ── GCP Infra ── */
+.gcp-diagram{background:var(--bg-secondary);border:1px solid var(--border);border-radius:20px;padding:40px;position:relative}
+.gcp-row{display:flex;justify-content:center;gap:20px;margin-bottom:24px;flex-wrap:wrap}
+.gcp-node{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:16px 20px;text-align:center;min-width:130px;transition:all .3s}
+.gcp-node:hover{border-color:var(--cyan);transform:translateY(-2px)}
+.gcp-node .gcp-icon{font-size:28px;margin-bottom:6px}
+.gcp-node .gcp-name{font-family:var(--font-display);font-size:12px;font-weight:600}
+.gcp-node .gcp-detail{font-size:10px;color:var(--text-muted);margin-top:2px}
+.gcp-connector{display:flex;justify-content:center;margin:8px 0}
+.gcp-connector span{color:var(--text-muted);font-size:20px}
+
+/* ── Timeline ── */
+.timeline{position:relative;padding-left:40px}
+.timeline::before{content:'';position:absolute;left:15px;top:0;bottom:0;width:2px;background:linear-gradient(to bottom,var(--cyan),var(--purple),var(--green))}
+.timeline-item{position:relative;margin-bottom:8px}
+.timeline-dot{position:absolute;left:-33px;top:20px;width:12px;height:12px;border-radius:50%;border:2px solid var(--cyan);background:var(--bg-deep);z-index:2;transition:all .3s}
+.timeline-item:nth-child(2) .timeline-dot,.timeline-item:nth-child(3) .timeline-dot{border-color:var(--purple)}
+.timeline-item:nth-child(4) .timeline-dot,.timeline-item:nth-child(5) .timeline-dot{border-color:var(--green)}
+.timeline-item:nth-child(6) .timeline-dot,.timeline-item:nth-child(7) .timeline-dot{border-color:var(--amber)}
+.timeline-item:nth-child(8) .timeline-dot{border-color:var(--cyan)}
+.timeline-item.active .timeline-dot{background:var(--cyan);box-shadow:0 0 12px var(--cyan)}
+.timeline-card{background:var(--bg-card);border:1px solid var(--border);border-radius:14px;overflow:hidden;transition:all .3s}
+.timeline-card:hover{border-color:var(--border-bright)}
+.timeline-header{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;cursor:pointer;user-select:none}
+.timeline-header h4{font-family:var(--font-display);font-size:15px;font-weight:700;display:flex;align-items:center;gap:10px}
+.timeline-header .phase-badge{font-family:var(--font-mono);font-size:10px;padding:3px 8px;border-radius:4px;background:var(--cyan-dim);color:var(--cyan)}
+.timeline-header .week{font-family:var(--font-mono);font-size:11px;color:var(--text-muted)}
+.timeline-header .chevron{color:var(--text-muted);transition:transform .3s;font-size:14px}
+.timeline-body{max-height:0;overflow:hidden;transition:max-height .4s ease}
+.timeline-body.open{max-height:600px}
+.timeline-body-inner{padding:0 22px 22px;border-top:1px solid var(--border)}
+.timeline-body-inner .task-list{list-style:none;margin-top:14px}
+.timeline-body-inner .task-list li{padding:5px 0;font-size:12.5px;color:var(--text-secondary);position:relative;padding-left:16px}
+.timeline-body-inner .task-list li::before{content:'›';position:absolute;left:0;color:var(--cyan);font-weight:700}
+.timeline-meta{display:flex;gap:16px;margin-top:14px;flex-wrap:wrap}
+.timeline-meta .meta-item{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-muted);padding:4px 10px;background:var(--bg-secondary);border-radius:6px}
+.timeline-meta .meta-item .meta-label{color:var(--text-muted)}
+.timeline-meta .meta-item .meta-val{color:var(--text-secondary);font-weight:500}
+
+/* ── Gains/Losses ── */
+.gl-col h3{display:flex;align-items:center;gap:8px;margin-bottom:20px}
+.gl-list{list-style:none}
+.gl-list li{padding:10px 14px;border-radius:8px;margin-bottom:6px;font-size:13px;color:var(--text-secondary);background:var(--bg-secondary);transition:background .2s}
+.gl-list li:hover{background:var(--bg-card-hover)}
+.gl-list.gains li::before{content:'✓  ';color:var(--green);font-weight:700;font-family:var(--font-mono)}
+.gl-list.losses li::before{content:'✗  ';color:var(--rose);font-weight:700;font-family:var(--font-mono)}
+
+/* ── Cost Table ── */
+.cost-table{width:100%;border-collapse:separate;border-spacing:0;border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.cost-table thead{background:var(--bg-secondary)}
+.cost-table th{padding:14px 18px;text-align:left;font-family:var(--font-display);font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:1px;border-bottom:1px solid var(--border)}
+.cost-table td{padding:12px 18px;font-size:13px;border-bottom:1px solid var(--border);color:var(--text-secondary)}
+.cost-table tr:last-child td{border-bottom:none}
+.cost-table tr:hover td{background:var(--bg-card)}
+.cost-table .cost-val{font-family:var(--font-mono);color:var(--text-primary);font-weight:500}
+.cost-table .total-row td{font-weight:700;color:var(--text-primary);background:var(--bg-secondary)}
+
+/* ── Webhook section ── */
+.webhook-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;margin-bottom:32px}
+.webhook-card{padding:20px}
+.webhook-card .method{font-family:var(--font-mono);font-size:10px;font-weight:600;padding:2px 8px;border-radius:4px;background:var(--green-dim);color:var(--green);display:inline-block;margin-bottom:8px}
+.webhook-card .endpoint{font-family:var(--font-mono);font-size:13px;color:var(--text-primary);margin-bottom:8px}
+.webhook-card .wh-desc{font-size:12px;color:var(--text-muted)}
+.webhook-card .wh-io{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}
+.webhook-card .wh-tag{font-family:var(--font-mono);font-size:10px;padding:2px 8px;border-radius:4px;border:1px solid var(--border)}
+.webhook-card .wh-tag.in{border-color:rgba(0,212,255,0.2);color:var(--cyan)}
+.webhook-card .wh-tag.out{border-color:rgba(124,58,237,0.2);color:var(--purple)}
+
+/* ── Animations ── */
+@keyframes fadeDown{from{opacity:0;transform:translateY(-16px)}to{opacity:1;transform:translateY(0)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+@keyframes arrowPulse{0%,100%{opacity:.4;transform:translateX(0)}50%{opacity:1;transform:translateX(3px)}}
+@keyframes floatIn{from{opacity:0;transform:translateY(30px)}to{opacity:1;transform:translateY(0)}}
+.fade-in{opacity:0;transform:translateY(24px);transition:opacity .6s ease,transform .6s ease}
+.fade-in.visible{opacity:1;transform:translateY(0)}
+
+/* ── Responsive ── */
+@media(max-width:1024px){
+  .sidebar{display:none}
+  .main{margin-left:0}
+  section{padding:50px 24px}
+  .grid-2,.grid-3,.grid-4{grid-template-columns:1fr}
+  .arch-flow{flex-direction:column;align-items:center}
+  .arch-arrow{transform:rotate(90deg)}
+  .hero h1{font-size:36px}
+}
+</style>
+</head>
+<body>
+
+<!-- ═══════ SIDEBAR ═══════ -->
+<nav class="sidebar">
+  <div class="sidebar-logo">
+    <span>CNO IVR Migration</span>
+    <small>Architecture Document</small>
+  </div>
+  <div class="nav-links">
+    <a href="#hero" class="nav-link active">
+      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>
+      Overview
+    </a>
+    <a href="#architecture" class="nav-link">
+      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+      Architecture
+    </a>
+    <a href="#comparison" class="nav-link">
+      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 3h5v5M8 3H3v5M3 16v5h5M21 16v5h-5"/></svg>
+      Stack Comparison
+    </a>
+    <a href="#agent-structure" class="nav-link">
+      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+      Agent Structure
+    </a>
+    <a href="#intents" class="nav-link">
+      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+      Intents & Entities
+    </a>
+    <a href="#auth-flow" class="nav-link">
+      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+      Auth Flow Detail
+    </a>
+    <a href="#webhooks" class="nav-link">
+      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+      Webhooks
+    </a>
+    <a href="#telephony" class="nav-link">
+      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>
+      Telephony
+    </a>
+    <a href="#gcp" class="nav-link">
+      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 10h-1.26A8 8 0 109 20h9a5 5 0 000-10z"/></svg>
+      GCP Infrastructure
+    </a>
+    <a href="#implementation" class="nav-link">
+      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      Implementation
+    </a>
+    <a href="#tradeoffs" class="nav-link">
+      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      Gains & Losses
+    </a>
+    <a href="#costs" class="nav-link">
+      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+      Cost Analysis
+    </a>
+  </div>
+  <div class="nav-progress">
+    <div class="nav-progress-bar"><div class="nav-progress-fill" id="progressFill"></div></div>
+    <small id="progressText">0% read</small>
+  </div>
+</nav>
+
+<!-- ═══════ MAIN CONTENT ═══════ -->
+<div class="main">
+
+<!-- ── HERO ── -->
+<section class="hero" id="hero">
+  <div class="hero-badge"><span class="dot"></span> Architecture Migration Document v1.0</div>
+  <h1>CNO IVR <span class="arrow">&rarr;</span> <span class="dfcx">Dialogflow CX</span></h1>
+  <p class="hero-sub">Complete migration architecture from LangGraph-based telephony IVR to Google Dialogflow CX with managed NLU, telephony, and compliance guardrails.</p>
+  <div class="hero-stats">
+    <div class="hero-stat"><div class="val">13<span class="unit">flows</span></div><div class="lbl">DFCX Flows</div></div>
+    <div class="hero-stat"><div class="val">15<span class="unit">intents</span></div><div class="lbl">NLU Intents</div></div>
+    <div class="hero-stat"><div class="val">7<span class="unit">endpoints</span></div><div class="lbl">Webhooks</div></div>
+    <div class="hero-stat"><div class="val">8<span class="unit">wks</span></div><div class="lbl">Migration</div></div>
+  </div>
+</section>
+
+<!-- ── ARCHITECTURE OVERVIEW ── -->
+<section id="architecture">
+  <div class="section-label">01 &mdash; System Architecture</div>
+  <h2>Architecture <span class="grad">Overview</span></h2>
+  <p class="section-desc">End-to-end data flow from caller to backend services through Dialogflow CX managed infrastructure.</p>
+
+  <div class="arch-diagram fade-in">
+    <div class="arch-flow">
+      <div class="arch-node">
+        <div class="icon">📞</div>
+        <div class="name">Caller</div>
+        <div class="sub">PSTN / Mobile</div>
+      </div>
+      <div class="arch-arrow">&rarr;</div>
+      <div class="arch-node">
+        <div class="icon">📡</div>
+        <div class="name">Twilio</div>
+        <div class="sub">Voice + CCAI</div>
+      </div>
+      <div class="arch-arrow">&rarr;</div>
+      <div class="arch-node highlight">
+        <div class="icon">🧠</div>
+        <div class="name">Dialogflow CX</div>
+        <div class="sub">NLU + Flow Engine</div>
+      </div>
+      <div class="arch-arrow">&rarr;</div>
+      <div class="arch-node">
+        <div class="icon">⚡</div>
+        <div class="name">Cloud Run</div>
+        <div class="sub">Webhook Service</div>
+      </div>
+      <div class="arch-arrow">&rarr;</div>
+      <div class="arch-node">
+        <div class="icon">🔌</div>
+        <div class="name">Backend APIs</div>
+        <div class="sub">CNO Systems</div>
+      </div>
+      <div class="arch-arrow">&rarr;</div>
+      <div class="arch-node">
+        <div class="icon">🗄️</div>
+        <div class="name">PostgreSQL</div>
+        <div class="sub">+ Redis</div>
+      </div>
+    </div>
+    <div class="arch-branches">
+      <div class="arch-branch">
+        <div class="connector"></div>
+        <div class="arch-node" style="min-width:110px">
+          <div class="icon">🎤</div>
+          <div class="name">Cloud Speech</div>
+          <div class="sub">STT (telephony)</div>
+        </div>
+      </div>
+      <div class="arch-branch">
+        <div class="connector"></div>
+        <div class="arch-node" style="min-width:110px">
+          <div class="icon">🔊</div>
+          <div class="name">Cloud TTS</div>
+          <div class="sub">WaveNet voices</div>
+        </div>
+      </div>
+      <div class="arch-branch">
+        <div class="connector"></div>
+        <div class="arch-node" style="min-width:110px">
+          <div class="icon">🔍</div>
+          <div class="name">Vertex AI</div>
+          <div class="sub">Search / RAG</div>
+        </div>
+      </div>
+      <div class="arch-branch">
+        <div class="connector"></div>
+        <div class="arch-node" style="min-width:110px">
+          <div class="icon">📊</div>
+          <div class="name">Monitoring</div>
+          <div class="sub">Cloud Ops</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── STACK COMPARISON ── -->
+<section id="comparison">
+  <div class="section-label">02 &mdash; Technology Stack</div>
+  <h2>Current vs <span class="grad">DFCX</span> Stack</h2>
+  <p class="section-desc">Side-by-side comparison of the existing LangGraph architecture and the proposed Dialogflow CX replacement.</p>
+
+  <div class="grid-2 fade-in">
+    <div class="card compare-card current">
+      <h3><span class="badge">CURRENT</span> LangGraph Stack</h3>
+      <div class="stack-item"><span class="role">Framework</span><span class="tech">FastAPI + LangGraph</span></div>
+      <div class="stack-item"><span class="role">Router</span><span class="tech">Groq llama-3.1-8b</span></div>
+      <div class="stack-item"><span class="role">LLM</span><span class="tech">Groq llama-3.3-70b</span></div>
+      <div class="stack-item"><span class="role">STT</span><span class="tech">Deepgram nova-2</span></div>
+      <div class="stack-item"><span class="role">TTS</span><span class="tech">ElevenLabs Rachel</span></div>
+      <div class="stack-item"><span class="role">Telephony</span><span class="tech">Twilio Voice + WS</span></div>
+      <div class="stack-item"><span class="role">Database</span><span class="tech">PostgreSQL + Redis</span></div>
+      <div class="stack-item"><span class="role">RAG</span><span class="tech">pgvector + OpenAI emb</span></div>
+    </div>
+    <div class="card compare-card dfcx">
+      <h3><span class="badge">PROPOSED</span> Dialogflow CX Stack</h3>
+      <div class="stack-item"><span class="role">Framework</span><span class="tech">Dialogflow CX Agent</span></div>
+      <div class="stack-item"><span class="role">Router</span><span class="tech">DFCX NLU (built-in)</span></div>
+      <div class="stack-item"><span class="role">LLM</span><span class="tech">Generative AI Agent</span></div>
+      <div class="stack-item"><span class="role">STT</span><span class="tech">Cloud Speech telephony</span></div>
+      <div class="stack-item"><span class="role">TTS</span><span class="tech">Cloud TTS WaveNet</span></div>
+      <div class="stack-item"><span class="role">Telephony</span><span class="tech">Twilio + CCAI Connect</span></div>
+      <div class="stack-item"><span class="role">Database</span><span class="tech">Cloud SQL + Memorystore</span></div>
+      <div class="stack-item"><span class="role">RAG</span><span class="tech">Vertex AI Search</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ── AGENT STRUCTURE ── -->
+<section id="agent-structure">
+  <div class="section-label">03 &mdash; Agent Design</div>
+  <h2>DFCX <span class="grad">Agent Structure</span></h2>
+  <p class="section-desc">13 flows mapping directly from LangGraph nodes to Dialogflow CX flows with page-level state machines.</p>
+
+  <div class="flow-container fade-in">
+    <!-- Router -->
+    <div style="text-align:center;margin-bottom:24px">
+      <div class="flow-node router" style="display:inline-block">
+        <div class="flow-name">Default Start Flow</div>
+        <div class="flow-type">Intent Router</div>
+      </div>
+    </div>
+
+    <!-- Auth Guard Group -->
+    <div class="flow-group" style="margin-bottom:24px">
+      <div class="flow-group-label">Auth Guard Route Group &mdash; require authentication</div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;padding-top:8px">
+        <div class="flow-node auth" style="flex:1;min-width:180px">
+          <div class="flow-name">Authentication Flow</div>
+          <div class="flow-type">Multi-turn PII</div>
+          <div class="auth-pages">
+            <span class="auth-page">Collect Phone</span>
+            <span class="auth-page">Collect Policy</span>
+            <span class="auth-page">Collect DOB</span>
+            <span class="auth-page">Collect Name</span>
+            <span class="auth-page">Auth Complete</span>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:12px">
+        <div class="flow-node service"><div class="flow-name">Policy Info</div><div class="flow-type">Restricted</div></div>
+        <div class="flow-node service"><div class="flow-name">Payment</div><div class="flow-type">Restricted</div></div>
+        <div class="flow-node service" style="border-color:var(--rose)"><div class="flow-name">OTP Payment</div><div class="flow-type">Locked (PCI)</div></div>
+        <div class="flow-node service"><div class="flow-name">Loan</div><div class="flow-type">Restricted</div></div>
+        <div class="flow-node service"><div class="flow-name">Beneficiary</div><div class="flow-type">Restricted</div></div>
+        <div class="flow-node service"><div class="flow-name">Contact Change</div><div class="flow-type">Restricted</div></div>
+        <div class="flow-node service"><div class="flow-name">Document</div><div class="flow-type">Restricted</div></div>
+        <div class="flow-node service"><div class="flow-name">Privacy</div><div class="flow-type">Restricted</div></div>
+      </div>
+    </div>
+
+    <!-- Open flows -->
+    <div style="display:flex;gap:12px;flex-wrap:wrap">
+      <div class="flow-node open"><div class="flow-name">FAQ</div><div class="flow-type">Open Access</div></div>
+      <div class="flow-node open"><div class="flow-name">Escalation</div><div class="flow-type">Open Access</div></div>
+      <div class="flow-node open"><div class="flow-name">Goodbye</div><div class="flow-type">Open Access</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ── INTENTS & ENTITIES ── -->
+<section id="intents">
+  <div class="section-label">04 &mdash; NLU Configuration</div>
+  <h2>Intents & <span class="grad">Entities</span></h2>
+  <p class="section-desc">DFCX NLU replaces the Groq LLM router with pattern-matched intent classification and custom entity extraction.</p>
+
+  <div class="fade-in" style="overflow-x:auto">
+    <table class="data-table">
+      <thead><tr><th>Intent</th><th>Training Phrases</th><th>Target Flow</th></tr></thead>
+      <tbody>
+        <tr><td class="intent-name">intent.policy_info</td><td class="phrase">"check my policy", "policy details", "what's my coverage"</td><td>Policy Info</td></tr>
+        <tr><td class="intent-name">intent.payment</td><td class="phrase">"make a payment", "when is my bill due", "payment history"</td><td>Payment</td></tr>
+        <tr><td class="intent-name">intent.otp</td><td class="phrase">"pay by phone", "one-time payment", "pay with card"</td><td>OTP Payment</td></tr>
+        <tr><td class="intent-name">intent.loan</td><td class="phrase">"loan on my policy", "borrow against policy", "loan balance"</td><td>Loan</td></tr>
+        <tr><td class="intent-name">intent.beneficiary</td><td class="phrase">"change beneficiary", "who is my beneficiary", "update beneficiary"</td><td>Beneficiary</td></tr>
+        <tr><td class="intent-name">intent.contact_change</td><td class="phrase">"update my address", "change phone number", "new address"</td><td>Contact Change</td></tr>
+        <tr><td class="intent-name">intent.document</td><td class="phrase">"send me a copy", "need a document", "policy document"</td><td>Document</td></tr>
+        <tr><td class="intent-name">intent.privacy</td><td class="phrase">"opt out", "do not call", "privacy request", "stop sharing"</td><td>Privacy</td></tr>
+        <tr><td class="intent-name">intent.faq</td><td class="phrase">"what are your hours", "how do I file a claim", "general question"</td><td>FAQ</td></tr>
+        <tr><td class="intent-name">intent.escalate</td><td class="phrase">"talk to a person", "agent", "representative", "supervisor"</td><td>Escalation</td></tr>
+        <tr><td class="intent-name">intent.goodbye</td><td class="phrase">"goodbye", "that's all", "thank you bye", "done"</td><td>Goodbye</td></tr>
+        <tr><td class="intent-name">intent.idk</td><td class="phrase">"I don't know", "not sure", "I don't have that info"</td><td>(skip slot)</td></tr>
+        <tr><td class="intent-name">intent.confirm_yes</td><td class="phrase">"yes", "correct", "that's right", "yeah"</td><td>(confirm)</td></tr>
+        <tr><td class="intent-name">intent.confirm_no</td><td class="phrase">"no", "that's wrong", "incorrect", "nope"</td><td>(deny)</td></tr>
+        <tr><td class="intent-name">intent.cancel</td><td class="phrase">"cancel", "never mind", "go back", "start over"</td><td>(cancel flow)</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3 style="margin-top:40px">Custom Entities</h3>
+  <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:12px">
+    <div class="card" style="flex:1;min-width:200px;padding:20px">
+      <div style="margin-bottom:8px"><span class="entity-badge">@policy-number</span></div>
+      <p style="font-size:12px;margin:0">Regexp: <code style="color:var(--cyan)">[A-Z]?\d{6,10}</code></p>
+      <p style="font-size:11px;margin:4px 0 0;color:var(--text-muted)">e.g. OB31307742</p>
+    </div>
+    <div class="card" style="flex:1;min-width:200px;padding:20px">
+      <div style="margin-bottom:8px"><span class="entity-badge">@last4-policy</span></div>
+      <p style="font-size:12px;margin:0">Regexp: <code style="color:var(--cyan)">\d{4}</code></p>
+      <p style="font-size:11px;margin:4px 0 0;color:var(--text-muted)">e.g. 7742</p>
+    </div>
+    <div class="card" style="flex:1;min-width:200px;padding:20px">
+      <div style="margin-bottom:8px"><span class="entity-badge">@sys.phone-number</span></div>
+      <p style="font-size:12px;margin:0">System entity (built-in)</p>
+      <p style="font-size:11px;margin:4px 0 0;color:var(--text-muted)">Auto-extracts phone numbers</p>
+    </div>
+    <div class="card" style="flex:1;min-width:200px;padding:20px">
+      <div style="margin-bottom:8px"><span class="entity-badge">@sys.date</span></div>
+      <p style="font-size:12px;margin:0">System entity (built-in)</p>
+      <p style="font-size:11px;margin:4px 0 0;color:var(--text-muted)">DOB extraction</p>
+    </div>
+  </div>
+</section>
+
+<!-- ── AUTH FLOW DETAIL ── -->
+<section id="auth-flow">
+  <div class="section-label">05 &mdash; Authentication</div>
+  <h2>Authentication <span class="grad">Flow Detail</span></h2>
+  <p class="section-desc">5-page state machine with webhook fulfillment at each validation step. IDK skip logic and multi-policy resolution built in.</p>
+
+  <div class="auth-detail fade-in">
+    <div class="auth-steps">
+      <div class="auth-step">
+        <div class="auth-step-num">1</div>
+        <div class="auth-step-content">
+          <h4>Collect Phone Number</h4>
+          <p>Entry fulfillment: "May I have the phone number associated with your account?"</p>
+          <div><span class="auth-param">@sys.phone-number</span> <span style="color:var(--text-muted);font-size:12px">(required parameter)</span></div>
+          <div style="margin-top:10px"><span class="auth-webhook">POST /webhook/party-search</span></div>
+          <div style="margin-top:8px">
+            <span class="auth-route"><span class="arr">&rarr;</span> Match found: go to Collect DOB</span>
+            <span class="auth-route"><span class="arr">&rarr;</span> Not found: go to Confirm Phone</span>
+            <span class="auth-route"><span class="arr">&rarr;</span> "I don't know": go to Collect Policy</span>
+            <span class="auth-route"><span class="arr">&rarr;</span> 2x no-input: Escalate</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="auth-step">
+        <div class="auth-step-num">2</div>
+        <div class="auth-step-content">
+          <h4>Collect Policy Number</h4>
+          <p>Fallback when phone not found or caller says "I don't know".</p>
+          <div><span class="auth-param">@policy-number</span> <span style="color:var(--text-muted);font-size:12px">or</span> <span class="auth-param">@last4-policy</span></div>
+          <div style="margin-top:10px"><span class="auth-webhook">POST /webhook/party-search</span></div>
+          <div style="margin-top:8px">
+            <span class="auth-route"><span class="arr">&rarr;</span> Match: go to Collect DOB</span>
+            <span class="auth-route"><span class="arr">&rarr;</span> Multi-policy: go to Policy Selection page</span>
+            <span class="auth-route"><span class="arr">&rarr;</span> No match: Escalate</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="auth-step">
+        <div class="auth-step-num">3</div>
+        <div class="auth-step-content">
+          <h4>Collect Date of Birth</h4>
+          <p>Verification against party record. Supports IDK skip to name fallback.</p>
+          <div><span class="auth-param">@sys.date</span></div>
+          <div style="margin-top:10px"><span class="auth-webhook">POST /webhook/validate-dob</span></div>
+          <div style="margin-top:8px">
+            <span class="auth-route"><span class="arr">&rarr;</span> DOB match: go to Collect Caller Name</span>
+            <span class="auth-route"><span class="arr">&rarr;</span> No match: go to Collect Full Name</span>
+            <span class="auth-route"><span class="arr">&rarr;</span> "I don't know": go to Collect Full Name</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="auth-step">
+        <div class="auth-step-num">4</div>
+        <div class="auth-step-content">
+          <h4>Collect Caller Name</h4>
+          <p>Post-auth persona identification. "Who am I speaking with today?"</p>
+          <div><span class="auth-param">@sys.person</span></div>
+          <div style="margin-top:10px"><span class="auth-webhook">POST /webhook/match-persona</span></div>
+          <div style="margin-top:8px">
+            <span class="auth-route"><span class="arr">&rarr;</span> payor / insured / owner: Auth Complete</span>
+            <span class="auth-route"><span class="arr">&rarr;</span> "other": Escalate to agent</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="auth-step">
+        <div class="auth-step-num" style="background:var(--green-dim);color:var(--green);border-color:rgba(16,185,129,0.3)">&#10003;</div>
+        <div class="auth-step-content">
+          <h4>Auth Complete</h4>
+          <p>Session parameters populated. Flow returns to the calling service flow. Access token acquired.</p>
+          <div style="margin-top:8px">
+            <span class="auth-param">auth_status = "complete"</span>
+            <span class="auth-param">caller_persona</span>
+            <span class="auth-param">access_token</span>
+            <span class="auth-param">finalized_party</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── WEBHOOKS ── -->
+<section id="webhooks">
+  <div class="section-label">06 &mdash; Backend Services</div>
+  <h2>Webhook <span class="grad">Architecture</span></h2>
+  <p class="section-desc">Cloud Run service (Python FastAPI) handling 7 webhook fulfillment endpoints called by Dialogflow CX.</p>
+
+  <div class="webhook-grid fade-in">
+    <div class="card webhook-card">
+      <span class="method">POST</span>
+      <div class="endpoint">/webhook/party-search</div>
+      <div class="wh-desc">Search CNO party by phone or policy number</div>
+      <div class="wh-io"><span class="wh-tag in">in: phone_number</span><span class="wh-tag out">out: party_data</span></div>
+    </div>
+    <div class="card webhook-card">
+      <span class="method">POST</span>
+      <div class="endpoint">/webhook/validate-dob</div>
+      <div class="wh-desc">Validate date of birth against party record</div>
+      <div class="wh-io"><span class="wh-tag in">in: dob, party_data</span><span class="wh-tag out">out: dob_match</span></div>
+    </div>
+    <div class="card webhook-card">
+      <span class="method">POST</span>
+      <div class="endpoint">/webhook/match-persona</div>
+      <div class="wh-desc">Match caller name against policy personas</div>
+      <div class="wh-io"><span class="wh-tag in">in: caller_name</span><span class="wh-tag out">out: persona</span></div>
+    </div>
+    <div class="card webhook-card">
+      <span class="method">POST</span>
+      <div class="endpoint">/webhook/policy-inquiry</div>
+      <div class="wh-desc">Get policy status, premium, billing mode</div>
+      <div class="wh-io"><span class="wh-tag in">in: policy_number</span><span class="wh-tag out">out: policy_details</span></div>
+    </div>
+    <div class="card webhook-card">
+      <span class="method">POST</span>
+      <div class="endpoint">/webhook/payment-status</div>
+      <div class="wh-desc">Retrieve last 3 payment transactions</div>
+      <div class="wh-io"><span class="wh-tag in">in: policy_number</span><span class="wh-tag out">out: payment_info</span></div>
+    </div>
+    <div class="card webhook-card">
+      <span class="method">POST</span>
+      <div class="endpoint">/webhook/faq</div>
+      <div class="wh-desc">RAG-grounded FAQ via Vertex AI Search</div>
+      <div class="wh-io"><span class="wh-tag in">in: user_question</span><span class="wh-tag out">out: answer_text</span></div>
+    </div>
+    <div class="card webhook-card">
+      <span class="method">POST</span>
+      <div class="endpoint">/webhook/escalate</div>
+      <div class="wh-desc">Trigger live agent transfer via Twilio Dial</div>
+      <div class="wh-io"><span class="wh-tag in">in: reason</span><span class="wh-tag out">out: transfer_number</span></div>
+    </div>
+  </div>
+
+  <h3>Request / Response Format</h3>
+  <div class="grid-2 fade-in">
+    <div class="code-block">
+      <div class="code-header"><span>Incoming from DFCX</span><span class="lang">JSON</span></div>
+      <div class="code-body"><pre>{
+  <span class="key">"fulfillmentInfo"</span>: {
+    <span class="key">"tag"</span>: <span class="str">"party-search"</span>
+  },
+  <span class="key">"sessionInfo"</span>: {
+    <span class="key">"parameters"</span>: {
+      <span class="key">"phone_number"</span>: <span class="str">"+18005551234"</span>,
+      <span class="key">"auth_status"</span>: <span class="str">"collecting_phone"</span>
+    },
+    <span class="key">"session"</span>: <span class="str">"projects/P/agents/A/sessions/S"</span>
+  }
+}</pre></div>
+    </div>
+    <div class="code-block">
+      <div class="code-header"><span>Response to DFCX</span><span class="lang">JSON</span></div>
+      <div class="code-body"><pre>{
+  <span class="key">"sessionInfo"</span>: {
+    <span class="key">"parameters"</span>: {
+      <span class="key">"auth_status"</span>: <span class="str">"collecting_dob"</span>,
+      <span class="key">"party_data"</span>: { <span class="comment">/* ... */</span> }
+    }
+  },
+  <span class="key">"fulfillmentResponse"</span>: {
+    <span class="key">"messages"</span>: [{
+      <span class="key">"text"</span>: {
+        <span class="key">"text"</span>: [<span class="str">"Found your account. DOB?"</span>]
+      }
+    }]
+  }
+}</pre></div>
+    </div>
+  </div>
+</section>
+
+<!-- ── TELEPHONY ── -->
+<section id="telephony">
+  <div class="section-label">07 &mdash; Telephony</div>
+  <h2>Telephony <span class="grad">Integration Options</span></h2>
+  <p class="section-desc">Three paths to connect PSTN callers to your Dialogflow CX agent, from simplest to most customizable.</p>
+
+  <div class="grid-3 fade-in">
+    <div class="card tel-card">
+      <h3>Option A</h3>
+      <div class="tel-sub">DFCX Phone Gateway &mdash; Simplest</div>
+      <div class="tel-flow">PSTN &rarr; Google Phone Gateway &rarr; DFCX<br><small style="color:var(--text-muted)">No Twilio needed. Google-managed number.</small></div>
+      <ul class="pros">
+        <li>Zero telephony code</li>
+        <li>Built-in STT/TTS</li>
+        <li>Quick setup (minutes)</li>
+      </ul>
+      <ul class="pros cons" style="margin-top:8px">
+        <li>Limited audio control</li>
+        <li>No barge-in tuning</li>
+        <li>No recording access</li>
+      </ul>
+    </div>
+    <div class="card tel-card recommended">
+      <h3>Option B</h3>
+      <div class="tel-sub">Twilio + CCAI Connector &mdash; Balanced</div>
+      <div class="tel-flow">PSTN &rarr; Twilio &rarr; &lt;Connect&gt; &rarr; DFCX<br><small style="color:var(--text-muted)">Twilio CCAI integration via VirtualAgent verb.</small></div>
+      <ul class="pros">
+        <li>Keep existing Twilio number</li>
+        <li>Recording + analytics</li>
+        <li>DTMF passthrough</li>
+        <li>Barge-in support</li>
+      </ul>
+      <ul class="pros cons" style="margin-top:8px">
+        <li>Twilio + GCP costs</li>
+      </ul>
+    </div>
+    <div class="card tel-card">
+      <h3>Option C</h3>
+      <div class="tel-sub">Custom Media Streams &mdash; Full Control</div>
+      <div class="tel-flow">Twilio WS &rarr; Middleware &rarr; DFCX Streaming API<br><small style="color:var(--text-muted)">Custom WebSocket bridge like current twilio_stream.py</small></div>
+      <ul class="pros">
+        <li>Maximum audio control</li>
+        <li>Custom VAD/barge-in</li>
+        <li>Mix STT providers</li>
+      </ul>
+      <ul class="pros cons" style="margin-top:8px">
+        <li>Most code to maintain</li>
+        <li>Higher latency risk</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="code-block fade-in" style="margin-top:32px">
+    <div class="code-header"><span>Option B &mdash; Twilio TwiML</span><span class="lang">XML</span></div>
+    <div class="code-body"><pre><span class="tag">&lt;Response&gt;</span>
+  <span class="tag">&lt;Connect&gt;</span>
+    <span class="tag">&lt;VirtualAgent</span>
+      <span class="attr">connectorName</span>=<span class="str">"dialogflow-cx"</span>
+      <span class="attr">projectId</span>=<span class="str">"your-gcp-project"</span>
+      <span class="attr">agentId</span>=<span class="str">"your-dfcx-agent-id"</span>
+      <span class="attr">languageCode</span>=<span class="str">"en-US"</span> <span class="tag">/&gt;</span>
+  <span class="tag">&lt;/Connect&gt;</span>
+<span class="tag">&lt;/Response&gt;</span></pre></div>
+  </div>
+</section>
+
+<!-- ── GCP INFRASTRUCTURE ── -->
+<section id="gcp">
+  <div class="section-label">08 &mdash; Cloud Infrastructure</div>
+  <h2>GCP <span class="grad">Infrastructure</span></h2>
+  <p class="section-desc">All services deployed within a single GCP project in us-central1 for low latency.</p>
+
+  <div class="gcp-diagram fade-in">
+    <div style="text-align:center;margin-bottom:8px;font-family:var(--font-mono);font-size:11px;color:var(--text-muted);letter-spacing:2px">GCP PROJECT &mdash; us-central1</div>
+    <div class="gcp-row">
+      <div class="gcp-node" style="border-color:var(--cyan)">
+        <div class="gcp-icon">🧠</div>
+        <div class="gcp-name">Dialogflow CX</div>
+        <div class="gcp-detail">Agent + NLU</div>
+      </div>
+    </div>
+    <div class="gcp-connector"><span>↕</span></div>
+    <div class="gcp-row">
+      <div class="gcp-node">
+        <div class="gcp-icon">🎤</div>
+        <div class="gcp-name">Cloud Speech</div>
+        <div class="gcp-detail">STT (telephony)</div>
+      </div>
+      <div class="gcp-node" style="border-color:var(--green)">
+        <div class="gcp-icon">⚡</div>
+        <div class="gcp-name">Cloud Run</div>
+        <div class="gcp-detail">Webhook Service</div>
+      </div>
+      <div class="gcp-node">
+        <div class="gcp-icon">🔊</div>
+        <div class="gcp-name">Cloud TTS</div>
+        <div class="gcp-detail">WaveNet voices</div>
+      </div>
+    </div>
+    <div class="gcp-connector"><span>↕</span></div>
+    <div class="gcp-row">
+      <div class="gcp-node">
+        <div class="gcp-icon">🗄️</div>
+        <div class="gcp-name">Cloud SQL</div>
+        <div class="gcp-detail">PG + pgvector</div>
+      </div>
+      <div class="gcp-node">
+        <div class="gcp-icon">🔴</div>
+        <div class="gcp-name">Memorystore</div>
+        <div class="gcp-detail">Redis cache</div>
+      </div>
+      <div class="gcp-node">
+        <div class="gcp-icon">🔍</div>
+        <div class="gcp-name">Vertex AI Search</div>
+        <div class="gcp-detail">RAG / FAQ</div>
+      </div>
+    </div>
+    <div class="gcp-connector"><span>↕</span></div>
+    <div class="gcp-row">
+      <div class="gcp-node">
+        <div class="gcp-icon">🔐</div>
+        <div class="gcp-name">Secret Manager</div>
+        <div class="gcp-detail">API keys & creds</div>
+      </div>
+      <div class="gcp-node">
+        <div class="gcp-icon">📊</div>
+        <div class="gcp-name">Cloud Monitoring</div>
+        <div class="gcp-detail">Metrics + Alerting</div>
+      </div>
+      <div class="gcp-node">
+        <div class="gcp-icon">📝</div>
+        <div class="gcp-name">Cloud Logging</div>
+        <div class="gcp-detail">Structured logs</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── IMPLEMENTATION STEPS ── -->
+<section id="implementation">
+  <div class="section-label">09 &mdash; Migration Plan</div>
+  <h2>Implementation <span class="grad">Roadmap</span></h2>
+  <p class="section-desc">8-phase migration plan across 8 weeks. Authentication and webhook deployment run in parallel.</p>
+
+  <div class="timeline fade-in">
+
+    <!-- Phase 1 -->
+    <div class="timeline-item">
+      <div class="timeline-dot"></div>
+      <div class="timeline-card">
+        <div class="timeline-header" onclick="toggleTimeline(this)">
+          <h4><span class="phase-badge">Phase 1</span> GCP Project Setup & DFCX Agent</h4>
+          <div style="display:flex;align-items:center;gap:16px">
+            <span class="week">Week 1</span>
+            <span class="chevron">&#9662;</span>
+          </div>
+        </div>
+        <div class="timeline-body">
+          <div class="timeline-body-inner">
+            <ul class="task-list">
+              <li>Create GCP project, enable Dialogflow CX API, Cloud Run API, Cloud SQL API</li>
+              <li>Create DFCX agent in us-central1 with en-US language</li>
+              <li>Configure speech settings: telephony model, barge-in, DTMF, endpointing</li>
+              <li>Create all 15 intents with 10-20 training phrases each</li>
+              <li>Create custom entities: @policy-number, @last4-policy</li>
+              <li>Set up Default Start Flow with greeting page and intent routes</li>
+              <li>Configure IAM: service accounts for Cloud Run &rarr; DFCX, Secret Manager access</li>
+              <li>Set up Secret Manager with CNO API credentials, Twilio keys</li>
+            </ul>
+            <div class="timeline-meta">
+              <div class="meta-item"><span class="meta-label">Effort:</span><span class="meta-val">3-4 days</span></div>
+              <div class="meta-item"><span class="meta-label">Dependencies:</span><span class="meta-val">GCP billing account</span></div>
+              <div class="meta-item"><span class="meta-label">Deliverable:</span><span class="meta-val">Working DFCX agent with intents</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Phase 2 -->
+    <div class="timeline-item">
+      <div class="timeline-dot"></div>
+      <div class="timeline-card">
+        <div class="timeline-header" onclick="toggleTimeline(this)">
+          <h4><span class="phase-badge">Phase 2</span> Build Authentication Flow</h4>
+          <div style="display:flex;align-items:center;gap:16px">
+            <span class="week">Week 2-3</span>
+            <span class="chevron">&#9662;</span>
+          </div>
+        </div>
+        <div class="timeline-body">
+          <div class="timeline-body-inner">
+            <ul class="task-list">
+              <li>Create Authentication Flow with 5 pages (Phone, Policy, DOB, Name, Complete)</li>
+              <li>Configure page-level parameters with required entity types</li>
+              <li>Set up no-match and no-input event handlers (replaces slot retry counters)</li>
+              <li>Add IDK intent handling on each page &rarr; skip to next step</li>
+              <li>Wire webhook fulfillments: party-search, validate-dob, match-persona</li>
+              <li>Implement Route Group "Require Authentication" with condition check</li>
+              <li>Apply Route Group to all 8 restricted service flows</li>
+              <li>Add multi-policy selection page (if party search returns multiple policies)</li>
+              <li>Implement persona gate: "other" persona &rarr; escalation</li>
+              <li>End-to-end testing: phone auth, policy auth, DOB skip, name fallback</li>
+            </ul>
+            <div class="timeline-meta">
+              <div class="meta-item"><span class="meta-label">Effort:</span><span class="meta-val">8-10 days</span></div>
+              <div class="meta-item"><span class="meta-label">Dependencies:</span><span class="meta-val">Phase 1 + webhook service</span></div>
+              <div class="meta-item"><span class="meta-label">Deliverable:</span><span class="meta-val">Complete auth flow with all paths</span></div>
+              <div class="meta-item" style="border:1px solid rgba(244,63,94,0.3)"><span class="meta-label">Risk:</span><span class="meta-val" style="color:var(--rose)">Most complex phase</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Phase 3 -->
+    <div class="timeline-item">
+      <div class="timeline-dot"></div>
+      <div class="timeline-card">
+        <div class="timeline-header" onclick="toggleTimeline(this)">
+          <h4><span class="phase-badge">Phase 3</span> Deploy Webhook Service (Cloud Run)</h4>
+          <div style="display:flex;align-items:center;gap:16px">
+            <span class="week">Week 2-3 (parallel)</span>
+            <span class="chevron">&#9662;</span>
+          </div>
+        </div>
+        <div class="timeline-body">
+          <div class="timeline-body-inner">
+            <ul class="task-list">
+              <li>Create FastAPI/Flask webhook service with DFCX request/response format</li>
+              <li>Port party_search.py, auth_token.py to webhook endpoints</li>
+              <li>Port holding_inquiry.py, payment_api.py to webhook endpoints</li>
+              <li>Add validate-dob and match-persona endpoints</li>
+              <li>Set up Cloud SQL (PostgreSQL) + pgvector extension</li>
+              <li>Set up Memorystore (Redis) for caching</li>
+              <li>Create Dockerfile and deploy to Cloud Run</li>
+              <li>Configure Cloud Run &rarr; Cloud SQL private connection</li>
+              <li>Set up CI/CD pipeline (Cloud Build) for auto-deploy on push</li>
+              <li>Load test webhook endpoints (target: &lt;200ms p95 latency)</li>
+            </ul>
+            <div class="timeline-meta">
+              <div class="meta-item"><span class="meta-label">Effort:</span><span class="meta-val">6-8 days</span></div>
+              <div class="meta-item"><span class="meta-label">Dependencies:</span><span class="meta-val">Phase 1 (GCP project)</span></div>
+              <div class="meta-item"><span class="meta-label">Deliverable:</span><span class="meta-val">Deployed Cloud Run service</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Phase 4 -->
+    <div class="timeline-item">
+      <div class="timeline-dot"></div>
+      <div class="timeline-card">
+        <div class="timeline-header" onclick="toggleTimeline(this)">
+          <h4><span class="phase-badge">Phase 4</span> Build Service Flows</h4>
+          <div style="display:flex;align-items:center;gap:16px">
+            <span class="week">Week 3-5</span>
+            <span class="chevron">&#9662;</span>
+          </div>
+        </div>
+        <div class="timeline-body">
+          <div class="timeline-body-inner">
+            <ul class="task-list">
+              <li>Policy Info Flow: single page, webhook to /policy-inquiry, LLM response</li>
+              <li>Payment Flow: webhook + GROUP G4 verbatim payment disclosure</li>
+              <li>OTP Payment Flow: DTMF collection pages (card_number, expiry, cvv, amount), PCI compliance, ACH auth script page</li>
+              <li>Loan Flow: webhook to /loan-inquiry</li>
+              <li>Beneficiary Flow: webhook + GROUP G2 relationship restriction verbatim</li>
+              <li>Contact Change Flow: multi-page (ask what, collect address/phone, confirm, submit)</li>
+              <li>Document Flow: enforce GROUP G3 mail/fax only delivery policy</li>
+              <li>Privacy Flow: GLBA disclosure page + GROUP F5 opt-out script verbatim</li>
+              <li>FAQ Flow: wire to Vertex AI Search or /webhook/faq</li>
+              <li>Escalation Flow: single page, trigger Twilio transfer</li>
+              <li>Goodbye Flow: single page, hang up</li>
+              <li>Context switch config: locked (OTP), escalate_only (services), open (FAQ)</li>
+            </ul>
+            <div class="timeline-meta">
+              <div class="meta-item"><span class="meta-label">Effort:</span><span class="meta-val">10-12 days</span></div>
+              <div class="meta-item"><span class="meta-label">Dependencies:</span><span class="meta-val">Phase 2 + 3</span></div>
+              <div class="meta-item"><span class="meta-label">Deliverable:</span><span class="meta-val">All 13 flows operational</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Phase 5 -->
+    <div class="timeline-item">
+      <div class="timeline-dot"></div>
+      <div class="timeline-card">
+        <div class="timeline-header" onclick="toggleTimeline(this)">
+          <h4><span class="phase-badge">Phase 5</span> Connect Twilio via CCAI</h4>
+          <div style="display:flex;align-items:center;gap:16px">
+            <span class="week">Week 5</span>
+            <span class="chevron">&#9662;</span>
+          </div>
+        </div>
+        <div class="timeline-body">
+          <div class="timeline-body-inner">
+            <ul class="task-list">
+              <li>Set up CCAI integration in GCP (Dialogflow CX &rarr; Twilio connector)</li>
+              <li>Create Twilio Studio Flow or TwiML app with &lt;Connect&gt;&lt;VirtualAgent&gt;</li>
+              <li>Configure Twilio phone number to point to new CCAI endpoint</li>
+              <li>Test inbound calls end-to-end: greeting &rarr; auth &rarr; service &rarr; hangup</li>
+              <li>Configure DTMF passthrough for OTP payment collection</li>
+              <li>Set up call recording via Twilio (mirrors current recording-status webhook)</li>
+              <li>Test barge-in behavior and tune speech settings</li>
+            </ul>
+            <div class="timeline-meta">
+              <div class="meta-item"><span class="meta-label">Effort:</span><span class="meta-val">3-4 days</span></div>
+              <div class="meta-item"><span class="meta-label">Dependencies:</span><span class="meta-val">Phase 4 (all flows built)</span></div>
+              <div class="meta-item"><span class="meta-label">Deliverable:</span><span class="meta-val">Working phone number</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Phase 6 -->
+    <div class="timeline-item">
+      <div class="timeline-dot"></div>
+      <div class="timeline-card">
+        <div class="timeline-header" onclick="toggleTimeline(this)">
+          <h4><span class="phase-badge">Phase 6</span> Migrate RAG to Vertex AI Search</h4>
+          <div style="display:flex;align-items:center;gap:16px">
+            <span class="week">Week 5-6</span>
+            <span class="chevron">&#9662;</span>
+          </div>
+        </div>
+        <div class="timeline-body">
+          <div class="timeline-body-inner">
+            <ul class="task-list">
+              <li>Create Vertex AI Search data store with FAQ documents</li>
+              <li>Ingest existing knowledge base (from pgvector) into Vertex Search</li>
+              <li>Connect DFCX FAQ flow to Vertex AI Search data store</li>
+              <li>Configure Generative AI features for grounded FAQ responses</li>
+              <li>Test FAQ coverage: compare Vertex AI answers vs current pgvector RAG</li>
+              <li>Fallback: keep /webhook/faq as backup if Vertex coverage is insufficient</li>
+            </ul>
+            <div class="timeline-meta">
+              <div class="meta-item"><span class="meta-label">Effort:</span><span class="meta-val">4-5 days</span></div>
+              <div class="meta-item"><span class="meta-label">Dependencies:</span><span class="meta-val">Phase 4 (FAQ flow)</span></div>
+              <div class="meta-item"><span class="meta-label">Deliverable:</span><span class="meta-val">Grounded FAQ responses</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Phase 7 -->
+    <div class="timeline-item">
+      <div class="timeline-dot"></div>
+      <div class="timeline-card">
+        <div class="timeline-header" onclick="toggleTimeline(this)">
+          <h4><span class="phase-badge">Phase 7</span> Testing & Compliance Validation</h4>
+          <div style="display:flex;align-items:center;gap:16px">
+            <span class="week">Week 6-7</span>
+            <span class="chevron">&#9662;</span>
+          </div>
+        </div>
+        <div class="timeline-body">
+          <div class="timeline-body-inner">
+            <ul class="task-list">
+              <li>PCI compliance: verify DTMF-only card collection, no TTS/STT of card numbers</li>
+              <li>GLBA compliance: verify verbatim GROUP F5 privacy script delivery</li>
+              <li>Regulated content: verify GROUP G2, G3, G4 verbatim messages unchanged</li>
+              <li>Auth edge cases: IDK at every step, max retries, multi-policy, "other" persona</li>
+              <li>Context switch: verify locked OTP (no intent routes), escalate-only suppression</li>
+              <li>Stress test: 50 concurrent calls via Twilio load testing</li>
+              <li>Latency benchmark: target &lt;2s end-to-end response time</li>
+              <li>Regression test all 12 intent paths with 5 test scripts each</li>
+              <li>UAT with Colonial Penn stakeholders</li>
+            </ul>
+            <div class="timeline-meta">
+              <div class="meta-item"><span class="meta-label">Effort:</span><span class="meta-val">7-8 days</span></div>
+              <div class="meta-item"><span class="meta-label">Dependencies:</span><span class="meta-val">Phase 5 + 6</span></div>
+              <div class="meta-item"><span class="meta-label">Deliverable:</span><span class="meta-val">Compliance sign-off</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Phase 8 -->
+    <div class="timeline-item">
+      <div class="timeline-dot"></div>
+      <div class="timeline-card">
+        <div class="timeline-header" onclick="toggleTimeline(this)">
+          <h4><span class="phase-badge">Phase 8</span> Production Cutover</h4>
+          <div style="display:flex;align-items:center;gap:16px">
+            <span class="week">Week 7-8</span>
+            <span class="chevron">&#9662;</span>
+          </div>
+        </div>
+        <div class="timeline-body">
+          <div class="timeline-body-inner">
+            <ul class="task-list">
+              <li>Deploy DFCX agent to production environment (create version + deploy)</li>
+              <li>Set up Cloud Monitoring dashboards: latency, error rate, intent match rate</li>
+              <li>Configure alerting: webhook failures, high no-match rate, latency spikes</li>
+              <li>Canary deployment: route 10% of calls to DFCX, 90% to LangGraph</li>
+              <li>Monitor for 48 hours, compare metrics side-by-side</li>
+              <li>Ramp up: 25% &rarr; 50% &rarr; 100% over 1 week</li>
+              <li>Decommission LangGraph infrastructure after 2-week parallel run</li>
+              <li>Update operator dashboard to show DFCX analytics</li>
+              <li>Documentation handoff and runbook creation</li>
+            </ul>
+            <div class="timeline-meta">
+              <div class="meta-item"><span class="meta-label">Effort:</span><span class="meta-val">5-6 days</span></div>
+              <div class="meta-item"><span class="meta-label">Dependencies:</span><span class="meta-val">Phase 7 sign-off</span></div>
+              <div class="meta-item"><span class="meta-label">Deliverable:</span><span class="meta-val">Production live</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ── GAINS & LOSSES ── -->
+<section id="tradeoffs">
+  <div class="section-label">10 &mdash; Trade-offs</div>
+  <h2>Gains & <span class="grad">Losses</span></h2>
+  <p class="section-desc">What you gain and lose by migrating from LangGraph to Dialogflow CX.</p>
+
+  <div class="grid-2 fade-in">
+    <div class="card gl-col">
+      <h3><span style="color:var(--green);font-size:20px">&#10003;</span> What You Gain</h3>
+      <ul class="gl-list gains">
+        <li>No LLM router needed &mdash; DFCX NLU handles intent classification natively</li>
+        <li>Built-in STT/TTS &mdash; no Deepgram/ElevenLabs dependency or cost</li>
+        <li>Visual flow builder &mdash; non-dev team members can modify flows</li>
+        <li>Built-in retry/no-input handlers &mdash; replaces manual slot retry counters</li>
+        <li>Native Twilio CCAI connector &mdash; simpler than custom WebSocket middleware</li>
+        <li>Built-in conversation analytics &mdash; intent coverage, flow metrics, session logs</li>
+        <li>Multi-language support &mdash; add Spanish or other languages easily</li>
+        <li>Versioning & environments &mdash; draft / staging / production built in</li>
+        <li>Managed infrastructure &mdash; no server maintenance, auto-scaling</li>
+        <li>Compliance audit trail &mdash; all conversations logged by default</li>
+      </ul>
+    </div>
+    <div class="card gl-col">
+      <h3><span style="color:var(--rose);font-size:20px">&#10007;</span> What You Lose</h3>
+      <ul class="gl-list losses">
+        <li>LLM flexibility &mdash; pattern-based NLU less flexible than Groq/Llama for ambiguous queries</li>
+        <li>RAG control &mdash; pgvector RAG is more customizable than Vertex AI Search</li>
+        <li>Auth elegance &mdash; state machine spread across pages vs single ensure_authenticated()</li>
+        <li>Vendor lock-in &mdash; fully tied to Google Cloud Platform</li>
+        <li>Cost at scale &mdash; $20/1000 sessions can exceed self-hosted Groq at high volume</li>
+        <li>Audio fine-tuning &mdash; less granular than custom WebSocket pipeline</li>
+        <li>Real-time API option &mdash; can't easily use OpenAI Realtime for auth mode</li>
+        <li>Custom barge-in &mdash; VAD-level control lost with managed telephony</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ── COST COMPARISON ── -->
+<section id="costs">
+  <div class="section-label">11 &mdash; Financial Analysis</div>
+  <h2>Cost <span class="grad">Comparison</span></h2>
+  <p class="section-desc">Estimated monthly cost per 1,000 sessions (avg 4 min/call, 8 turns/call).</p>
+
+  <div class="fade-in" style="overflow-x:auto">
+    <table class="cost-table">
+      <thead>
+        <tr><th>Service</th><th>Current Stack</th><th>Cost/1K Sessions</th><th>DFCX Stack</th><th>Cost/1K Sessions</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Intent Classification</td>
+          <td>Groq llama-3.1-8b</td>
+          <td class="cost-val">$0.50</td>
+          <td>DFCX NLU (included)</td>
+          <td class="cost-val">$0.00</td>
+        </tr>
+        <tr>
+          <td>LLM Responses</td>
+          <td>Groq llama-3.3-70b</td>
+          <td class="cost-val">$3.20</td>
+          <td>Generative AI (included)</td>
+          <td class="cost-val">$0.00</td>
+        </tr>
+        <tr>
+          <td>Speech-to-Text</td>
+          <td>Deepgram nova-2</td>
+          <td class="cost-val">$4.80</td>
+          <td>Cloud Speech (included)</td>
+          <td class="cost-val">$0.00</td>
+        </tr>
+        <tr>
+          <td>Text-to-Speech</td>
+          <td>ElevenLabs</td>
+          <td class="cost-val">$8.00</td>
+          <td>Cloud TTS WaveNet (included)</td>
+          <td class="cost-val">$0.00</td>
+        </tr>
+        <tr>
+          <td>DFCX Sessions</td>
+          <td>&mdash;</td>
+          <td class="cost-val">$0.00</td>
+          <td>Dialogflow CX telephony</td>
+          <td class="cost-val">$20.00</td>
+        </tr>
+        <tr>
+          <td>Telephony</td>
+          <td>Twilio Voice</td>
+          <td class="cost-val">$5.20</td>
+          <td>Twilio Voice (same)</td>
+          <td class="cost-val">$5.20</td>
+        </tr>
+        <tr>
+          <td>Compute</td>
+          <td>VPS / Cloud VM</td>
+          <td class="cost-val">$15.00</td>
+          <td>Cloud Run (auto-scale)</td>
+          <td class="cost-val">$3.00</td>
+        </tr>
+        <tr>
+          <td>Database</td>
+          <td>PostgreSQL + Redis</td>
+          <td class="cost-val">$12.00</td>
+          <td>Cloud SQL + Memorystore</td>
+          <td class="cost-val">$18.00</td>
+        </tr>
+        <tr>
+          <td>RAG / Search</td>
+          <td>OpenAI embeddings</td>
+          <td class="cost-val">$0.80</td>
+          <td>Vertex AI Search</td>
+          <td class="cost-val">$2.50</td>
+        </tr>
+        <tr class="total-row">
+          <td colspan="2" style="text-align:right;font-family:var(--font-display)">Total per 1,000 sessions</td>
+          <td class="cost-val" style="color:var(--rose)">$49.50</td>
+          <td></td>
+          <td class="cost-val" style="color:var(--cyan)">$48.70</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card" style="margin-top:24px;padding:20px;border-color:rgba(245,158,11,0.3)">
+    <p style="font-size:13px;margin:0;color:var(--amber)"><strong>Note:</strong> At low volume (&lt;5K sessions/month), costs are roughly equivalent. At high volume (&gt;50K sessions/month), the current self-hosted stack becomes significantly cheaper because Groq/Deepgram scale linearly while DFCX's $20/1K sessions fee is fixed. Evaluate based on your expected call volume.</p>
+  </div>
+</section>
+
+<!-- ── Footer ── -->
+<section style="padding:40px 60px;text-align:center;border-top:1px solid var(--border)">
+  <p style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);margin:0">
+    CNO IVR &rarr; Dialogflow CX Migration Architecture &middot; Generated 2026-07-20 &middot; v1.0
+  </p>
+</section>
+
+</div>
+
+<script>
+// ── Sidebar active state + scroll progress ──
+const sections = document.querySelectorAll('section[id]');
+const navLinks = document.querySelectorAll('.nav-link');
+const progressFill = document.getElementById('progressFill');
+const progressText = document.getElementById('progressText');
+
+function updateNav() {
+  const scrollPos = window.scrollY + 200;
+  const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+  const scrollPct = Math.min(100, Math.round((window.scrollY / docHeight) * 100));
+
+  progressFill.style.width = scrollPct + '%';
+  progressText.textContent = scrollPct + '% read';
+
+  sections.forEach((section, i) => {
+    const top = section.offsetTop;
+    const bottom = top + section.offsetHeight;
+    if (scrollPos >= top && scrollPos < bottom) {
+      navLinks.forEach(l => l.classList.remove('active'));
+      const link = document.querySelector(`.nav-link[href="#${section.id}"]`);
+      if (link) link.classList.add('active');
+    }
+  });
+}
+
+window.addEventListener('scroll', updateNav, { passive: true });
+updateNav();
+
+// ── Timeline expand/collapse ──
+function toggleTimeline(header) {
+  const body = header.nextElementSibling;
+  const chevron = header.querySelector('.chevron');
+  const isOpen = body.classList.contains('open');
+
+  // Close all others
+  document.querySelectorAll('.timeline-body.open').forEach(b => {
+    b.classList.remove('open');
+    b.previousElementSibling.querySelector('.chevron').style.transform = '';
+  });
+
+  if (!isOpen) {
+    body.classList.add('open');
+    chevron.style.transform = 'rotate(180deg)';
+  }
+}
+
+// ── Scroll reveal ──
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      entry.target.classList.add('visible');
+    }
+  });
+}, { threshold: 0.1 });
+
+document.querySelectorAll('.fade-in').forEach(el => observer.observe(el));
+
+// ── Auto-expand first timeline item ──
+setTimeout(() => {
+  const first = document.querySelector('.timeline-header');
+  if (first) toggleTimeline(first);
+}, 500);
+</script>
+</body>
+</html>

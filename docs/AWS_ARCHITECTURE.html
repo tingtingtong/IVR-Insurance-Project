@@ -1,0 +1,1002 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CNO IVR - Complete AWS Production Architecture</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --surface: #1e293b;
+    --surface2: #334155;
+    --border: #475569;
+    --text: #e2e8f0;
+    --text-dim: #94a3b8;
+    --accent: #f97316;
+    --accent2: #38bdf8;
+    --green: #4ade80;
+    --red: #f87171;
+    --yellow: #fbbf24;
+    --purple: #a78bfa;
+    --pink: #f472b6;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg); color: var(--text); line-height:1.7; padding:0;
+  }
+  .header {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    border-bottom: 2px solid var(--accent);
+    padding: 3rem 2rem; text-align: center;
+  }
+  .header h1 {
+    font-size:2.2rem; font-weight:700;
+    background: linear-gradient(135deg, var(--accent), var(--yellow));
+    -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+    margin-bottom:0.5rem;
+  }
+  .header p { color:var(--text-dim); font-size:1.1rem; }
+  .container { max-width:1100px; margin:0 auto; padding:2rem; }
+
+  /* TOC */
+  .toc {
+    background:var(--surface); border:1px solid var(--border);
+    border-radius:12px; padding:1.5rem 2rem; margin-bottom:2.5rem;
+    columns: 2; column-gap: 2rem;
+  }
+  .toc h2 { font-size:1.2rem; color:var(--accent); margin-bottom:1rem; column-span:all; }
+  .toc ol { padding-left:1.5rem; }
+  .toc li { margin-bottom:0.35rem; break-inside:avoid; }
+  .toc a { color:var(--accent2); text-decoration:none; }
+  .toc a:hover { text-decoration:underline; }
+
+  /* Sections */
+  .section {
+    background:var(--surface); border:1px solid var(--border);
+    border-radius:12px; padding:2rem; margin-bottom:2rem;
+  }
+  .section h2 {
+    font-size:1.45rem; color:var(--accent);
+    border-bottom:2px solid var(--border); padding-bottom:0.5rem; margin-bottom:1.5rem;
+  }
+  .section h3 { font-size:1.1rem; color:var(--accent2); margin:1.5rem 0 0.75rem 0; }
+  p, li { margin-bottom:0.7rem; }
+  ul, ol { padding-left:1.5rem; margin-bottom:1rem; }
+
+  /* Code */
+  pre {
+    background:#0d1117; border:1px solid var(--border); border-radius:8px;
+    padding:1.2rem; overflow-x:auto; font-family:'Cascadia Code','Fira Code','Consolas',monospace;
+    font-size:0.85rem; line-height:1.6; margin-bottom:1.2rem; color:#c9d1d9;
+  }
+  code {
+    font-family:'Cascadia Code','Fira Code','Consolas',monospace;
+    background:var(--surface2); padding:0.15rem 0.4rem; border-radius:4px;
+    font-size:0.85rem; color:var(--yellow);
+  }
+  pre code { background:none; padding:0; color:inherit; }
+
+  /* Tables */
+  table { width:100%; border-collapse:collapse; margin-bottom:1.2rem; font-size:0.9rem; }
+  th {
+    background:var(--surface2); color:var(--accent); font-weight:600;
+    text-align:left; padding:0.65rem 0.8rem; border:1px solid var(--border);
+  }
+  td { padding:0.55rem 0.8rem; border:1px solid var(--border); }
+  tr:nth-child(even) td { background:rgba(51,65,85,0.3); }
+  tr:hover td { background:rgba(249,115,22,0.06); }
+
+  /* Badges */
+  .badge {
+    display:inline-block; padding:0.12rem 0.55rem; border-radius:9999px;
+    font-size:0.75rem; font-weight:600;
+  }
+  .badge-chosen  { background:rgba(74,222,128,0.2); color:var(--green); border:1px solid var(--green); }
+  .badge-critical{ background:rgba(248,113,113,0.2); color:var(--red); border:1px solid var(--red); }
+  .badge-aws     { background:rgba(249,115,22,0.2); color:var(--accent); border:1px solid var(--accent); }
+  .badge-ext     { background:rgba(167,139,250,0.2); color:var(--purple); border:1px solid var(--purple); }
+
+  /* Decision box */
+  .decision {
+    background:rgba(56,189,248,0.08); border-left:4px solid var(--accent2);
+    padding:1rem 1.2rem; border-radius:0 8px 8px 0; margin-bottom:1.2rem;
+  }
+  .decision strong { color:var(--accent2); }
+
+  /* Flow steps */
+  .flow-step { display:flex; align-items:stretch; margin-bottom:0.5rem; }
+  .flow-line {
+    width:3px; background:var(--accent); margin:0 1.2rem; flex-shrink:0; position:relative;
+  }
+  .flow-line::before {
+    content:""; width:12px; height:12px; background:var(--accent);
+    border-radius:50%; position:absolute; top:0.7rem; left:-4.5px;
+  }
+  .flow-content {
+    background:var(--surface2); border-radius:8px; padding:0.8rem 1rem; flex:1;
+  }
+  .flow-content .label { color:var(--accent); font-weight:600; font-size:0.9rem; }
+  .flow-content .detail { color:var(--text-dim); font-size:0.83rem; }
+
+  /* Checklist */
+  .checklist { list-style:none; padding:0; }
+  .checklist li {
+    padding:0.45rem 0 0.45rem 2rem; position:relative;
+    border-bottom:1px solid rgba(71,85,105,0.3);
+  }
+  .checklist li::before {
+    content:"\2610"; position:absolute; left:0; color:var(--accent); font-size:1.1rem;
+  }
+
+  /* Cost highlight */
+  .cost-total {
+    background:rgba(249,115,22,0.1); border:1px solid var(--accent);
+    border-radius:8px; padding:1rem; text-align:center; margin:1rem 0;
+    font-size:1.3rem; font-weight:700; color:var(--accent);
+  }
+
+  /* Two-column layout */
+  .cols { display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1rem; }
+  .cols .col { background:var(--surface2); border-radius:8px; padding:1rem; }
+  .cols .col h4 { color:var(--accent2); margin-bottom:0.5rem; font-size:0.95rem; }
+  @media(max-width:768px) { .cols{grid-template-columns:1fr;} .toc{columns:1;} }
+
+  /* Layer diagram */
+  .layer {
+    border:1px solid var(--border); border-radius:8px; padding:0.8rem 1rem;
+    margin-bottom:0.5rem; position:relative; padding-left:3.5rem;
+  }
+  .layer::before {
+    position:absolute; left:0.8rem; top:50%; transform:translateY(-50%);
+    font-size:1.2rem;
+  }
+  .layer-1 { border-left:4px solid var(--red); }
+  .layer-1::before { content:"1"; color:var(--red); font-weight:700; }
+  .layer-2 { border-left:4px solid var(--accent); }
+  .layer-2::before { content:"2"; color:var(--accent); font-weight:700; }
+  .layer-3 { border-left:4px solid var(--yellow); }
+  .layer-3::before { content:"3"; color:var(--yellow); font-weight:700; }
+  .layer-4 { border-left:4px solid var(--green); }
+  .layer-4::before { content:"4"; color:var(--green); font-weight:700; }
+  .layer-5 { border-left:4px solid var(--purple); }
+  .layer-5::before { content:"5"; color:var(--purple); font-weight:700; }
+  .layer strong { color:var(--accent2); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>CNO IVR - Complete AWS Production Architecture</h1>
+  <p>Hosting, RAG pipeline, guardrails, multi-modal STT/TTS, model evaluation, CI/CD, and cost analysis</p>
+</div>
+
+<div class="container">
+
+<!-- TOC -->
+<div class="toc">
+  <h2>Table of Contents</h2>
+  <ol>
+    <li><a href="#s1">Architecture Overview</a></li>
+    <li><a href="#s2">Network & VPC Design</a></li>
+    <li><a href="#s3">Compute Layer (ECS Fargate)</a></li>
+    <li><a href="#s4">Database Layer</a></li>
+    <li><a href="#s5">Caching Layer (ElastiCache)</a></li>
+    <li><a href="#s6">RAG Pipeline on AWS</a></li>
+    <li><a href="#s7">Vector Database (RDS pgvector)</a></li>
+    <li><a href="#s8">Embedding Model Hosting</a></li>
+    <li><a href="#s9">LLM Integration Layer</a></li>
+    <li><a href="#s10">Guardrails & Content Safety</a></li>
+    <li><a href="#s11">Multi-Modal Pipeline (STT/TTS)</a></li>
+    <li><a href="#s12">Model Evaluation & MLOps</a></li>
+    <li><a href="#s13">Document Ingestion Pipeline</a></li>
+    <li><a href="#s14">Observability & Monitoring</a></li>
+    <li><a href="#s15">Security Architecture</a></li>
+    <li><a href="#s16">CI/CD Pipeline</a></li>
+    <li><a href="#s17">Disaster Recovery & HA</a></li>
+    <li><a href="#s18">Cost Estimation</a></li>
+    <li><a href="#s19">Scaling Strategy</a></li>
+    <li><a href="#s20">Migration Plan (Dev to Prod)</a></li>
+  </ol>
+</div>
+
+<!-- ===== SECTION 1 ===== -->
+<div class="section" id="s1">
+  <h2>1. Architecture Overview</h2>
+
+  <h3>High-level AWS topology</h3>
+  <pre><code>                              Internet
+                                 |
+                        +--------v--------+
+                        |  CloudFront CDN |  (static assets, dashboard)
+                        +--------+--------+
+                                 |
+                        +--------v--------+
+                        | ALB (Application|
+                        | Load Balancer)  |  TLS termination, path routing
+                        +---+------+------+
+                            |      |
+              +-------------+      +-------------+
+              |                                   |
+    +---------v----------+           +-----------v-----------+
+    | ECS Fargate        |           | ECS Fargate           |
+    | IVR App Service    |           | Document Ingestion    |
+    | (FastAPI+LangGraph)|           | Worker Service        |
+    | Auto-scaling 2-10  |           | (batch processing)    |
+    +----+----+----+-----+           +-----------+-----------+
+         |    |    |                              |
+    +----v--+ | +--v-------+           +----------v----------+
+    |Redis  | | |RDS PG    |           | S3 Bucket           |
+    |Elasti | | |pgvector  |           | (knowledge docs)    |
+    |Cache  | | |Multi-AZ  |           +---------------------+
+    +-------+ | +----------+
+              |
+    +---------v-----------+          +-----------------------+
+    | External APIs       |          | CloudWatch / X-Ray    |
+    | Groq, OpenAI,       |          | Logfire               |
+    | Deepgram, ElevenLabs|          | (Observability)       |
+    | Twilio              |          +-----------------------+
+    +---------------------+</code></pre>
+
+  <h3>AWS services used</h3>
+  <table>
+    <tr><th>Service</th><th>Purpose</th><th>Why This Service</th></tr>
+    <tr><td><span class="badge badge-aws">ECS Fargate</span></td><td>Application hosting</td><td>Serverless containers, auto-scaling, pay-per-use, no EC2 management</td></tr>
+    <tr><td><span class="badge badge-aws">ALB</span></td><td>Load balancing + WebSocket</td><td>Layer 7 routing, WebSocket for Twilio Media Streams, TLS termination</td></tr>
+    <tr><td><span class="badge badge-aws">RDS PostgreSQL</span></td><td>Checkpoints + pgvector</td><td>Managed PG, Multi-AZ, automated backups, pgvector extension</td></tr>
+    <tr><td><span class="badge badge-aws">ElastiCache Redis</span></td><td>Session state + RAG cache</td><td>Managed Redis, replication, sub-ms latency</td></tr>
+    <tr><td><span class="badge badge-aws">S3</span></td><td>Document storage</td><td>Knowledge base docs, model artifacts, eval results</td></tr>
+    <tr><td><span class="badge badge-aws">SageMaker</span></td><td>Embedding model (future)</td><td>Self-hosted embeddings when scale justifies GPU cost</td></tr>
+    <tr><td><span class="badge badge-aws">CloudWatch</span></td><td>Metrics + alerting</td><td>Native monitoring, custom metrics for RAG latency/cache</td></tr>
+    <tr><td><span class="badge badge-aws">X-Ray</span></td><td>Distributed tracing</td><td>Trace across ECS, Redis, RDS, external APIs</td></tr>
+    <tr><td><span class="badge badge-aws">Secrets Manager</span></td><td>API key management</td><td>Rotate keys without redeployment</td></tr>
+    <tr><td><span class="badge badge-aws">WAF</span></td><td>Web application firewall</td><td>DDoS protection, SQL injection, rate limiting</td></tr>
+    <tr><td><span class="badge badge-aws">CodePipeline</span></td><td>CI/CD</td><td>Automated build, test, deploy</td></tr>
+    <tr><td><span class="badge badge-aws">SQS</span></td><td>Message queue</td><td>Decouple document ingestion from main app</td></tr>
+  </table>
+</div>
+
+<!-- ===== SECTION 2 ===== -->
+<div class="section" id="s2">
+  <h2>2. Network & VPC Design</h2>
+
+  <h3>VPC layout</h3>
+  <pre><code>VPC: 10.0.0.0/16  (cno-ivr-vpc)
+|
++-- Public Subnets (10.0.1.0/24, 10.0.2.0/24) -- 2 AZs
+|   |-- ALB (internet-facing)
+|   |-- NAT Gateway (private subnet outbound)
+|
++-- Private App Subnets (10.0.10.0/24, 10.0.11.0/24) -- 2 AZs
+|   |-- ECS Fargate tasks (IVR app)
+|   |-- ECS Fargate tasks (ingestion worker)
+|
++-- Private Data Subnets (10.0.20.0/24, 10.0.21.0/24) -- 2 AZs
+    |-- RDS PostgreSQL (Multi-AZ)
+    |-- ElastiCache Redis (cluster mode)</code></pre>
+
+  <h3>Security groups</h3>
+  <table>
+    <tr><th>SG Name</th><th>Inbound</th><th>Outbound</th><th>Applied To</th></tr>
+    <tr><td><code>sg-alb</code></td><td>443 from 0.0.0.0/0</td><td>All to <code>sg-app</code></td><td>ALB</td></tr>
+    <tr><td><code>sg-app</code></td><td>8080 from <code>sg-alb</code></td><td>5432 to <code>sg-db</code>, 6379 to <code>sg-redis</code>, 443 to 0.0.0.0/0</td><td>ECS tasks</td></tr>
+    <tr><td><code>sg-db</code></td><td>5432 from <code>sg-app</code></td><td>None</td><td>RDS</td></tr>
+    <tr><td><code>sg-redis</code></td><td>6379 from <code>sg-app</code></td><td>None</td><td>ElastiCache</td></tr>
+  </table>
+
+  <div class="decision">
+    <strong>Why 2 AZs minimum?</strong> RDS Multi-AZ requires 2 AZs for failover. ECS distributes tasks for availability. ElastiCache replicates across AZs. ALB requires subnets in 2+ AZs.
+  </div>
+</div>
+
+<!-- ===== SECTION 3 ===== -->
+<div class="section" id="s3">
+  <h2>3. Compute Layer (ECS Fargate)</h2>
+
+  <h3>Why ECS Fargate?</h3>
+  <table>
+    <tr><th>Option</th><th>Pros</th><th>Cons</th><th>Cost (20 calls)</th></tr>
+    <tr>
+      <td>ECS Fargate <span class="badge badge-chosen">chosen</span></td>
+      <td>No EC2 mgmt, auto-scaling, pay per vCPU-second, WebSocket support</td>
+      <td>Slightly costlier than EC2 at steady load</td><td>~$150/mo</td>
+    </tr>
+    <tr><td>ECS on EC2</td><td>Cheaper steady state, more control</td><td>EC2 management, capacity planning</td><td>~$100/mo</td></tr>
+    <tr><td>EKS</td><td>Industry standard, portable</td><td>Massive overhead for single-app</td><td>~$200/mo + $73 control plane</td></tr>
+    <tr><td>Lambda</td><td>Pay-per-invocation, zero idle</td><td>15-min timeout, no WebSocket, cold starts</td><td>Unusable for WS</td></tr>
+    <tr><td>App Runner</td><td>Simplest deployment</td><td>No WebSocket support</td><td>N/A</td></tr>
+  </table>
+
+  <h3>Task definition</h3>
+  <pre><code>{
+  "family": "cno-ivr-app",
+  "cpu": "1024",        // 1 vCPU
+  "memory": "2048",     // 2 GB
+  "containerDefinitions": [{
+    "name": "ivr-app",
+    "image": "ECR_URI:latest",
+    "portMappings": [{"containerPort": 8080}],
+    "secrets": [
+      {"name": "GROQ_API_KEY",   "valueFrom": "arn:aws:secretsmanager:..."},
+      {"name": "OPENAI_API_KEY", "valueFrom": "arn:aws:secretsmanager:..."}
+    ]
+  }]
+}</code></pre>
+
+  <h3>Auto-scaling</h3>
+  <table>
+    <tr><th>Metric</th><th>Target</th><th>Scale Out</th><th>Scale In</th><th>Min/Max</th></tr>
+    <tr><td>CPU utilization</td><td>60%</td><td>+1 task when &gt;60% for 2 min</td><td>-1 when &lt;30% for 5 min</td><td>2 / 10</td></tr>
+    <tr><td>ALB connections</td><td>100/task</td><td>+1 when &gt;100</td><td>-1 when &lt;30</td><td>2 / 10</td></tr>
+  </table>
+</div>
+
+<!-- ===== SECTION 4 ===== -->
+<div class="section" id="s4">
+  <h2>4. Database Layer</h2>
+
+  <h3>RDS PostgreSQL + pgvector</h3>
+  <table>
+    <tr><th>Parameter</th><th>Value</th><th>Rationale</th></tr>
+    <tr><td>Engine</td><td>PostgreSQL 16</td><td>pgvector extension support, latest features</td></tr>
+    <tr><td>Instance</td><td><code>db.r6g.large</code> (2 vCPU, 16 GB)</td><td>Sufficient for vector search workload</td></tr>
+    <tr><td>Storage</td><td>100 GB gp3 (3000 IOPS)</td><td>pgvector indexes are memory-heavy, storage-light</td></tr>
+    <tr><td>Multi-AZ</td><td>Yes</td><td>Automatic failover, zero data loss</td></tr>
+    <tr><td>Read replica</td><td>1 (optional)</td><td>Offload RAG reads from primary</td></tr>
+    <tr><td>Backup</td><td>7-day automated</td><td>Point-in-time recovery</td></tr>
+    <tr><td>Encryption</td><td>AES-256 (rest), TLS (transit)</td><td>Compliance requirement</td></tr>
+  </table>
+
+  <h3>Connection pooling</h3>
+  <table>
+    <tr><th>Option</th><th>Approach</th><th>Why</th></tr>
+    <tr><td>RDS Proxy <span class="badge badge-chosen">chosen</span></td><td>Managed connection pooler</td><td>Connection multiplexing, IAM auth, failover-aware, no extra infra</td></tr>
+    <tr><td>PgBouncer on ECS</td><td>Sidecar container</td><td>Full control but operational overhead</td></tr>
+    <tr><td>SQLAlchemy pool</td><td>Application-level</td><td>Built-in but doesn't help across ECS tasks</td></tr>
+  </table>
+</div>
+
+<!-- ===== SECTION 5 ===== -->
+<div class="section" id="s5">
+  <h2>5. Caching Layer (ElastiCache Redis)</h2>
+
+  <table>
+    <tr><th>Parameter</th><th>Value</th><th>Rationale</th></tr>
+    <tr><td>Engine</td><td>Redis 7.x</td><td>Latest features, Lua scripting</td></tr>
+    <tr><td>Node type</td><td><code>cache.r6g.large</code></td><td>13 GB memory for sessions + RAG cache</td></tr>
+    <tr><td>Cluster mode</td><td>Disabled (single shard)</td><td>Data fits in one node; simpler ops</td></tr>
+    <tr><td>Replicas</td><td>1 (Multi-AZ)</td><td>Read replica for failover</td></tr>
+    <tr><td>Encryption</td><td>In-transit + at-rest</td><td>PII in session state</td></tr>
+    <tr><td>Eviction</td><td><code>allkeys-lru</code></td><td>Auto-evict LRU when memory full</td></tr>
+  </table>
+
+  <h3>Data stored in Redis</h3>
+  <table>
+    <tr><th>Key Pattern</th><th>Data</th><th>TTL</th><th>Size</th></tr>
+    <tr><td><code>cno:session:{call_sid}</code></td><td>IVR session state (auth, slots, messages)</td><td>1 hour</td><td>~2 KB</td></tr>
+    <tr><td><code>cno:rag:{hash}</code></td><td>Cached RAG context strings</td><td>1 hour</td><td>~1 KB</td></tr>
+  </table>
+</div>
+
+<!-- ===== SECTION 6 ===== -->
+<div class="section" id="s6">
+  <h2>6. RAG Pipeline on AWS</h2>
+
+  <h3>End-to-end flow</h3>
+  <div class="flow-step">
+    <div class="flow-line"></div>
+    <div class="flow-content">
+      <div class="label">1. Caller Query</div>
+      <div class="detail">Natural language from Deepgram STT &rarr; ECS Fargate IVR App</div>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-line"></div>
+    <div class="flow-content">
+      <div class="label">2. Redis Cache Check (ElastiCache)</div>
+      <div class="detail">SHA256(query) lookup &mdash; hit returns in 2-5ms, skip steps 3-6</div>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-line"></div>
+    <div class="flow-content">
+      <div class="label">3. Category Detection</div>
+      <div class="detail">Keyword matching &lt;1ms &rarr; narrows pgvector search to relevant category</div>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-line"></div>
+    <div class="flow-content">
+      <div class="label">4. Embed Query (OpenAI API or SageMaker)</div>
+      <div class="detail">text-embedding-3-small via HTTPS ~80ms &mdash; future: SageMaker VPC endpoint ~30ms</div>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-line"></div>
+    <div class="flow-content">
+      <div class="label">5. Vector Search (RDS pgvector)</div>
+      <div class="detail">HNSW ANN search with metadata filter via run_in_executor &mdash; 9 candidates ~50-100ms</div>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-line"></div>
+    <div class="flow-content">
+      <div class="label">6. LLM Re-Rank (Groq API)</div>
+      <div class="detail">Llama-3.1-8B scores 9 candidates in parallel &rarr; top 3 ~200ms</div>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-line"></div>
+    <div class="flow-content">
+      <div class="label">7. Cache & Return</div>
+      <div class="detail">Store in ElastiCache (1hr TTL), return concatenated context to FAQ node</div>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-line"></div>
+    <div class="flow-content">
+      <div class="label">8. LLM Answer (Groq Llama-3.3-70B)</div>
+      <div class="detail">Grounded 1-2 sentence voice answer &rarr; ElevenLabs TTS &rarr; Twilio &rarr; caller</div>
+    </div>
+  </div>
+
+  <div class="cols">
+    <div class="col">
+      <h4>Cache Hit Latency</h4>
+      <p style="font-size:1.5rem;font-weight:700;color:var(--green);margin:0;">2-5 ms</p>
+    </div>
+    <div class="col">
+      <h4>Cache Miss Latency</h4>
+      <p style="font-size:1.5rem;font-weight:700;color:var(--yellow);margin:0;">350-500 ms</p>
+      <p style="font-size:0.8rem;color:var(--text-dim);margin:0;">(embed 80 + search 100 + rerank 200 + overhead 50)</p>
+    </div>
+  </div>
+</div>
+
+<!-- ===== SECTION 7 ===== -->
+<div class="section" id="s7">
+  <h2>7. Vector Database (RDS pgvector)</h2>
+
+  <h3>Why RDS pgvector over dedicated vector DBs?</h3>
+  <table>
+    <tr><th>Option</th><th>Service</th><th>Cost/Month</th><th>Ops</th><th>Integration</th></tr>
+    <tr>
+      <td>RDS pgvector <span class="badge badge-chosen">chosen</span></td>
+      <td>RDS PostgreSQL</td><td>~$150</td><td>Low (managed)</td><td>Same DB as LangGraph checkpoints</td>
+    </tr>
+    <tr><td>OpenSearch Serverless</td><td>Managed</td><td>~$300+</td><td>Low</td><td>Separate service, different query syntax</td></tr>
+    <tr><td>Pinecone (external)</td><td>SaaS</td><td>~$70</td><td>None</td><td>Data leaves AWS</td></tr>
+    <tr><td>Qdrant on ECS</td><td>Fargate</td><td>~$100</td><td>Medium</td><td>Separate container, backup mgmt</td></tr>
+  </table>
+
+  <h3>pgvector setup on RDS</h3>
+  <pre><code>-- Enable extension
+CREATE EXTENSION IF NOT EXISTS vector;
+
+-- HNSW index (create when vectors > 500)
+CREATE INDEX CONCURRENTLY idx_embedding_hnsw
+ON langchain_pg_embedding
+USING hnsw (embedding vector_cosine_ops)
+WITH (m = 16, ef_construction = 64);
+
+-- Metadata index for filtered searches
+CREATE INDEX idx_embedding_category
+ON langchain_pg_embedding
+USING gin (cmetadata jsonb_path_ops);</code></pre>
+
+  <h3>Scaling path</h3>
+  <table>
+    <tr><th>Scale</th><th>Vectors</th><th>Strategy</th></tr>
+    <tr><td>Current</td><td>~50</td><td>Sequential scan, single PG instance</td></tr>
+    <tr><td>Phase 2</td><td>500-5K</td><td>HNSW index, RDS Proxy connection pooling</td></tr>
+    <tr><td>Phase 3</td><td>5K-50K</td><td>Read replicas, partitioned tables by category</td></tr>
+    <tr><td>Phase 4</td><td>50K+</td><td>Aurora Serverless v2 or dedicated vector DB</td></tr>
+  </table>
+</div>
+
+<!-- ===== SECTION 8 ===== -->
+<div class="section" id="s8">
+  <h2>8. Embedding Model Hosting (SageMaker)</h2>
+
+  <div class="cols">
+    <div class="col">
+      <h4>Phase 1: OpenAI API (current)</h4>
+      <p><code>ECS &rarr; HTTPS &rarr; OpenAI API</code></p>
+      <p>Model: <code>text-embedding-3-small</code><br>Latency: ~80ms<br>Cost: $0.00002/1K tokens<br>Good for: &lt;100K queries/day</p>
+    </div>
+    <div class="col">
+      <h4>Phase 2: SageMaker (future)</h4>
+      <p><code>ECS &rarr; VPC Endpoint &rarr; SageMaker</code></p>
+      <p>Model: <code>bge-large-en-v1.5</code><br>Latency: ~30ms (in-VPC)<br>Cost: $1.41/hr (ml.g5.xlarge)<br>Good for: &gt;100K queries/day</p>
+    </div>
+  </div>
+
+  <h3>When to migrate to SageMaker</h3>
+  <table>
+    <tr><th>Trigger</th><th>Threshold</th><th>Action</th></tr>
+    <tr><td>Daily query volume</td><td>&gt; 100,000</td><td>SageMaker becomes cheaper than API</td></tr>
+    <tr><td>Latency requirement</td><td>&lt; 50ms p95</td><td>In-VPC inference is 30ms vs 80ms API</td></tr>
+    <tr><td>Data residency</td><td>Must stay in AWS</td><td>Can't send to OpenAI</td></tr>
+    <tr><td>Monthly embedding cost</td><td>&gt; $600</td><td>SageMaker at $1,015/mo = unlimited queries</td></tr>
+  </table>
+</div>
+
+<!-- ===== SECTION 9 ===== -->
+<div class="section" id="s9">
+  <h2>9. LLM Integration Layer</h2>
+
+  <h3>Current: External LLM APIs</h3>
+  <table>
+    <tr><th>Node</th><th>Model</th><th>API</th><th>Purpose</th></tr>
+    <tr><td>Router</td><td>Llama-3.1-8B</td><td><span class="badge badge-ext">Groq</span></td><td>Intent classification (~50ms)</td></tr>
+    <tr><td>FAQ</td><td>Llama-3.3-70B</td><td><span class="badge badge-ext">Groq</span></td><td>Grounded answers (~150ms)</td></tr>
+    <tr><td>Re-ranker</td><td>Llama-3.1-8B</td><td><span class="badge badge-ext">Groq</span></td><td>Relevance scoring (~200ms parallel)</td></tr>
+    <tr><td>Policy/Payment/Loan</td><td>Llama-3.3-70B</td><td><span class="badge badge-ext">Groq</span></td><td>Domain-specific responses</td></tr>
+  </table>
+
+  <h3>Why Groq over AWS Bedrock?</h3>
+  <table>
+    <tr><th>Option</th><th>Models</th><th>Latency</th><th>Cost/M tokens</th></tr>
+    <tr><td>Groq <span class="badge badge-chosen">chosen</span></td><td>Llama 3.x (8B, 70B)</td><td>50-200ms (fastest)</td><td>$0.05-0.27</td></tr>
+    <tr><td>AWS Bedrock</td><td>Claude, Llama, Titan</td><td>200-500ms</td><td>$0.15-3.00</td></tr>
+    <tr><td>OpenAI</td><td>GPT-4o, GPT-4o-mini</td><td>300-1000ms</td><td>$2.50-10.00</td></tr>
+    <tr><td>SageMaker</td><td>Llama 3 70B</td><td>500-1500ms</td><td>~$4,000/mo fixed</td></tr>
+  </table>
+
+  <div class="decision">
+    <strong>Decision:</strong> Groq for IVR latency. 50ms router vs 300ms Bedrock is noticeable to callers. Bedrock as fallback for 503/429 errors. Canned response as last resort.
+  </div>
+
+  <h3>Resilience pattern</h3>
+  <pre><code>Primary:     Groq API (Llama-3.3-70B)     -- 50-200ms
+Fallback:    AWS Bedrock (Claude Sonnet)   -- 300-500ms  (if Groq 503/429)
+Last resort: Canned response              -- 0ms        (if all APIs fail)</code></pre>
+</div>
+
+<!-- ===== SECTION 10 ===== -->
+<div class="section" id="s10">
+  <h2>10. Guardrails & Content Safety</h2>
+
+  <p>Insurance IVR handles sensitive financial data (policy numbers, SSN, bank accounts). Guardrails prevent hallucination, PII leakage, prompt injection, and off-topic responses.</p>
+
+  <h3>Guardrail layers</h3>
+
+  <div class="layer layer-1">
+    <strong>Input Guardrails</strong> (before LLM) &mdash; PII detection & redaction in logs, prompt injection detection, topic boundary enforcement
+  </div>
+  <div class="layer layer-2">
+    <strong>RAG Guardrails</strong> (retrieval) &mdash; Context grounding (answer ONLY from retrieved chunks), source attribution, confidence threshold (skip if similarity &lt; 0.5)
+  </div>
+  <div class="layer layer-3">
+    <strong>Output Guardrails</strong> (after LLM) &mdash; Financial advice prohibition, PII masking in TTS, response length limits (max 2 sentences), hallucination detection
+  </div>
+  <div class="layer layer-4">
+    <strong>Compliance Guardrails</strong> (regulatory) &mdash; GLBA privacy script enforcement, ACH authorization script, call recording disclosure, relationship restriction
+  </div>
+  <div class="layer layer-5">
+    <strong>AWS Bedrock Guardrails</strong> (optional) &mdash; Denied topics (investment/legal/medical advice), PII filters (SSN, cards), content filters, grounding check. ~$1/1000 text units.
+  </div>
+
+  <h3>Implementation mapping</h3>
+  <table>
+    <tr><th>Guardrail</th><th>Implementation</th><th>AWS Service</th></tr>
+    <tr><td>PII redaction</td><td><code>utils/pii_redactor.py</code> (regex)</td><td>Comprehend (optional)</td></tr>
+    <tr><td>Prompt injection</td><td>System prompt hardening + keyword detection</td><td>Bedrock Guardrails (optional)</td></tr>
+    <tr><td>Topic enforcement</td><td>Router node intent classification</td><td>Built-in (LangGraph)</td></tr>
+    <tr><td>Context grounding</td><td>FAQ prompt: "Use ONLY the following context"</td><td>Built-in (RAG pipeline)</td></tr>
+    <tr><td>Financial advice block</td><td>System prompt prohibition</td><td>Built-in</td></tr>
+    <tr><td>Response length</td><td><code>max_tokens=200</code></td><td>Built-in (LangChain)</td></tr>
+    <tr><td>PII in logs</td><td>pii_redactor strips SSN/cards from logs</td><td>CloudWatch log filtering</td></tr>
+    <tr><td>Compliance scripts</td><td>RAG knowledge base includes exact scripts</td><td>Built-in (seed_knowledge.py)</td></tr>
+  </table>
+</div>
+
+<!-- ===== SECTION 11 ===== -->
+<div class="section" id="s11">
+  <h2>11. Multi-Modal Pipeline (STT/TTS)</h2>
+
+  <h3>Audio processing architecture</h3>
+  <pre><code>+----------+     +---------+     +----------+     +-----------+     +----------+
+|  Twilio  |     |  ALB    |     | ECS App  |     | Deepgram  |     | Eleven   |
+|  PSTN    |&lt;--&gt;| WebSock |&lt;--&gt;| WebSocket|&lt;--&gt;| Nova-2    |     | Labs     |
+|  Call    |     |  Proxy  |     | Handler  |     | (STT)     |     | (TTS)    |
++----------+     +---------+     +----+-----+     +-----------+     +-----+----+
+                                      |                                   |
+                                      +------ LangGraph Processing ------+
+                                      |                                   |
+                                 mulaw 8kHz                          mulaw 8kHz
+                                 audio chunks                        audio stream</code></pre>
+
+  <h3>STT: Deepgram Nova-2 vs AWS Transcribe</h3>
+  <table>
+    <tr><th>Feature</th><th>Deepgram Nova-2 <span class="badge badge-chosen">chosen</span></th><th>AWS Transcribe Streaming</th></tr>
+    <tr><td>Latency</td><td>100-200ms</td><td>300-500ms</td></tr>
+    <tr><td>Accuracy (telephony)</td><td>95%+</td><td>90-93%</td></tr>
+    <tr><td>Smart formatting</td><td>Built-in (dates, currency, phones)</td><td>Limited</td></tr>
+    <tr><td>Interim results</td><td>Yes (real-time)</td><td>Yes (higher latency)</td></tr>
+    <tr><td>Cost</td><td>~$0.0043/min</td><td>~$0.024/min</td></tr>
+  </table>
+
+  <h3>TTS: ElevenLabs vs Amazon Polly</h3>
+  <table>
+    <tr><th>Feature</th><th>ElevenLabs <span class="badge badge-chosen">chosen</span></th><th>Amazon Polly</th></tr>
+    <tr><td>Voice quality</td><td>Near-human (neural)</td><td>Good but robotic at times</td></tr>
+    <tr><td>Latency (first byte)</td><td>~200ms</td><td>~300ms</td></tr>
+    <tr><td>Custom voices</td><td>Yes (voice cloning)</td><td>No</td></tr>
+    <tr><td>Streaming</td><td>WebSocket native</td><td>HTTP chunked</td></tr>
+    <tr><td>Cost</td><td>~$0.30/1K chars</td><td>~$0.016/1K chars</td></tr>
+  </table>
+
+  <div class="decision">
+    <strong>Decision:</strong> ElevenLabs for production voice quality. Amazon Polly as cost-saving fallback for system announcements (hold messages, "please wait" prompts).
+  </div>
+</div>
+
+<!-- ===== SECTION 12 ===== -->
+<div class="section" id="s12">
+  <h2>12. Model Evaluation & MLOps</h2>
+
+  <h3>Evaluation pipeline</h3>
+  <pre><code>EventBridge (weekly) --> Lambda (trigger) --> ECS Fargate (eval task) --> S3 (results)
+                                                     |                         |
+                                               Groq API (judge)         CloudWatch (metrics)</code></pre>
+
+  <h3>Metrics tracked</h3>
+  <table>
+    <tr><th>Metric</th><th>Source</th><th>Target</th><th>CloudWatch Alarm</th></tr>
+    <tr><td>RAG Faithfulness</td><td>eval_rag.py</td><td>&ge; 0.85</td><td>Alert if &lt; 0.75 for 2 runs</td></tr>
+    <tr><td>Contextual Relevancy</td><td>eval_rag.py</td><td>&ge; 0.80</td><td>Alert if &lt; 0.70</td></tr>
+    <tr><td>Answer Relevancy</td><td>eval_rag.py</td><td>&ge; 0.85</td><td>Alert if &lt; 0.75</td></tr>
+    <tr><td>Intent Accuracy</td><td>eval_intents.py</td><td>&ge; 0.90</td><td>Alert if &lt; 0.80</td></tr>
+    <tr><td>Slot Extraction</td><td>eval_slots.py</td><td>&ge; 0.85</td><td>Alert if &lt; 0.75</td></tr>
+    <tr><td>E2E Call Success</td><td>eval_e2e_twilio.py</td><td>&ge; 0.90</td><td>Alert if &lt; 0.80</td></tr>
+    <tr><td>RAG Cache Hit Rate</td><td>Redis metrics</td><td>&ge; 40%</td><td>Alert if &lt; 20%</td></tr>
+    <tr><td>p95 RAG Latency</td><td>App logs</td><td>&lt; 500ms</td><td>Alert if &gt; 1000ms</td></tr>
+  </table>
+
+  <h3>MLflow on AWS</h3>
+  <pre><code>MLflow Tracking Server:
+  Backend:        RDS PostgreSQL (separate database: mlflow_db)
+  Artifact store: S3 (s3://cno-ivr-mlflow-artifacts/)
+  Hosting:        ECS Fargate (internal ALB)
+
+Tracked experiments:
+  - rag_evaluation       (weekly automated)
+  - intent_classification (on model change)
+  - slot_extraction       (on prompt change)
+  - e2e_call_flow         (monthly)</code></pre>
+
+  <h3>Model versioning & rollback</h3>
+  <table>
+    <tr><th>Component</th><th>Version Tracking</th><th>Rollback</th></tr>
+    <tr><td>LLM (Groq)</td><td><code>groq_model</code> env var</td><td>Change env var, ECS redeploy</td></tr>
+    <tr><td>Embedding model</td><td><code>openai_embedding_model</code> env var</td><td>Change var + re-embed all chunks</td></tr>
+    <tr><td>Knowledge base</td><td>S3 versioning on source docs</td><td>Re-ingest from versioned docs</td></tr>
+    <tr><td>System prompts</td><td>Git-versioned in <code>core/prompts/</code></td><td>Git revert + redeploy</td></tr>
+    <tr><td>LangGraph flow</td><td>Git-versioned in <code>core/graph/</code></td><td>Git revert + redeploy</td></tr>
+  </table>
+</div>
+
+<!-- ===== SECTION 13 ===== -->
+<div class="section" id="s13">
+  <h2>13. Document Ingestion Pipeline</h2>
+
+  <h3>Architecture</h3>
+  <pre><code>S3 (upload) --> Lambda (trigger + validate) --> SQS (queue) --> ECS Task (worker) --> RDS pgvector
+                                                                      |
+                                                                OpenAI API (embedding)</code></pre>
+
+  <h3>Flow</h3>
+  <ol>
+    <li><strong>Upload:</strong> PDF/text/CSV uploaded to <code>s3://cno-ivr-knowledge/incoming/</code></li>
+    <li><strong>Trigger:</strong> S3 event fires Lambda function</li>
+    <li><strong>Validate:</strong> Lambda checks file type, size (&lt;50MB), optional virus scan</li>
+    <li><strong>Queue:</strong> Lambda puts message on SQS with S3 key + metadata</li>
+    <li><strong>Process:</strong> ECS worker picks up SQS message</li>
+    <li><strong>Load:</strong> Download from S3, run appropriate loader (PyPDF, TextLoader, CSVLoader)</li>
+    <li><strong>Chunk:</strong> RecursiveCharacterTextSplitter (500 chars, 50 overlap)</li>
+    <li><strong>Enrich:</strong> Auto-detect category, add metadata</li>
+    <li><strong>Embed:</strong> Call OpenAI API for embeddings</li>
+    <li><strong>Store:</strong> Insert into pgvector</li>
+    <li><strong>Invalidate:</strong> Clear Redis RAG cache</li>
+    <li><strong>Notify:</strong> SNS on success/failure</li>
+  </ol>
+
+  <div class="decision">
+    <strong>Why SQS between Lambda and ECS?</strong> Decoupling (Lambda returns immediately), retry (3 attempts then DLQ), rate limiting (won't overwhelm OpenAI API), visibility (queue depth metrics).
+  </div>
+</div>
+
+<!-- ===== SECTION 14 ===== -->
+<div class="section" id="s14">
+  <h2>14. Observability & Monitoring</h2>
+
+  <h3>Three pillars</h3>
+  <div class="cols">
+    <div class="col">
+      <h4>Logs (CloudWatch)</h4>
+      <ul style="padding-left:1rem;font-size:0.88rem;">
+        <li>Application logs (structlog)</li>
+        <li>ECS task logs</li>
+        <li>ALB access logs</li>
+      </ul>
+    </div>
+    <div class="col">
+      <h4>Metrics (CloudWatch)</h4>
+      <ul style="padding-left:1rem;font-size:0.88rem;">
+        <li>Custom: rag_latency_ms, cache_hit_rate, llm_latency_ms</li>
+        <li>AWS: ECS CPU/Memory, RDS IOPS, Redis memory</li>
+      </ul>
+    </div>
+  </div>
+  <div class="cols">
+    <div class="col">
+      <h4>Traces (X-Ray + Logfire)</h4>
+      <ul style="padding-left:1rem;font-size:0.88rem;">
+        <li>Request &rarr; Redis &rarr; RDS &rarr; Groq</li>
+        <li>WebSocket lifecycle</li>
+      </ul>
+    </div>
+    <div class="col">
+      <h4>Alarms</h4>
+      <ul style="padding-left:1rem;font-size:0.88rem;">
+        <li>RAG p95 &gt; 1s &rarr; PagerDuty</li>
+        <li>5xx &gt; 5% &rarr; PagerDuty</li>
+        <li>DB connections &gt; 80% &rarr; email</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ===== SECTION 15 ===== -->
+<div class="section" id="s15">
+  <h2>15. Security Architecture</h2>
+
+  <h3>Defense in depth</h3>
+  <div class="layer layer-1">
+    <strong>Network:</strong> VPC isolation (private subnets for DB/cache), security groups (least privilege), WAF on ALB (DDoS, injection), NACLs
+  </div>
+  <div class="layer layer-2">
+    <strong>Identity & Access:</strong> IAM roles for ECS tasks (least privilege), RDS IAM auth, Secrets Manager for API keys, no long-lived credentials
+  </div>
+  <div class="layer layer-3">
+    <strong>Data Protection:</strong> RDS encryption at rest (AES-256 KMS) + in transit (TLS 1.2+), ElastiCache encryption, S3 SSE, PII redaction in logs
+  </div>
+  <div class="layer layer-4">
+    <strong>Application:</strong> Twilio webhook signature validation, WebSocket auth token, dashboard HTTP Basic auth, CORS restriction, input validation
+  </div>
+  <div class="layer layer-5">
+    <strong>Compliance:</strong> GLBA privacy controls, PCI DSS considerations, SOC 2 audit trail (CloudTrail), HIPAA-eligible services
+  </div>
+
+  <h3>IAM roles</h3>
+  <table>
+    <tr><th>Role</th><th>Permissions</th><th>Applied To</th></tr>
+    <tr><td><code>cno-ivr-task-role</code></td><td>secretsmanager:GetSecretValue, s3:GetObject, cloudwatch:PutMetricData, xray:PutTraceSegments</td><td>ECS IVR app</td></tr>
+    <tr><td><code>cno-ivr-ingestion-role</code></td><td>s3:GetObject, sqs:ReceiveMessage, secretsmanager:GetSecretValue</td><td>ECS ingestion worker</td></tr>
+    <tr><td><code>cno-ivr-lambda-role</code></td><td>s3:GetObject, sqs:SendMessage, logs:PutLogEvents</td><td>Ingestion Lambda</td></tr>
+  </table>
+</div>
+
+<!-- ===== SECTION 16 ===== -->
+<div class="section" id="s16">
+  <h2>16. CI/CD Pipeline</h2>
+
+  <div class="flow-step">
+    <div class="flow-line"></div>
+    <div class="flow-content">
+      <div class="label">Stage 1: Source</div>
+      <div class="detail">GitHub main branch &rarr; CodePipeline via CodeStar connection</div>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-line"></div>
+    <div class="flow-content">
+      <div class="label">Stage 2: Build (CodeBuild)</div>
+      <div class="detail">docker build &rarr; push to ECR &rarr; pytest &rarr; ruff lint</div>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-line"></div>
+    <div class="flow-content">
+      <div class="label">Stage 3: Test (CodeBuild)</div>
+      <div class="detail">eval_intents.py, eval_rag.py, eval_slots.py &mdash; fail if faithfulness &lt; 0.80</div>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-line"></div>
+    <div class="flow-content">
+      <div class="label">Stage 4: Deploy Staging</div>
+      <div class="detail">Update ECS service (staging cluster) &rarr; smoke tests</div>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-line"></div>
+    <div class="flow-content">
+      <div class="label">Stage 5: Manual Approval</div>
+      <div class="detail">SNS notification &rarr; reviewer approves in console</div>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-line"></div>
+    <div class="flow-content">
+      <div class="label">Stage 6: Deploy Production</div>
+      <div class="detail">Blue/green via CodeDeploy &rarr; health check &rarr; auto-rollback on failure</div>
+    </div>
+  </div>
+
+  <h3>Blue/green deployment</h3>
+  <pre><code>               ALB
+              /    \
++------------+      +-------------+
+| Blue (v1)  |      | Green (v2)  |
+| (current)  |      | (new)       |
++------------+      +-------------+
+
+1. Deploy v2 to green target group
+2. ALB health checks pass on green
+3. Switch ALB traffic: blue -> green
+4. Monitor 5 minutes
+5. If errors: auto-rollback to blue
+6. If stable: drain and terminate blue</code></pre>
+</div>
+
+<!-- ===== SECTION 17 ===== -->
+<div class="section" id="s17">
+  <h2>17. Disaster Recovery & HA</h2>
+
+  <h3>RTO / RPO targets</h3>
+  <table>
+    <tr><th>Component</th><th>RTO</th><th>RPO</th><th>Strategy</th></tr>
+    <tr><td>Application (ECS)</td><td>&lt; 2 min</td><td>0 (stateless)</td><td>Multi-AZ auto-scaling, ALB health checks</td></tr>
+    <tr><td>Database (RDS)</td><td>&lt; 5 min</td><td>0 (sync replication)</td><td>Automatic failover to standby</td></tr>
+    <tr><td>Cache (Redis)</td><td>&lt; 1 min</td><td>&lt; 1 min</td><td>Multi-AZ replica promotion</td></tr>
+    <tr><td>Knowledge base (S3)</td><td>0</td><td>0</td><td>S3 11-9s durability, versioning</td></tr>
+  </table>
+
+  <h3>Multi-AZ deployment</h3>
+  <pre><code>       us-east-1a                    us-east-1b
+  +------------------+         +------------------+
+  | Public Subnet    |         | Public Subnet    |
+  |   ALB node       |         |   ALB node       |
+  +------------------+         +------------------+
+  | Private App      |         | Private App      |
+  |   ECS Task 1     |         |   ECS Task 2     |
+  +------------------+         +------------------+
+  | Private Data     |         | Private Data     |
+  |   RDS Primary    |         |   RDS Standby    |
+  |   Redis Primary  |         |   Redis Replica  |
+  +------------------+         +------------------+</code></pre>
+
+  <h3>Backup strategy</h3>
+  <table>
+    <tr><th>Resource</th><th>Method</th><th>Retention</th><th>Frequency</th></tr>
+    <tr><td>RDS</td><td>Automated snapshots + PITR</td><td>7 days</td><td>Continuous</td></tr>
+    <tr><td>S3 docs</td><td>S3 versioning</td><td>30 days</td><td>On upload</td></tr>
+    <tr><td>Redis</td><td>Not backed up (cache)</td><td>N/A</td><td>N/A</td></tr>
+    <tr><td>Config</td><td>Git (GitHub)</td><td>Permanent</td><td>On commit</td></tr>
+    <tr><td>Secrets</td><td>Secrets Manager versioning</td><td>10 versions</td><td>On rotation</td></tr>
+  </table>
+</div>
+
+<!-- ===== SECTION 18 ===== -->
+<div class="section" id="s18">
+  <h2>18. Cost Estimation</h2>
+
+  <h3>Monthly cost (20 concurrent calls, production)</h3>
+  <table>
+    <tr><th>Service</th><th>Configuration</th><th>Monthly Cost</th></tr>
+    <tr><td><span class="badge badge-aws">ECS Fargate</span></td><td>2 tasks x 1 vCPU, 2GB, 24/7</td><td>~$120</td></tr>
+    <tr><td><span class="badge badge-aws">ALB</span></td><td>Application LB + LCU</td><td>~$25</td></tr>
+    <tr><td><span class="badge badge-aws">RDS PostgreSQL</span></td><td>db.r6g.large, Multi-AZ, 100GB</td><td>~$300</td></tr>
+    <tr><td><span class="badge badge-aws">ElastiCache</span></td><td>cache.r6g.large, 1 replica</td><td>~$200</td></tr>
+    <tr><td><span class="badge badge-aws">S3</span></td><td>10 GB + requests</td><td>~$2</td></tr>
+    <tr><td><span class="badge badge-aws">CloudWatch</span></td><td>Logs 10GB, metrics, alarms</td><td>~$30</td></tr>
+    <tr><td><span class="badge badge-aws">Secrets Manager</span></td><td>6 secrets</td><td>~$3</td></tr>
+    <tr><td><span class="badge badge-aws">NAT Gateway</span></td><td>1 NAT, ~50GB data</td><td>~$40</td></tr>
+    <tr><td><span class="badge badge-aws">WAF</span></td><td>Basic rules</td><td>~$10</td></tr>
+    <tr><td><span class="badge badge-aws">ECR</span></td><td>5 GB images</td><td>~$1</td></tr>
+    <tr><td><span class="badge badge-aws">CodePipeline</span></td><td>1 pipeline</td><td>~$1</td></tr>
+    <tr><td><span class="badge badge-ext">Groq</span></td><td>~500K tokens/day</td><td>~$15</td></tr>
+    <tr><td><span class="badge badge-ext">OpenAI</span></td><td>Embeddings ~50K tokens/day</td><td>~$5</td></tr>
+    <tr><td><span class="badge badge-ext">Deepgram</span></td><td>~1000 min/day</td><td>~$130</td></tr>
+    <tr><td><span class="badge badge-ext">ElevenLabs</span></td><td>~500K chars/day</td><td>~$150</td></tr>
+    <tr><td><span class="badge badge-ext">Twilio</span></td><td>~500 calls/day</td><td>~$200</td></tr>
+  </table>
+
+  <div class="cost-total">Total: ~$1,232 / month</div>
+
+  <h3>Cost optimization</h3>
+  <table>
+    <tr><th>Optimization</th><th>Savings</th><th>Trade-off</th></tr>
+    <tr><td>Reserved Instances (RDS, 1yr)</td><td>~30% on RDS ($90/mo)</td><td>1-year commitment</td></tr>
+    <tr><td>Savings Plans (Fargate)</td><td>~20% on compute ($24/mo)</td><td>1-year commitment</td></tr>
+    <tr><td>Spot Fargate (ingestion)</td><td>~70% on batch compute</td><td>Interruption risk (acceptable)</td></tr>
+    <tr><td>Polly for system prompts</td><td>~$50/mo TTS savings</td><td>Slightly lower voice quality</td></tr>
+    <tr><td>Self-hosted embeddings</td><td>Break-even at 100K queries/day</td><td>GPU instance cost</td></tr>
+  </table>
+</div>
+
+<!-- ===== SECTION 19 ===== -->
+<div class="section" id="s19">
+  <h2>19. Scaling Strategy</h2>
+
+  <h3>Capacity planning</h3>
+  <table>
+    <tr><th>Concurrent Calls</th><th>ECS Tasks</th><th>RDS Size</th><th>Redis Size</th><th>Monthly Cost</th></tr>
+    <tr><td>10</td><td>2</td><td>db.r6g.medium</td><td>cache.r6g.medium</td><td>~$800</td></tr>
+    <tr><td>20</td><td>3</td><td>db.r6g.large</td><td>cache.r6g.large</td><td>~$1,200</td></tr>
+    <tr><td>50</td><td>5</td><td>db.r6g.xlarge</td><td>cache.r6g.xlarge</td><td>~$2,000</td></tr>
+    <tr><td>100</td><td>10</td><td>db.r6g.2xlarge</td><td>cache.r6g.2xlarge</td><td>~$4,000</td></tr>
+    <tr><td>500+</td><td>20+</td><td>Aurora Serverless v2</td><td>Redis cluster mode</td><td>~$10,000+</td></tr>
+  </table>
+
+  <h3>Database scaling path</h3>
+  <table>
+    <tr><th>Phase</th><th>Vectors</th><th>Strategy</th></tr>
+    <tr><td>Phase 1</td><td>&lt; 1K</td><td>Single RDS, sequential scan</td></tr>
+    <tr><td>Phase 2</td><td>1K-5K</td><td>HNSW index, RDS Proxy pooling</td></tr>
+    <tr><td>Phase 3</td><td>5K-50K</td><td>Read replicas, partitioned tables</td></tr>
+    <tr><td>Phase 4</td><td>50K+</td><td>Aurora Serverless v2 or dedicated vector DB</td></tr>
+  </table>
+</div>
+
+<!-- ===== SECTION 20 ===== -->
+<div class="section" id="s20">
+  <h2>20. Migration Plan (Dev to Prod)</h2>
+
+  <h3>Phase 1: Infrastructure Setup (Week 1)</h3>
+  <ul class="checklist">
+    <li>Create VPC with public/private subnets across 2 AZs</li>
+    <li>Set up security groups</li>
+    <li>Deploy RDS PostgreSQL with pgvector extension</li>
+    <li>Deploy ElastiCache Redis</li>
+    <li>Set up NAT Gateway</li>
+    <li>Create ECR repository</li>
+    <li>Store all API keys in Secrets Manager</li>
+    <li>Set up CloudWatch log groups</li>
+  </ul>
+
+  <h3>Phase 2: Application Deployment (Week 2)</h3>
+  <ul class="checklist">
+    <li>Build Docker image, push to ECR</li>
+    <li>Create ECS cluster, task definition, service</li>
+    <li>Configure ALB with WebSocket support</li>
+    <li>Set up TLS certificate (ACM)</li>
+    <li>Configure WAF rules</li>
+    <li>Deploy to staging, run smoke tests</li>
+  </ul>
+
+  <h3>Phase 3: Data Migration (Week 2-3)</h3>
+  <ul class="checklist">
+    <li>Create S3 bucket for knowledge documents</li>
+    <li>Upload knowledge base documents</li>
+    <li>Run document ingestion pipeline</li>
+    <li>Verify pgvector data integrity</li>
+    <li>Create HNSW index if vectors &gt; 500</li>
+    <li>Run RAG evaluation suite</li>
+  </ul>
+
+  <h3>Phase 4: Testing & Validation (Week 3)</h3>
+  <ul class="checklist">
+    <li>Full evaluation suite (intents, RAG, slots, e2e)</li>
+    <li>Load test: 50 concurrent calls</li>
+    <li>Failover test: kill primary RDS, verify auto-failover</li>
+    <li>Cache test: verify Redis failover</li>
+    <li>Security scan: WAF, SGs, IAM policies</li>
+  </ul>
+
+  <h3>Phase 5: Go-Live (Week 4)</h3>
+  <ul class="checklist">
+    <li>Set up CI/CD pipeline (CodePipeline)</li>
+    <li>Configure CloudWatch alarms and dashboards</li>
+    <li>Set up on-call rotation (PagerDuty/SNS)</li>
+    <li>DNS cutover (Route 53)</li>
+    <li>Monitor first 24 hours</li>
+    <li>Document runbook for operations team</li>
+  </ul>
+</div>
+
+</div><!-- /container -->
+</body>
+</html>

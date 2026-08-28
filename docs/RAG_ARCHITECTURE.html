@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CNO IVR - RAG Architecture & Production Pipeline</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --surface: #1e293b;
+    --surface2: #334155;
+    --border: #475569;
+    --text: #e2e8f0;
+    --text-dim: #94a3b8;
+    --accent: #38bdf8;
+    --accent2: #818cf8;
+    --green: #4ade80;
+    --red: #f87171;
+    --orange: #fb923c;
+    --yellow: #fbbf24;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    padding: 0;
+  }
+  .header {
+    background: linear-gradient(135deg, #1e3a5f 0%, #0f172a 50%, #1a1a2e 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 3rem 2rem;
+    text-align: center;
+  }
+  .header h1 {
+    font-size: 2.2rem;
+    font-weight: 700;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 0.5rem;
+  }
+  .header p { color: var(--text-dim); font-size: 1.1rem; }
+  .container { max-width: 1100px; margin: 0 auto; padding: 2rem; }
+
+  /* Table of Contents */
+  .toc {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.5rem 2rem;
+    margin-bottom: 2.5rem;
+  }
+  .toc h2 { font-size: 1.2rem; color: var(--accent); margin-bottom: 1rem; }
+  .toc ol { padding-left: 1.5rem; }
+  .toc li { margin-bottom: 0.4rem; }
+  .toc a { color: var(--accent2); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+
+  /* Sections */
+  .section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 2rem;
+    margin-bottom: 2rem;
+  }
+  .section h2 {
+    font-size: 1.5rem;
+    color: var(--accent);
+    border-bottom: 2px solid var(--border);
+    padding-bottom: 0.5rem;
+    margin-bottom: 1.5rem;
+  }
+  .section h3 {
+    font-size: 1.15rem;
+    color: var(--accent2);
+    margin: 1.5rem 0 0.75rem 0;
+  }
+  p { margin-bottom: 1rem; color: var(--text); }
+
+  /* Code blocks */
+  pre {
+    background: #0d1117;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.2rem;
+    overflow-x: auto;
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    font-size: 0.88rem;
+    line-height: 1.6;
+    margin-bottom: 1.2rem;
+    color: #c9d1d9;
+  }
+  code {
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    background: var(--surface2);
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.88rem;
+    color: var(--orange);
+  }
+  pre code { background: none; padding: 0; color: inherit; }
+
+  /* Tables */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 1.2rem;
+    font-size: 0.92rem;
+  }
+  th {
+    background: var(--surface2);
+    color: var(--accent);
+    font-weight: 600;
+    text-align: left;
+    padding: 0.7rem 0.9rem;
+    border: 1px solid var(--border);
+  }
+  td {
+    padding: 0.6rem 0.9rem;
+    border: 1px solid var(--border);
+    color: var(--text);
+  }
+  tr:nth-child(even) td { background: rgba(51, 65, 85, 0.3); }
+  tr:hover td { background: rgba(56, 189, 248, 0.07); }
+
+  /* Badges */
+  .badge {
+    display: inline-block;
+    padding: 0.15rem 0.6rem;
+    border-radius: 9999px;
+    font-size: 0.78rem;
+    font-weight: 600;
+  }
+  .badge-critical { background: rgba(248,113,113,0.2); color: var(--red); border: 1px solid var(--red); }
+  .badge-high     { background: rgba(251,146,60,0.2);  color: var(--orange); border: 1px solid var(--orange); }
+  .badge-medium   { background: rgba(251,191,36,0.2);  color: var(--yellow); border: 1px solid var(--yellow); }
+  .badge-chosen   { background: rgba(74,222,128,0.2);  color: var(--green); border: 1px solid var(--green); }
+
+  /* Diagram boxes */
+  .diagram {
+    background: #0d1117;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 1.2rem;
+    text-align: center;
+    overflow-x: auto;
+  }
+  .diagram pre { background: none; border: none; padding: 0; margin: 0; text-align: left; display: inline-block; }
+
+  /* Checklist */
+  .checklist { list-style: none; padding: 0; }
+  .checklist li {
+    padding: 0.5rem 0 0.5rem 2rem;
+    position: relative;
+    border-bottom: 1px solid rgba(71,85,105,0.3);
+  }
+  .checklist li::before {
+    content: "\2610";
+    position: absolute;
+    left: 0;
+    color: var(--accent);
+    font-size: 1.1rem;
+  }
+
+  /* Decision box */
+  .decision {
+    background: rgba(56, 189, 248, 0.08);
+    border-left: 4px solid var(--accent);
+    padding: 1rem 1.2rem;
+    border-radius: 0 8px 8px 0;
+    margin-bottom: 1.2rem;
+  }
+  .decision strong { color: var(--accent); }
+
+  /* Flow diagram */
+  .flow-step {
+    display: flex;
+    align-items: stretch;
+    margin-bottom: 0.5rem;
+  }
+  .flow-line {
+    width: 3px;
+    background: var(--accent);
+    margin: 0 1.2rem;
+    flex-shrink: 0;
+    position: relative;
+  }
+  .flow-line::before {
+    content: "";
+    width: 12px; height: 12px;
+    background: var(--accent);
+    border-radius: 50%;
+    position: absolute;
+    top: 0.7rem;
+    left: -4.5px;
+  }
+  .flow-content {
+    background: var(--surface2);
+    border-radius: 8px;
+    padding: 0.8rem 1rem;
+    flex: 1;
+  }
+  .flow-content .label { color: var(--accent); font-weight: 600; font-size: 0.9rem; }
+  .flow-content .detail { color: var(--text-dim); font-size: 0.85rem; }
+</style>
+</head>
+<body>
+
+<!-- ====== HEADER ====== -->
+<div class="header">
+  <h1>CNO IVR - RAG Architecture & Production Pipeline</h1>
+  <p>Complete design document covering async fixes, caching, re-ranking, metadata filtering, ingestion pipeline, and evaluation</p>
+</div>
+
+<div class="container">
+
+<!-- ====== TABLE OF CONTENTS ====== -->
+<div class="toc">
+  <h2>Table of Contents</h2>
+  <ol>
+    <li><a href="#s1">Current State Assessment</a></li>
+    <li><a href="#s2">Target Architecture Overview</a></li>
+    <li><a href="#s3">Async PGVector Fix</a></li>
+    <li><a href="#s4">Redis Caching Layer</a></li>
+    <li><a href="#s5">Metadata Filtering</a></li>
+    <li><a href="#s6">Cross-Encoder Re-Ranking</a></li>
+    <li><a href="#s7">Document Ingestion Pipeline</a></li>
+    <li><a href="#s8">Chunking Strategy</a></li>
+    <li><a href="#s9">Embedding Model Selection</a></li>
+    <li><a href="#s10">Vector Store Evaluation</a></li>
+    <li><a href="#s11">Test Document Corpus (20 samples)</a></li>
+    <li><a href="#s12">Evaluation Framework</a></li>
+    <li><a href="#s13">Production Checklist</a></li>
+  </ol>
+</div>
+
+<!-- ====== SECTION 1 ====== -->
+<div class="section" id="s1">
+  <h2>1. Current State Assessment</h2>
+
+  <h3>What exists today</h3>
+  <pre><code>services/rag.py          -- 46 lines, basic PGVector wrapper
+seed_knowledge.py        -- 35 hardcoded text chunks, manual metadata
+core/graph/nodes/faq.py  -- FAQ node that calls search_knowledge()
+tests/eval_rag.py        -- LLM-as-judge evaluation (faithfulness, relevancy)</code></pre>
+
+  <h3>Current flow</h3>
+  <pre><code>Caller question
+  -> faq_node
+    -> search_knowledge(query, k=3)
+      -> PGVector.similarity_search()  [BLOCKING on async event loop]
+    -> Groq LLM generates answer grounded in retrieved context
+  -> TTS response to caller</code></pre>
+
+  <h3>Problems identified</h3>
+  <table>
+    <tr><th>#</th><th>Issue</th><th>Impact</th><th>Severity</th></tr>
+    <tr>
+      <td>1</td>
+      <td><code>similarity_search()</code> is synchronous SQLAlchemy call inside <code>async def</code></td>
+      <td>Blocks entire event loop &mdash; all concurrent WebSocket streams freeze during DB query</td>
+      <td><span class="badge badge-critical">Critical</span></td>
+    </tr>
+    <tr>
+      <td>2</td>
+      <td>No caching</td>
+      <td>Every FAQ question hits OpenAI Embeddings API + pgvector &mdash; 200-400ms latency + cost</td>
+      <td><span class="badge badge-high">High</span></td>
+    </tr>
+    <tr>
+      <td>3</td>
+      <td>No re-ranking</td>
+      <td>Raw cosine similarity returns approximate results; irrelevant chunks can outrank relevant ones</td>
+      <td><span class="badge badge-medium">Medium</span></td>
+    </tr>
+    <tr>
+      <td>4</td>
+      <td>No metadata filtering</td>
+      <td>A beneficiary query searches ALL 35 chunks including payment/loan/dividend ones</td>
+      <td><span class="badge badge-medium">Medium</span></td>
+    </tr>
+    <tr>
+      <td>5</td>
+      <td>Static knowledge base</td>
+      <td>All 35 chunks are hardcoded in Python &mdash; no file/PDF/URL ingestion pipeline</td>
+      <td><span class="badge badge-high">High</span></td>
+    </tr>
+    <tr>
+      <td>6</td>
+      <td>No chunking logic</td>
+      <td>Manual chunks with no overlap, no size normalization</td>
+      <td><span class="badge badge-medium">Medium</span></td>
+    </tr>
+    <tr>
+      <td>7</td>
+      <td>No HNSW index</td>
+      <td>Sequential scan on pgvector &mdash; O(n) per query instead of O(log n)</td>
+      <td><span class="badge badge-medium">Medium</span></td>
+    </tr>
+  </table>
+</div>
+
+<!-- ====== SECTION 2 ====== -->
+<div class="section" id="s2">
+  <h2>2. Target Architecture Overview</h2>
+
+  <div class="flow-step">
+    <div class="flow-line"></div>
+    <div class="flow-content">
+      <div class="label">Caller Query</div>
+      <div class="detail">Natural language question from IVR caller via Deepgram STT</div>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-line"></div>
+    <div class="flow-content">
+      <div class="label">Redis Cache Check</div>
+      <div class="detail">TTL 1hr, SHA256(query) key &mdash; cache hit returns instantly (2-5ms)</div>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-line"></div>
+    <div class="flow-content">
+      <div class="label">Category Detector</div>
+      <div class="detail">Keyword matching maps query to metadata category &mdash; narrows search space</div>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-line"></div>
+    <div class="flow-content">
+      <div class="label">PGVector Async Search</div>
+      <div class="detail">run_in_executor &rarr; k*3 candidates with metadata filter &rarr; HNSW index, cosine distance</div>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-line"></div>
+    <div class="flow-content">
+      <div class="label">LLM Re-Ranker</div>
+      <div class="detail">Groq Llama-3.1-8B scores each candidate 0-10 in parallel &rarr; top-k selection</div>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-line"></div>
+    <div class="flow-content">
+      <div class="label">Cache &amp; Return Context</div>
+      <div class="detail">Store reranked result in Redis, return concatenated context to FAQ node</div>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-line"></div>
+    <div class="flow-content">
+      <div class="label">FAQ Node LLM</div>
+      <div class="detail">Groq Llama-3.3-70B generates grounded 1-2 sentence voice answer</div>
+    </div>
+  </div>
+</div>
+
+<!-- ====== SECTION 3 ====== -->
+<div class="section" id="s3">
+  <h2>3. Async PGVector Fix</h2>
+
+  <h3>Problem</h3>
+  <pre><code># CURRENT CODE -- services/rag.py line 34
+async def search_knowledge(query: str, k: int = 3) -> str:
+    store = _get_store()
+    docs = store.similarity_search(query, k=k)  # BLOCKING CALL</code></pre>
+
+  <p><code>PGVector.similarity_search()</code> uses synchronous SQLAlchemy under the hood. When called inside <code>async def</code>, it blocks the Python event loop. In our IVR system this means:</p>
+  <ul style="margin-bottom:1rem; padding-left:1.5rem;">
+    <li>All active Twilio WebSocket streams freeze (callers hear silence)</li>
+    <li>Deepgram STT transcription buffers overflow</li>
+    <li>ElevenLabs TTS audio delivery stalls</li>
+    <li>Other HTTP handlers (dashboard, health checks) queue up</li>
+  </ul>
+  <p>A pgvector query takes 50-200ms. During that time, <strong>every concurrent call is frozen</strong>.</p>
+
+  <h3>Solution: <code>asyncio.run_in_executor()</code></h3>
+  <pre><code># TARGET CODE
+async def search_knowledge(query: str, k: int = 3) -> str:
+    store = _get_store()
+    loop = asyncio.get_event_loop()
+
+    # Offload blocking SQLAlchemy call to thread pool
+    docs = await loop.run_in_executor(
+        None,  # default ThreadPoolExecutor
+        lambda: store.similarity_search(query, k=k)
+    )</code></pre>
+
+  <h3>Options evaluated</h3>
+  <table>
+    <tr><th>Option</th><th>Pros</th><th>Cons</th></tr>
+    <tr>
+      <td><code>run_in_executor</code> <span class="badge badge-chosen">chosen</span></td>
+      <td>Works with current PGVector class, no dependency changes, battle-tested</td>
+      <td>Thread pool overhead (~1ms), not true async IO</td>
+    </tr>
+    <tr>
+      <td><code>asimilarity_search()</code></td>
+      <td>True async IO, no thread overhead</td>
+      <td><code>langchain_community.PGVector</code> does not implement async methods as of v0.3.14</td>
+    </tr>
+    <tr>
+      <td>Migrate to <code>langchain_postgres</code></td>
+      <td>Native async, actively maintained</td>
+      <td>Breaking change: different constructor, filter syntax, requires re-seeding</td>
+    </tr>
+  </table>
+
+  <div class="decision">
+    <strong>Decision:</strong> Use <code>run_in_executor</code> for now. Solves blocking with zero migration risk. Migrate to <code>langchain_postgres</code> native async in a future sprint.
+  </div>
+
+  <h3>Thread pool sizing</h3>
+  <p>Default <code>ThreadPoolExecutor</code> creates <code>min(32, os.cpu_count() + 4)</code> threads. Peak concurrent FAQ queries: ~10-20 (one per active call). Each thread holds a connection briefly (~100ms). Default pool is sufficient.</p>
+  <p>For production, use a dedicated bounded executor:</p>
+  <pre><code>from concurrent.futures import ThreadPoolExecutor
+_rag_executor = ThreadPoolExecutor(max_workers=10, thread_name_prefix="rag")</code></pre>
+</div>
+
+<!-- ====== SECTION 4 ====== -->
+<div class="section" id="s4">
+  <h2>4. Redis Caching Layer</h2>
+
+  <h3>Why cache RAG results?</h3>
+  <table>
+    <tr><th>Metric</th><th>Without Cache</th><th>With Cache (hit)</th></tr>
+    <tr><td>OpenAI Embedding API call</td><td>1 per query</td><td>0</td></tr>
+    <tr><td>PGVector DB query</td><td>1 per query</td><td>0</td></tr>
+    <tr><td>Re-ranking LLM calls</td><td>k*3 per query</td><td>0</td></tr>
+    <tr><td>Total latency</td><td>400-800ms</td><td>2-5ms</td></tr>
+    <tr><td>Cost per query</td><td>~$0.00005</td><td>$0</td></tr>
+  </table>
+
+  <h3>Cache design</h3>
+  <pre><code>Key:    cno:rag:&lt;sha256(normalized_query + k + category)[:16]&gt;
+Value:  concatenated context string (the final reranked result)
+TTL:    3600 seconds (1 hour)</code></pre>
+
+  <table>
+    <tr><th>Design Choice</th><th>Rationale</th></tr>
+    <tr><td>SHA256 for keys</td><td>Queries can be long with special chars. SHA256 is deterministic and collision-resistant. 16-char prefix = 64 bits of entropy.</td></tr>
+    <tr><td>1-hour TTL</td><td>Knowledge base changes infrequently (quarterly). 1 hour balances freshness with hit rate. Call <code>clear_cache()</code> on ingestion.</td></tr>
+    <tr><td>Cache final string</td><td>Simpler &mdash; one entry per query. Re-ranking is query-dependent, so caching pre-rerank docs doesn't help.</td></tr>
+  </table>
+
+  <h3>Graceful degradation</h3>
+  <p>If Redis is unavailable: <code>_get_redis()</code> returns <code>None</code>, cache operations become no-ops, pipeline continues without caching. Matches existing pattern in <code>services/session.py</code> (falls back to <code>fakeredis</code>).</p>
+</div>
+
+<!-- ====== SECTION 5 ====== -->
+<div class="section" id="s5">
+  <h2>5. Metadata Filtering</h2>
+
+  <h3>Problem</h3>
+  <p>Without filtering, "How do I change my beneficiary?" searches all chunks equally. Irrelevant chunks about ACH authorization or dividends consume top-k slots, reducing answer quality.</p>
+
+  <h3>Solution: Category-based pre-filtering</h3>
+  <pre><code>Step 1: Detect category from query keywords
+  "How do I change my beneficiary?" -> category = "beneficiaries"
+
+Step 2: Pass filter to pgvector
+  store.similarity_search(query, k=9, filter={"category": "beneficiaries"})
+
+Step 3: If filtered results &lt; k, fall back to unfiltered search</code></pre>
+
+  <h3>Category keyword map</h3>
+  <table>
+    <tr><th>Category</th><th>Trigger Keywords</th></tr>
+    <tr><td><code>policy_types</code></td><td>whole life, term life, universal life, medicare supplement, type of policy</td></tr>
+    <tr><td><code>policy_status</code></td><td>active, lapsed, paid up, surrendered, policy status</td></tr>
+    <tr><td><code>premiums</code></td><td>premium, billing, autopay, paid to date, grace period, missed payment</td></tr>
+    <tr><td><code>payments</code></td><td>payment, pay my bill, credit card, debit card, ach, routing number</td></tr>
+    <tr><td><code>cash_value</code></td><td>cash value, savings, accumulation</td></tr>
+    <tr><td><code>policy_loans</code></td><td>loan, borrow, payoff, loan balance</td></tr>
+    <tr><td><code>beneficiaries</code></td><td>beneficiary, who gets the money, death benefit goes to</td></tr>
+    <tr><td><code>documents</code></td><td>document, statement, annual report, mail me, policy copy</td></tr>
+    <tr><td><code>contact_changes</code></td><td>address, phone number, update my, change my address</td></tr>
+    <tr><td><code>owner_changes</code></td><td>owner, ownership, transfer ownership</td></tr>
+    <tr><td><code>privacy</code></td><td>privacy, glba, opt out, personal information, data sharing</td></tr>
+    <tr><td><code>claims</code></td><td>claim, death certificate, file a claim, report a death</td></tr>
+    <tr><td><code>dividends</code></td><td>dividend, participating</td></tr>
+    <tr><td><code>company_info</code></td><td>cno, bankers life, colonial penn, history</td></tr>
+    <tr><td><code>general</code></td><td>agent, representative, transfer, authenticate</td></tr>
+    <tr><td><code>compliance_scripts</code></td><td>authorization, ach script, privacy script</td></tr>
+  </table>
+
+  <h3>Why keyword matching instead of LLM-based category detection?</h3>
+  <table>
+    <tr><th>Approach</th><th>Latency</th><th>Cost</th><th>Accuracy</th></tr>
+    <tr><td>Keyword matching <span class="badge badge-chosen">chosen</span></td><td>&lt;1ms</td><td>$0</td><td>~85%</td></tr>
+    <tr><td>LLM classification</td><td>200-400ms</td><td>~$0.00003</td><td>~95%</td></tr>
+    <tr><td>Embedding similarity</td><td>100-200ms</td><td>~$0.00002</td><td>~90%</td></tr>
+  </table>
+
+  <div class="decision">
+    <strong>Decision:</strong> Keyword matching. Runs in &lt;1ms with zero cost. Fallback to unfiltered search handles the 15% miss rate.
+  </div>
+</div>
+
+<!-- ====== SECTION 6 ====== -->
+<div class="section" id="s6">
+  <h2>6. Cross-Encoder Re-Ranking</h2>
+
+  <h3>Why re-rank?</h3>
+  <table>
+    <tr><th>Stage</th><th>Method</th><th>Speed</th><th>Accuracy</th></tr>
+    <tr><td>Bi-encoder (PGVector)</td><td>Encodes query & docs <strong>independently</strong></td><td>Fast: O(1) per doc</td><td>Approximate</td></tr>
+    <tr><td>Cross-encoder (re-rank)</td><td>Encodes query & doc <strong>together</strong></td><td>Slow: O(n) scoring</td><td>Precise</td></tr>
+    <tr><td>Combined</td><td>Bi-encoder retrieves 9 candidates, cross-encoder picks top 3</td><td>Best of both</td><td>Best of both</td></tr>
+  </table>
+
+  <h3>Example: Re-ranking impact</h3>
+  <p><strong>Query:</strong> "What happens if I stop paying my premiums?"</p>
+
+  <table>
+    <tr><th>Rank</th><th>Without Re-ranking (raw cosine)</th><th>With Re-ranking</th></tr>
+    <tr>
+      <td>1</td>
+      <td>"Your premium is the amount you pay to keep..." (0.82)</td>
+      <td>"If you miss a premium payment your policy enters a 30-day grace period..." (9/10)</td>
+    </tr>
+    <tr>
+      <td>2</td>
+      <td>"Online and phone payments post within 24-48 hours..." (0.79)</td>
+      <td>"A Lapsed policy means coverage has ended because premiums were not paid..." (8/10)</td>
+    </tr>
+    <tr>
+      <td>3</td>
+      <td>"Autopay automatically deducts your premium..." (0.77)</td>
+      <td>"Your premium is the amount you pay to keep..." (7/10)</td>
+    </tr>
+  </table>
+  <p>The re-ranker correctly identifies chunks about <strong>consequences of non-payment</strong> over chunks about <strong>what a premium is</strong>.</p>
+
+  <h3>Implementation options compared</h3>
+  <table>
+    <tr><th>Approach</th><th>Model</th><th>Latency</th><th>Cost</th><th>Deployment</th></tr>
+    <tr>
+      <td>LLM re-ranking <span class="badge badge-chosen">chosen</span></td>
+      <td>Groq Llama-3.1-8B</td><td>~200ms (parallel)</td><td>~$0.0001/query</td><td>No extra infra</td>
+    </tr>
+    <tr><td>Sentence-transformers</td><td>ms-marco-MiniLM-L-6-v2</td><td>~50ms (local)</td><td>$0 (GPU)</td><td>GPU instance, 400MB model</td></tr>
+    <tr><td>Cohere Rerank API</td><td>rerank-english-v3.0</td><td>~150ms</td><td>$0.002/query</td><td>Third-party dependency</td></tr>
+    <tr><td>BGE Reranker</td><td>bge-reranker-v2-m3</td><td>~80ms (local)</td><td>$0 (GPU)</td><td>GPU instance, 1.2GB model</td></tr>
+  </table>
+
+  <div class="decision">
+    <strong>Decision:</strong> LLM re-ranking via Groq. Already have Groq connection. 8B model is fast enough. No additional infrastructure. For scale, migrate to self-hosted cross-encoder on SageMaker.
+  </div>
+
+  <h3>Re-ranking prompt</h3>
+  <pre><code>System: You are a relevance scorer. Reply with only a number 0-10.
+
+User: Rate how relevant this text is to answering the question.
+Question: {query}
+Text: {chunk_text[:300]}
+Reply with ONLY a number from 0 to 10.</code></pre>
+
+  <p>All 9 candidates are scored concurrently with <code>asyncio.gather()</code>, reducing re-ranking from 9 x 200ms = 1.8s (sequential) to ~200ms (parallel).</p>
+</div>
+
+<!-- ====== SECTION 7 ====== -->
+<div class="section" id="s7">
+  <h2>7. Document Ingestion Pipeline</h2>
+
+  <h3>Current state</h3>
+  <p>All 35 knowledge chunks are hardcoded Python tuples in <code>seed_knowledge.py</code>. Adding knowledge requires editing source code.</p>
+
+  <h3>Target: Multi-source ingestion</h3>
+  <div class="diagram">
+    <pre><code>Input Sources          Loaders              Processing           Storage
++------------+     +-------------+     +----------------+     +----------+
+| PDF files  | --> | PyPDFLoader | --> |                | --> |          |
++------------+     +-------------+     |  Text Splitter |     | PGVector |
++------------+     +-------------+     |  (Recursive    |     |   with   |
+| URLs/HTML  | --> | WebLoader   | --> |   Character)   |     | metadata |
++------------+     +-------------+     |                |     |          |
++------------+     +-------------+     |  Metadata      |     |          |
+| Text/MD    | --> | TextLoader  | --> |  Enrichment    |     |          |
++------------+     +-------------+     |                |     |          |
++------------+     +-------------+     |  Deduplication |     |          |
+| CSV files  | --> | CSVLoader   | --> |                |     |          |
++------------+     +-------------+     +----------------+     +----------+</code></pre>
+  </div>
+
+  <h3>Loader selection</h3>
+  <table>
+    <tr><th>Source</th><th>Loader</th><th>Why This Loader</th></tr>
+    <tr><td>PDF</td><td><code>PyPDFLoader</code></td><td>Pure Python, no external deps, multi-page, per-page extraction. Alt: <code>UnstructuredPDFLoader</code> for scanned PDFs with OCR (adds 500MB+ dep)</td></tr>
+    <tr><td>URL/HTML</td><td><code>WebBaseLoader</code></td><td>Uses <code>requests</code> + <code>BeautifulSoup</code> &mdash; already in dependency tree. For JS-rendered pages: <code>PlaywrightURLLoader</code></td></tr>
+    <tr><td>Markdown</td><td><code>TextLoader</code></td><td>Simpler than UnstructuredMarkdownLoader, sufficient for our use case</td></tr>
+    <tr><td>Plain text</td><td><code>TextLoader</code></td><td>Direct ingestion, no parsing needed</td></tr>
+    <tr><td>CSV</td><td><code>CSVLoader</code></td><td>Each row becomes a document. For tabular FAQ exports from CMS</td></tr>
+  </table>
+
+  <h3>Data directory structure</h3>
+  <pre><code>data/
+  knowledge/
+    pdfs/
+      policy_guide.pdf
+      claims_handbook.pdf
+      billing_faq.pdf
+    urls/
+      urls_to_ingest.txt       # one URL per line
+    text/
+      grace_period_policy.md
+      payment_methods.txt
+      beneficiary_rules.md
+    csv/
+      faq_export.csv           # columns: question, answer, category</code></pre>
+
+  <h3>Ingestion CLI</h3>
+  <pre><code>python ingest_documents.py --source ./data/knowledge/ --type pdf
+python ingest_documents.py --source ./data/knowledge/ --type all
+python ingest_documents.py --source https://example.com/faq --type url
+python ingest_documents.py --reset     # clear and re-ingest everything
+python ingest_documents.py --dry-run   # preview chunks without writing</code></pre>
+</div>
+
+<!-- ====== SECTION 8 ====== -->
+<div class="section" id="s8">
+  <h2>8. Chunking Strategy</h2>
+
+  <h3>Why chunking matters</h3>
+  <p>A 20-page PDF cannot be embedded as one vector. Chunks must: (1) fit the embedding window (512-1024 tokens), (2) preserve semantic coherence, (3) include overlap for boundary context.</p>
+
+  <h3>Parameters chosen</h3>
+  <table>
+    <tr><th>Parameter</th><th>Value</th><th>Rationale</th></tr>
+    <tr><td>Splitter</td><td><code>RecursiveCharacterTextSplitter</code></td><td>Tries <code>\n\n</code> &rarr; <code>\n</code> &rarr; <code>. </code> &rarr; <code> </code> in order. Preserves paragraph boundaries first</td></tr>
+    <tr><td>Chunk size</td><td>500 characters (~100-125 tokens)</td><td>Existing manual chunks average 200-350 chars. 500 gives room for complete thoughts</td></tr>
+    <tr><td>Chunk overlap</td><td>50 characters (~10-12 tokens)</td><td>10% overlap for continuity. &gt;20% wastes storage with near-duplicates</td></tr>
+    <tr><td>Length function</td><td><code>len</code> (character count)</td><td>Token-based adds ~5ms/chunk. Character count is a good proxy for English</td></tr>
+  </table>
+
+  <h3>Splitter comparison</h3>
+  <table>
+    <tr><th>Splitter</th><th>Behavior</th><th>Best For</th><th>Why Not</th></tr>
+    <tr><td><code>RecursiveCharacterTextSplitter</code> <span class="badge badge-chosen">chosen</span></td><td>Hierarchical separators</td><td>General text, mixed formats</td><td>&mdash;</td></tr>
+    <tr><td><code>CharacterTextSplitter</code></td><td>Single separator only</td><td>Uniform text</td><td>Splits mid-paragraph</td></tr>
+    <tr><td><code>TokenTextSplitter</code></td><td>Exact token count</td><td>Token-critical apps</td><td>Ignores semantic boundaries</td></tr>
+    <tr><td><code>MarkdownHeaderTextSplitter</code></td><td>Splits on #, ##</td><td>Structured markdown</td><td>Only works for Markdown</td></tr>
+    <tr><td><code>SemanticChunker</code></td><td>Groups by embedding similarity</td><td>Research documents</td><td>Extremely slow, high cost</td></tr>
+  </table>
+
+  <h3>Metadata enrichment</h3>
+  <pre><code>{
+    "source": "data/knowledge/pdfs/policy_guide.pdf",
+    "page": 3,
+    "chunk_id": 42,
+    "category": "policy_types",
+    "subcategory": "whole_life",
+    "ingested_at": "2026-08-04T10:30:00Z",
+    "doc_type": "pdf",
+    "char_count": 487
+}</code></pre>
+</div>
+
+<!-- ====== SECTION 9 ====== -->
+<div class="section" id="s9">
+  <h2>9. Embedding Model Selection</h2>
+
+  <table>
+    <tr><th>Model</th><th>Dimensions</th><th>Max Tokens</th><th>Cost/1K tokens</th><th>MTEB Score</th><th>Latency</th></tr>
+    <tr style="background:rgba(74,222,128,0.08);">
+      <td><code>text-embedding-3-small</code> <span class="badge badge-chosen">chosen</span></td>
+      <td>1536</td><td>8191</td><td>$0.00002</td><td>62.3</td><td>~80ms</td>
+    </tr>
+    <tr><td><code>text-embedding-3-large</code></td><td>3072</td><td>8191</td><td>$0.00013</td><td>64.6</td><td>~120ms</td></tr>
+    <tr><td><code>text-embedding-ada-002</code></td><td>1536</td><td>8191</td><td>$0.00010</td><td>61.0</td><td>~80ms</td></tr>
+    <tr><td>Cohere <code>embed-english-v3.0</code></td><td>1024</td><td>512</td><td>$0.00010</td><td>64.5</td><td>~100ms</td></tr>
+    <tr><td>Self-hosted <code>all-MiniLM-L6-v2</code></td><td>384</td><td>512</td><td>$0 (GPU)</td><td>56.3</td><td>~10ms</td></tr>
+    <tr><td>Self-hosted <code>bge-large-en-v1.5</code></td><td>1024</td><td>512</td><td>$0 (GPU)</td><td>64.2</td><td>~30ms</td></tr>
+  </table>
+
+  <div class="decision">
+    <strong>Why <code>text-embedding-3-small</code>?</strong><br>
+    5x cheaper than ada-002. MTEB 62.3 sufficient for short insurance chunks. ~80ms latency acceptable for IVR. Supports dimension reduction for future scale. Already integrated &mdash; no migration.<br><br>
+    <strong>When to migrate to self-hosted:</strong> Query volume &gt;100K/day, latency &lt;50ms required, or regulatory constraint against OpenAI. Target: <code>bge-large-en-v1.5</code> on SageMaker <code>ml.g5.xlarge</code>.
+  </div>
+</div>
+
+<!-- ====== SECTION 10 ====== -->
+<div class="section" id="s10">
+  <h2>10. Vector Store Evaluation</h2>
+
+  <table>
+    <tr><th>Vector DB</th><th>Self-hosted</th><th>Managed</th><th>Filtering</th><th>Hybrid Search</th><th>Cost</th></tr>
+    <tr style="background:rgba(74,222,128,0.08);">
+      <td>PGVector <span class="badge badge-chosen">chosen</span></td>
+      <td>Yes (Docker)</td><td>AWS RDS</td><td>JSONB filters</td><td>BM25 via pg_search</td><td>Free (PG license)</td>
+    </tr>
+    <tr><td>Pinecone</td><td>No</td><td>Yes only</td><td>Rich</td><td>Yes</td><td>Per-vector pricing</td></tr>
+    <tr><td>Weaviate</td><td>Yes</td><td>Cloud</td><td>GraphQL</td><td>BM25 + vector</td><td>Open source</td></tr>
+    <tr><td>Qdrant</td><td>Yes</td><td>Cloud</td><td>Rich</td><td>Sparse + dense</td><td>Open source</td></tr>
+    <tr><td>ChromaDB</td><td>Yes</td><td>No</td><td>Basic</td><td>No</td><td>Open source</td></tr>
+    <tr><td>Milvus</td><td>Yes</td><td>Zilliz</td><td>Yes</td><td>Yes</td><td>Open source</td></tr>
+  </table>
+
+  <div class="decision">
+    <strong>Why PGVector?</strong> Already in stack (LangGraph checkpointing). One DB to manage. ACID transactions. JSONB metadata filtering. HNSW indexing. Free.
+  </div>
+
+  <h3>HNSW index</h3>
+  <pre><code>CREATE INDEX ON langchain_pg_embedding
+USING hnsw (embedding vector_cosine_ops)
+WITH (m = 16, ef_construction = 64);</code></pre>
+
+  <h3>Scaling path</h3>
+  <table>
+    <tr><th>Scale</th><th>Vectors</th><th>Strategy</th></tr>
+    <tr><td>Current</td><td>~50</td><td>Sequential scan, single PG instance</td></tr>
+    <tr><td>Phase 2</td><td>500-5K</td><td>HNSW index, connection pooling (PgBouncer)</td></tr>
+    <tr><td>Phase 3</td><td>5K-50K</td><td>Read replicas, partitioned tables</td></tr>
+    <tr><td>Phase 4</td><td>50K+</td><td>Dedicated vector DB (Qdrant/Pinecone)</td></tr>
+  </table>
+</div>
+
+<!-- ====== SECTION 11 ====== -->
+<div class="section" id="s11">
+  <h2>11. Test Document Corpus (20 samples)</h2>
+
+  <h3>PDF Documents (5)</h3>
+  <table>
+    <tr><th>#</th><th>Filename</th><th>Content</th><th>Pages</th><th>Category</th></tr>
+    <tr><td>1</td><td>whole_life_product_guide.pdf</td><td>Features, cash value growth, premium schedules, rider options</td><td>8</td><td>policy_types</td></tr>
+    <tr><td>2</td><td>claims_filing_handbook.pdf</td><td>Step-by-step claims process, required documents, timelines</td><td>12</td><td>claims</td></tr>
+    <tr><td>3</td><td>billing_and_payment_faq.pdf</td><td>Payment methods, autopay, grace period rules</td><td>6</td><td>premiums</td></tr>
+    <tr><td>4</td><td>privacy_notice_2024.pdf</td><td>GLBA notice, data practices, opt-out procedures</td><td>4</td><td>privacy</td></tr>
+    <tr><td>5</td><td>policy_loan_terms.pdf</td><td>Loan eligibility, interest rates, tax implications</td><td>5</td><td>policy_loans</td></tr>
+  </table>
+
+  <h3>URL/Web Pages (5)</h3>
+  <table>
+    <tr><th>#</th><th>Source Page</th><th>Content</th><th>Category</th></tr>
+    <tr><td>6</td><td>Beneficiary changes FAQ</td><td>Add/change/remove beneficiaries, forms, processing time</td><td>beneficiaries</td></tr>
+    <tr><td>7</td><td>Policy reinstatement FAQ</td><td>Eligibility, documentation, timeframes</td><td>policy_status</td></tr>
+    <tr><td>8</td><td>Medicare supplement plans</td><td>Plan comparisons A-N, enrollment periods</td><td>policy_types</td></tr>
+    <tr><td>9</td><td>Company history page</td><td>Founding, milestones, brand portfolio, ratings</td><td>company_info</td></tr>
+    <tr><td>10</td><td>Document delivery FAQ</td><td>Request statements, delivery methods</td><td>documents</td></tr>
+  </table>
+
+  <h3>Markdown/Text Documents (5)</h3>
+  <table>
+    <tr><th>#</th><th>Filename</th><th>Content</th><th>Category</th></tr>
+    <tr><td>11</td><td>grace_period_policy.md</td><td>Grace period rules by policy type, automatic premium loan</td><td>premiums</td></tr>
+    <tr><td>12</td><td>cash_value_explained.md</td><td>Cash value growth, tax-deferred, withdrawal vs loan</td><td>cash_value</td></tr>
+    <tr><td>13</td><td>address_change_procedure.txt</td><td>Address change steps, verification, security</td><td>contact_changes</td></tr>
+    <tr><td>14</td><td>owner_vs_insured.md</td><td>Difference between owner and insured, rights</td><td>owner_changes</td></tr>
+    <tr><td>15</td><td>dividend_options_guide.md</td><td>Dividend payment methods, paid-up additions</td><td>dividends</td></tr>
+  </table>
+
+  <h3>CSV/Structured Data (3)</h3>
+  <table>
+    <tr><th>#</th><th>Filename</th><th>Content</th><th>Category</th></tr>
+    <tr><td>16</td><td>agent_transfer_scenarios.csv</td><td>scenario, trigger_phrase, transfer_reason</td><td>general</td></tr>
+    <tr><td>17</td><td>compliance_scripts.csv</td><td>script_name, script_text, when_to_use</td><td>compliance_scripts</td></tr>
+    <tr><td>18</td><td>payment_method_rules.csv</td><td>method, accepted, restrictions, processing_time</td><td>payments</td></tr>
+  </table>
+
+  <h3>Edge Case Documents (2)</h3>
+  <table>
+    <tr><th>#</th><th>Filename</th><th>Purpose</th></tr>
+    <tr><td>19</td><td>empty_document.txt</td><td>Tests pipeline handles empty input gracefully</td></tr>
+    <tr><td>20</td><td>mixed_format_faq.md</td><td>Tables, bullets, headers, special chars &mdash; tests chunking robustness</td></tr>
+  </table>
+
+  <h3>Expected chunk counts</h3>
+  <table>
+    <tr><th>Source Type</th><th>Documents</th><th>Estimated Total Chunks</th></tr>
+    <tr><td>PDFs (5)</td><td>~47,500 chars</td><td>~112 chunks</td></tr>
+    <tr><td>URLs (5)</td><td>~15,000 chars</td><td>~32 chunks</td></tr>
+    <tr><td>Text/MD (5)</td><td>~10,000 chars</td><td>~22 chunks</td></tr>
+    <tr><td>CSV (3)</td><td>~150 rows</td><td>~150 chunks</td></tr>
+    <tr><td><strong>Total</strong></td><td><strong>20 documents</strong></td><td><strong>~316 chunks</strong></td></tr>
+  </table>
+</div>
+
+<!-- ====== SECTION 12 ====== -->
+<div class="section" id="s12">
+  <h2>12. Evaluation Framework</h2>
+
+  <h3>Metrics</h3>
+  <table>
+    <tr><th>Metric</th><th>What It Measures</th><th>Target</th><th>Method</th></tr>
+    <tr><td>Faithfulness</td><td>Answer grounded in context?</td><td>&ge; 0.85</td><td>LLM-as-judge</td></tr>
+    <tr><td>Contextual Relevancy</td><td>Retrieved context relevant?</td><td>&ge; 0.80</td><td>LLM-as-judge</td></tr>
+    <tr><td>Answer Relevancy</td><td>Answer addresses question?</td><td>&ge; 0.85</td><td>LLM-as-judge</td></tr>
+    <tr><td>Keyword Coverage</td><td>Expected keywords present?</td><td>&ge; 0.70</td><td>String match</td></tr>
+    <tr><td>Retrieval Latency</td><td>Pipeline time</td><td>&lt; 500ms p95</td><td>Instrumentation</td></tr>
+    <tr><td>Cache Hit Rate</td><td>Queries from Redis</td><td>&ge; 40%</td><td>Redis tracking</td></tr>
+    <tr><td>Re-rank Improvement</td><td>Relevancy lift</td><td>&ge; 10%</td><td>A/B comparison</td></tr>
+  </table>
+
+  <h3>Test queries (20+)</h3>
+  <pre><code>Policy Types:     "What is whole life insurance?"
+                  "What is term life insurance?"
+                  "What is Medicare Supplement?"
+Policy Status:    "What does it mean if my policy lapsed?"
+                  "What is a paid-up policy?"
+Premiums:         "What is the grace period for a missed payment?"
+                  "How does autopay work?"
+Payments:         "What payment methods do you accept?"
+                  "Can I pay with a prepaid card?"
+Cash Value:       "How does cash value grow in my policy?"
+Policy Loans:     "Can I take a loan against my policy?"
+                  "What happens if I don't repay my policy loan?"
+Beneficiaries:    "How do I change my beneficiary?"
+                  "What is a contingent beneficiary?"
+Documents:        "Can you email me my policy documents?"
+Claims:           "How do I file a life insurance claim?"
+Privacy:          "How do I opt out of data sharing?"
+Dividends:        "What are my dividend options?"
+General:          "How do I speak to a live agent?"
+Compliance:       "What is the ACH authorization disclosure?"</code></pre>
+</div>
+
+<!-- ====== SECTION 13 ====== -->
+<div class="section" id="s13">
+  <h2>13. Production Checklist</h2>
+  <ul class="checklist">
+    <li>Async fix: All pgvector calls use <code>run_in_executor</code></li>
+    <li>Redis caching: Active with 1hr TTL, graceful fallback</li>
+    <li>Metadata filtering: Category detection + filtered search</li>
+    <li>Re-ranking: LLM re-ranker with parallel scoring</li>
+    <li>Document pipeline: Supports PDF, URL, text, CSV</li>
+    <li>HNSW index: Created when chunk count exceeds 500</li>
+    <li>Connection pooling: SQLAlchemy pool or PgBouncer</li>
+    <li>Monitoring: Latency, cache hit rate, quality logged</li>
+    <li>Cache invalidation: <code>clear_cache()</code> after every ingestion</li>
+    <li>Evaluation: All 20+ test queries score &ge; 0.80 faithfulness</li>
+    <li>Load test: 50 concurrent RAG queries &lt; 1s p95</li>
+    <li>Graceful degradation: RAG failure &rarr; canned response</li>
+  </ul>
+</div>
+
+</div><!-- /container -->
+</body>
+</html>

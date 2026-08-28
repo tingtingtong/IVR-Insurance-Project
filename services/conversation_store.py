@@ -33,14 +33,12 @@ _chats: dict[str, dict] = {}
 _chat_order: deque[str] = deque(maxlen=100)
 
 
-def start_call(call_sid: str, from_number: str, channel: str = "webhook") -> None:
+def start_call(call_sid: str, from_number: str) -> None:
     _calls[call_sid] = {
         "call_sid":      call_sid,
         "from_number":   from_number,
-        "channel":       channel,
         "started_at":    datetime.now().isoformat(timespec="seconds"),
         "ended_at":      None,
-        "duration_seconds": None,
         "status":        "active",
         "recording_url": None,
         "recording_sid": None,
@@ -73,21 +71,9 @@ def add_call_turn(
 
 def end_call(call_sid: str) -> None:
     if call_sid in _calls:
-        now = datetime.now()
-        _calls[call_sid]["ended_at"] = now.isoformat(timespec="seconds")
+        _calls[call_sid]["ended_at"] = datetime.now().isoformat(timespec="seconds")
         _calls[call_sid]["status"]   = "ended"
-        try:
-            started = datetime.fromisoformat(_calls[call_sid]["started_at"])
-            _calls[call_sid]["duration_seconds"] = int((now - started).total_seconds())
-        except Exception:
-            pass
         _db.upsert_call(call_sid, _calls[call_sid])
-        # Log to MLflow (non-blocking — errors are swallowed inside tracker)
-        try:
-            from services.mlflow_tracker import log_call
-            log_call(_calls[call_sid])
-        except Exception:
-            pass
 
 
 def set_recording(call_sid: str, recording_sid: str, recording_url: str) -> None:
@@ -150,21 +136,9 @@ def update_call_metadata(call_sid: str, state: dict) -> None:
     # ── Model info ────────────────────────────────────────────────────────────
     try:
         from config import settings as _s
-        channel = c.get("channel", "webhook")
-        if channel == "websocket":
-            stt_engine = "deepgram"
-            stt_model  = _s.deepgram_model
-            stt_detail = f"endpointing={_s.deepgram_endpointing}ms utterance_end={_s.deepgram_utterance_end_ms}ms"
-        else:
-            stt_engine = "twilio_gather"
-            stt_model  = "en-US"
-            stt_detail = "speechTimeout=auto language=en-US"
         c["model_info"] = {
-            "llm_model":  _s.groq_model,
-            "auth_mode":  _s.auth_mode,
-            "stt_engine": stt_engine,
-            "stt_model":  stt_model,
-            "stt_detail": stt_detail,
+            "llm_model": _s.groq_model,
+            "auth_mode": _s.auth_mode,
         }
     except Exception:
         pass

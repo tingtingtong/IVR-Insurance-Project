@@ -82,7 +82,8 @@ async def chat_message(body: ChatMessage):
         })
 
     except Exception as e:
-        log.error("chat_error", session_id=session_id, error=str(e))
+        import traceback
+        log.error("chat_error", session_id=session_id, error=str(e), traceback=traceback.format_exc())
         err = "I'm having trouble right now. Please try again in a moment."
         add_chat_turn(session_id, "bot", err, node="error")
         return JSONResponse({"session_id": session_id, "response": err, "error": str(e)}, status_code=200)

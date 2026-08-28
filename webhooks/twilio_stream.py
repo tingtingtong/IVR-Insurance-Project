@@ -29,7 +29,7 @@ from services.session import SessionService
 from services.stt import STTService
 from services.tts import TTSService
 from services.vad import VADService
-from services.conversation_store import update_call_metadata, start_call as _cs_start_call
+from services.conversation_store import update_call_metadata, start_call as _cs_start_call, add_call_turn
 
 log = structlog.get_logger()
 
@@ -191,16 +191,11 @@ class CallHandler:
         self.stream_sid = msg.get("streamSid", "")
         start_data = msg.get("start", {})
         self.call_sid = start_data.get("callSid", "")
+        custom = start_data.get("customParameters", {})
+        from_number = custom.get("from", custom.get("From", ""))
 
         log.info("call_started", call_sid=self.call_sid, stream_sid=self.stream_sid,
-                 auth_mode=settings.auth_mode)
-
-        # Ensure call record exists and tag it as websocket channel
-        from services import conversation_store as _cs
-        if self.call_sid not in _cs._calls:
-            _cs_start_call(self.call_sid, start_data.get("customParameters", {}).get("from", "stream"), channel="websocket")
-        else:
-            _cs._calls[self.call_sid]["channel"] = "websocket"
+                 auth_mode=settings.auth_mode, from_number=from_number)
 
         # Init session state in Redis
         await self.session.init_session(self.call_sid)
@@ -220,6 +215,8 @@ class CallHandler:
             # Standard mode: Deepgram STT → LangGraph → ElevenLabs TTS
             self.stt = STTService(on_transcript=self._on_transcript)
             await self.stt.start()
+            _cs_start_call(self.call_sid, from_number)
+            add_call_turn(self.call_sid, "bot", PROMPTS["greeting"]["welcome"], node="greeting")
             await self._speak(PROMPTS["greeting"]["welcome"])
 
     async def _on_media(self, msg: dict):
@@ -264,6 +261,7 @@ class CallHandler:
 
     async def _process_turn(self, utterance: str):
         """Append utterance to history, then invoke the graph."""
+        add_call_turn(self.call_sid, "human", utterance)
         state = await self.session.get_state(self.call_sid)
         state.setdefault("messages", [])
         state["messages"] = state["messages"] + [HumanMessage(content=utterance)]
@@ -289,6 +287,9 @@ class CallHandler:
         otp_step    = result.get("otp_step", "")
 
         if tts_text:
+            add_call_turn(self.call_sid, "bot", tts_text,
+                          intent=result.get("current_intent", ""),
+                          node=result.get("current_node", ""))
             await self._speak(tts_text)
 
         # Activate DTMF mode when the OTP node is waiting for keypad input.
@@ -491,12 +492,4 @@ class CallHandler:
             await self.stt.finish()
         if self._tts_task and not self._tts_task.done():
             self._tts_task.cancel()
-        # Send a proper WebSocket close frame so Twilio's gateway gets a clean
-        # close handshake instead of a TCP reset.  Without this, any exception
-        # in _on_start (e.g. STT service unreachable right after restart) leaves
-        # the socket half-open and Twilio sends error 31005 to the caller.
-        try:
-            await self.ws.close()
-        except Exception:
-            pass
         log.info("call_ended", call_sid=self.call_sid)

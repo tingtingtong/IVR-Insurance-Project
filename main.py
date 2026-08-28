@@ -47,14 +47,14 @@ structlog.configure(
 
 log = structlog.get_logger()
 
-# Async PG connection pool — held open for the lifetime of the server
-_async_pg_pool = None
+# Holds the postgres context manager so we can close it cleanly on shutdown
+_pg_ctx = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup: compile graph with async checkpointer. Shutdown: close pool."""
-    global _async_pg_pool
+    """Startup: compile graph with checkpointer. Shutdown: close DB connection."""
+    global _pg_ctx
     from core.graph.graph import build_graph, set_graph
     from langgraph.checkpoint.memory import MemorySaver
 
@@ -63,14 +63,15 @@ async def lifespan(app: FastAPI):
     checkpointer = None
     try:
         import socket
-        from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+        import psycopg
+        from langgraph.checkpoint.postgres import PostgresSaver
         from urllib.parse import urlparse
 
         db_url = settings.database_url
         if "+" in db_url.split("://")[0]:
             db_url = "postgresql://" + db_url.split("://", 1)[1]
 
-        # Fast port-check before attempting full connect
+        # Fast port-check before attempting full connect — fails instantly if Postgres is down
         parsed = urlparse(db_url)
         pg_host = parsed.hostname or "localhost"
         pg_port = parsed.port or 5432
@@ -81,23 +82,19 @@ async def lifespan(app: FastAPI):
         if not reachable:
             raise ConnectionRefusedError(f"PostgreSQL not reachable at {pg_host}:{pg_port}")
 
-        # AsyncPostgresSaver with a single async psycopg connection
-        import psycopg as _psycopg
-        _async_pg_pool = await _psycopg.AsyncConnection.connect(
-            db_url, autocommit=True, connect_timeout=5
-        )
-        checkpointer = AsyncPostgresSaver(_async_pg_pool)
-        await checkpointer.setup()
-        log.info("checkpointer_postgres_ready", db=f"{pg_host}:{pg_port}")
+        # PostgresSaver with sync psycopg.connect doesn't support async aget_tuple
+        # (needed by graph.ainvoke). Ensure tables exist for conversation_store, then
+        # use MemorySaver for the graph checkpointer (async-compatible).
+        conn = psycopg.connect(db_url, autocommit=True, connect_timeout=5)
+        tmp_cp = PostgresSaver(conn)
+        tmp_cp.setup()  # creates checkpoint tables if missing
+        conn.close()
+        checkpointer = MemorySaver()
+        log.info("checkpointer_memory_with_postgres_db", db=f"{pg_host}:{pg_port}")
     except Exception as pg_err:
         log.warning("checkpointer_fallback_to_memory", error=str(pg_err))
         checkpointer = MemorySaver()
-        if _async_pg_pool:
-            try:
-                await _async_pg_pool.close()
-            except Exception:
-                pass
-        _async_pg_pool = None
+        _pg_ctx = None
 
     compiled = build_graph().compile(checkpointer=checkpointer)
     set_graph(compiled)
@@ -111,9 +108,9 @@ async def lifespan(app: FastAPI):
     yield  # server runs here
 
     # ── Shutdown ──────────────────────────────────────────────────────────────
-    if _async_pg_pool is not None:
+    if checkpointer is not None and hasattr(checkpointer, "conn"):
         try:
-            await _async_pg_pool.close()
+            checkpointer.conn.close()
             log.info("checkpointer_postgres_closed")
         except Exception:
             pass

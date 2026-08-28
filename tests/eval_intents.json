@@ -1,0 +1,75 @@
+[
+  {"utterance": "What is the status of my policy?", "expected": "policy_info"},
+  {"utterance": "Is my policy still active?", "expected": "policy_info"},
+  {"utterance": "What is my premium amount?", "expected": "policy_info"},
+  {"utterance": "When is my next payment due?", "expected": "policy_info"},
+  {"utterance": "How much coverage do I have?", "expected": "policy_info"},
+  {"utterance": "What is my paid-to-date?", "expected": "policy_info"},
+
+  {"utterance": "I want to make a payment", "expected": "otp"},
+  {"utterance": "Pay my bill", "expected": "otp"},
+  {"utterance": "I need to make a one-time payment", "expected": "otp"},
+  {"utterance": "Can I pay now with my credit card?", "expected": "otp"},
+  {"utterance": "I want to pay by bank account", "expected": "otp"},
+
+  {"utterance": "Show me my payment history", "expected": "payment"},
+  {"utterance": "Did my last payment go through?", "expected": "payment"},
+  {"utterance": "What were my recent transactions?", "expected": "payment"},
+  {"utterance": "Has my payment been processed?", "expected": "payment"},
+  {"utterance": "Check my payment status", "expected": "payment"},
+
+  {"utterance": "Can I borrow against my policy?", "expected": "loan"},
+  {"utterance": "What is my loan balance?", "expected": "loan"},
+  {"utterance": "How much do I owe on my loan?", "expected": "loan"},
+  {"utterance": "What is the interest rate on my policy loan?", "expected": "loan"},
+  {"utterance": "Tell me about my loan payoff amount", "expected": "loan"},
+
+  {"utterance": "Who is listed as my beneficiary?", "expected": "beneficiary"},
+  {"utterance": "I want to know my beneficiaries", "expected": "beneficiary"},
+  {"utterance": "Who gets the death benefit?", "expected": "beneficiary"},
+  {"utterance": "Tell me about my beneficiary information", "expected": "beneficiary"},
+  {"utterance": "What are the beneficiary designations on my policy?", "expected": "beneficiary"},
+
+  {"utterance": "I need to change the owner on my policy", "expected": "owner_change"},
+  {"utterance": "I want to update my beneficiary", "expected": "owner_change"},
+  {"utterance": "How do I change the owner?", "expected": "owner_change"},
+
+  {"utterance": "I need to update my address", "expected": "contact_change"},
+  {"utterance": "My phone number has changed", "expected": "contact_change"},
+  {"utterance": "Can I update my contact information?", "expected": "contact_change"},
+  {"utterance": "I moved to a new address", "expected": "contact_change"},
+  {"utterance": "Change my mailing address please", "expected": "contact_change"},
+
+  {"utterance": "Send me a copy of my policy", "expected": "document"},
+  {"utterance": "I need a duplicate policy document", "expected": "document"},
+  {"utterance": "Can you mail me a form?", "expected": "document"},
+  {"utterance": "I want to request a letter", "expected": "document"},
+  {"utterance": "Send me the beneficiary change form", "expected": "document"},
+
+  {"utterance": "How do you use my personal information?", "expected": "privacy"},
+  {"utterance": "I want to opt out of information sharing", "expected": "privacy"},
+  {"utterance": "What is your privacy policy?", "expected": "privacy"},
+  {"utterance": "Don't share my data with anyone", "expected": "privacy"},
+  {"utterance": "I have a privacy question about my data", "expected": "privacy"},
+
+  {"utterance": "What is whole life insurance?", "expected": "faq"},
+  {"utterance": "How does term life differ from whole life?", "expected": "faq"},
+  {"utterance": "What is the grace period for a missed payment?", "expected": "faq"},
+  {"utterance": "How does the cash value grow?", "expected": "faq"},
+  {"utterance": "What happens if I stop paying premiums?", "expected": "faq"},
+  {"utterance": "Can you explain universal life insurance?", "expected": "faq"},
+  {"utterance": "What are the tax benefits of life insurance?", "expected": "faq"},
+
+  {"utterance": "Let me talk to a person", "expected": "escalate"},
+  {"utterance": "I want to speak to a representative", "expected": "escalate"},
+  {"utterance": "Transfer me to an agent", "expected": "escalate"},
+  {"utterance": "Can I talk to a human?", "expected": "escalate"},
+  {"utterance": "I need to speak with a supervisor", "expected": "escalate"},
+
+  {"utterance": "Goodbye", "expected": "goodbye"},
+  {"utterance": "That's all I need", "expected": "goodbye"},
+  {"utterance": "No, nothing else, bye", "expected": "goodbye"},
+  {"utterance": "Thank you goodbye", "expected": "goodbye"},
+  {"utterance": "I'm done, thank you", "expected": "goodbye"},
+  {"utterance": "No thanks, have a good day", "expected": "goodbye"}
+]

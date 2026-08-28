@@ -17,6 +17,7 @@ from services.session import SessionService
 from services.conversation_store import start_call, add_call_turn, end_call, set_recording, update_call_metadata
 from langchain_core.messages import HumanMessage
 from utils.call_logger import log_event
+from utils.tts_normalizer import normalize_tts_text
 from webhooks.security import validate_twilio_webhook
 
 _twilio = TwilioClient(settings.twilio_account_sid, settings.twilio_auth_token)
@@ -46,7 +47,7 @@ def _gather_response(say_text: str, action: str = "/webhook/gather") -> str:
         profanityFilter=False,
         hints="yes, no, correct, incorrect, right, wrong, confirm, cancel, repeat, policy, beneficiary, payment, loan, status, help, agent, transfer",
     )
-    gather.say(say_text, voice="Polly.Joanna")
+    gather.say(normalize_tts_text(say_text), voice="Polly.Joanna")
     response.append(gather)
     # Fallback if caller says nothing
     response.redirect("/webhook/gather", method="POST")
@@ -68,23 +69,16 @@ async def incoming_call(request: Request):
     session = SessionService()
     await session.init_session(call_sid)
 
-    # Start recording in a background thread — the Twilio SDK is synchronous and
-    # its HTTP call blocks the event loop for 4–12 s (DNS + TLS + API roundtrip).
-    # Running it in a thread keeps the webhook response fast and within Twilio's
-    # 15-second deadline.
-    import asyncio
-    async def _start_recording():
-        try:
-            await asyncio.to_thread(
-                _twilio.calls(call_sid).recordings.create,
-                recording_status_callback="/webhook/recording-status",
-                recording_status_callback_method="POST",
-                recording_status_callback_event=["completed"],
-            )
-            log.info("recording_started", call_sid=call_sid)
-        except Exception as e:
-            log.warning("recording_start_failed", call_sid=call_sid, error=str(e))
-    asyncio.create_task(_start_recording())
+    # Start recording — status callback fires when recording is available
+    try:
+        _twilio.calls(call_sid).recordings.create(
+            recording_status_callback="/webhook/recording-status",
+            recording_status_callback_method="POST",
+            recording_status_callback_event=["completed"],
+        )
+        log.info("recording_started", call_sid=call_sid)
+    except Exception as e:
+        log.warning("recording_start_failed", call_sid=call_sid, error=str(e))
 
     return Response(content=_gather_response(_GREETING), media_type="application/xml")
 
@@ -130,7 +124,7 @@ async def gather_speech(request: Request):
             log_event(call_sid, "call_transfer", to=transfer_to)
             response = VoiceResponse()
             if tts_text:
-                response.say(tts_text, voice="Polly.Joanna")
+                response.say(normalize_tts_text(tts_text), voice="Polly.Joanna")
             response.dial(transfer_to)
             return Response(content=str(response), media_type="application/xml")
 
@@ -138,7 +132,7 @@ async def gather_speech(request: Request):
             end_call(call_sid)
             log_event(call_sid, "call_end", reason="goodbye")
             response = VoiceResponse()
-            response.say(tts_text or "Thank you for calling. Goodbye.", voice="Polly.Joanna")
+            response.say(normalize_tts_text(tts_text or "Thank you for calling. Goodbye."), voice="Polly.Joanna")
             response.hangup()
             return Response(content=str(response), media_type="application/xml")
 

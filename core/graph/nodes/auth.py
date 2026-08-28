@@ -12,6 +12,16 @@ from config import settings
 
 MAX_AUTH_ATTEMPTS = settings.max_auth_attempts
 
+_DIGIT_WORDS = {
+    "0": "zero", "1": "one", "2": "two", "3": "three", "4": "four",
+    "5": "five", "6": "six", "7": "seven", "8": "eight", "9": "nine",
+}
+
+
+def _spell_digits_tts(s: str) -> str:
+    """Spell digits as words for TTS (e.g. '3456' → 'three four five six')."""
+    return " ".join(_DIGIT_WORDS.get(c, c) for c in s)
+
 
 async def auth_node(state: CNOState) -> dict:
     """
@@ -733,7 +743,7 @@ def _get_policy_numbers(party: dict) -> list:
 
 
 def _ask_policy_selection(candidate_party: dict, pii_collected: dict, policy_numbers: list) -> dict:
-    last_fours = ", ".join(p[-4:] for p in policy_numbers if len(p) >= 4)
+    last_fours = ", or ".join(_spell_digits_tts(p[-4:]) for p in policy_numbers if len(p) >= 4)
     tts = (
         "We found multiple policies on your account. "
         f"Please say the last 4 digits of the policy you'd like to access. "
@@ -767,7 +777,7 @@ def _collecting_policy_selection(state, last_human, pii_collected, auth_attempts
         blank_count = _get_slot(state, slot, "blank")
         if blank_count >= 2:
             return _escalate(state)
-        last_fours = ", ".join(p[-4:] for p in policy_numbers if len(p) >= 4)
+        last_fours = ", or ".join(_spell_digits_tts(p[-4:]) for p in policy_numbers if len(p) >= 4)
         tts = f"I didn't catch that. Please say the last 4 digits of the policy. Your options are: {last_fours}."
         return {
             "auth_step":       "collecting_policy_selection",

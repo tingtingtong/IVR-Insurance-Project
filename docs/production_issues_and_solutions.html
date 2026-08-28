@@ -1,0 +1,1344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UIC IVR - Production Issues, Scenarios & Solutions</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #171b24;
+    --surface2: #1e2330;
+    --border: #2a3042;
+    --text: #e2e8f0;
+    --text-dim: #8892a8;
+    --accent: #4f8ef7;
+    --accent-dim: #3468c0;
+    --red: #ef4444;
+    --red-dim: #7f1d1d;
+    --orange: #f59e0b;
+    --orange-dim: #78350f;
+    --green: #22c55e;
+    --green-dim: #14532d;
+    --purple: #a78bfa;
+    --purple-dim: #4c1d95;
+    --cyan: #06b6d4;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.65;
+    padding: 0;
+  }
+
+  /* ── Header ─────────────────────────────────────── */
+  .hero {
+    background: linear-gradient(135deg, #0f1117 0%, #1a1f36 50%, #1e293b 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 60px 40px 50px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -20%;
+    width: 140%;
+    height: 200%;
+    background: radial-gradient(ellipse at 30% 50%, rgba(79,142,247,0.06) 0%, transparent 60%),
+                radial-gradient(ellipse at 70% 50%, rgba(167,139,250,0.04) 0%, transparent 60%);
+    pointer-events: none;
+  }
+  .hero h1 {
+    font-size: 2.2rem;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    background: linear-gradient(135deg, #e2e8f0, #a78bfa);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 12px;
+    position: relative;
+  }
+  .hero .subtitle {
+    font-size: 1rem;
+    color: var(--text-dim);
+    max-width: 720px;
+    margin: 0 auto;
+    position: relative;
+  }
+  .hero .badge-row {
+    margin-top: 24px;
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    flex-wrap: wrap;
+    position: relative;
+  }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 14px;
+    border-radius: 20px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+  }
+  .badge.critical { background: var(--red-dim); color: #fca5a5; border: 1px solid rgba(239,68,68,0.3); }
+  .badge.high     { background: var(--orange-dim); color: #fcd34d; border: 1px solid rgba(245,158,11,0.3); }
+  .badge.medium   { background: var(--purple-dim); color: #c4b5fd; border: 1px solid rgba(167,139,250,0.3); }
+  .badge.info     { background: rgba(6,182,212,0.1); color: #67e8f9; border: 1px solid rgba(6,182,212,0.25); }
+
+  /* ── Navigation ─────────────────────────────────── */
+  .nav-bar {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(15,17,23,0.92);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    padding: 0 40px;
+    display: flex;
+    gap: 0;
+    overflow-x: auto;
+  }
+  .nav-btn {
+    padding: 14px 22px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text-dim);
+    border: none;
+    border-bottom: 2px solid transparent;
+    background: none;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.2s;
+  }
+  .nav-btn:hover { color: var(--text); }
+  .nav-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* ── Content ────────────────────────────────────── */
+  .container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 40px 32px 80px;
+  }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin: 48px 0 28px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .section-header:first-child { margin-top: 0; }
+  .section-icon {
+    width: 42px;
+    height: 42px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.3rem;
+    flex-shrink: 0;
+  }
+  .section-icon.a { background: linear-gradient(135deg, rgba(79,142,247,0.15), rgba(79,142,247,0.05)); border: 1px solid rgba(79,142,247,0.25); }
+  .section-icon.b { background: linear-gradient(135deg, rgba(167,139,250,0.15), rgba(167,139,250,0.05)); border: 1px solid rgba(167,139,250,0.25); }
+  .section-header h2 {
+    font-size: 1.35rem;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+  }
+  .section-header .count {
+    margin-left: auto;
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    background: var(--surface2);
+    padding: 4px 12px;
+    border-radius: 12px;
+  }
+
+  /* ── Scenario Cards ─────────────────────────────── */
+  .scenario {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 20px;
+    overflow: hidden;
+    transition: border-color 0.2s;
+  }
+  .scenario:hover { border-color: rgba(79,142,247,0.3); }
+
+  .scenario-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 20px 24px 0;
+    cursor: pointer;
+    user-select: none;
+  }
+  .scenario-num {
+    min-width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.82rem;
+    font-weight: 700;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .scenario-num.critical { background: var(--red-dim); color: #fca5a5; }
+  .scenario-num.high     { background: var(--orange-dim); color: #fcd34d; }
+  .scenario-num.medium   { background: var(--purple-dim); color: #c4b5fd; }
+
+  .scenario-title-block { flex: 1; }
+  .scenario-title {
+    font-size: 1.02rem;
+    font-weight: 650;
+    line-height: 1.4;
+    margin-bottom: 4px;
+  }
+  .scenario-tags {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-top: 6px;
+  }
+  .tag {
+    font-size: 0.68rem;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+  }
+  .tag.latency    { background: rgba(239,68,68,0.12); color: #f87171; }
+  .tag.ux         { background: rgba(245,158,11,0.12); color: #fbbf24; }
+  .tag.reliability{ background: rgba(6,182,212,0.12); color: #22d3ee; }
+  .tag.scale      { background: rgba(167,139,250,0.12); color: #a78bfa; }
+  .tag.compliance { background: rgba(236,72,153,0.12); color: #f472b6; }
+  .tag.pci        { background: rgba(239,68,68,0.18); color: #fca5a5; }
+
+  .scenario-chevron {
+    color: var(--text-dim);
+    font-size: 1.1rem;
+    margin-top: 6px;
+    transition: transform 0.25s;
+    flex-shrink: 0;
+  }
+  .scenario.open .scenario-chevron { transform: rotate(90deg); }
+
+  .scenario-body {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.35s ease;
+  }
+  .scenario.open .scenario-body { max-height: 2000px; }
+
+  .scenario-content {
+    padding: 16px 24px 24px;
+  }
+
+  .field {
+    margin-bottom: 16px;
+  }
+  .field-label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+  }
+  .field-label.problem  { color: #f87171; }
+  .field-label.impact   { color: #fbbf24; }
+  .field-label.solution { color: #4ade80; }
+  .field-label.files    { color: #60a5fa; }
+  .field-label.data     { color: #c084fc; }
+
+  .field p {
+    font-size: 0.9rem;
+    color: #cbd5e1;
+    line-height: 1.7;
+  }
+  .field p strong { color: #f1f5f9; font-weight: 600; }
+
+  .field ul {
+    list-style: none;
+    padding: 0;
+  }
+  .field ul li {
+    position: relative;
+    padding-left: 18px;
+    margin-bottom: 6px;
+    font-size: 0.88rem;
+    color: #cbd5e1;
+  }
+  .field ul li::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 9px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+  }
+  .field.solution-field ul li::before { background: var(--green); }
+  .field.data-field ul li::before     { background: var(--purple); }
+  .field.impact-field ul li::before   { background: var(--orange); }
+
+  .file-chips {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .file-chip {
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 0.72rem;
+    padding: 3px 10px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: #93c5fd;
+  }
+
+  /* ── Data callout ───────────────────────────────── */
+  .data-callout {
+    background: rgba(167,139,250,0.06);
+    border-left: 3px solid var(--purple);
+    border-radius: 0 8px 8px 0;
+    padding: 12px 16px;
+    margin: 10px 0;
+    font-size: 0.88rem;
+    color: #d4d4f7;
+  }
+  .data-callout strong { color: #e9e5ff; }
+
+  /* ── Priority Table ─────────────────────────────── */
+  .priority-table-wrap {
+    margin-top: 48px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .priority-table-header {
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .priority-table-header h3 {
+    font-size: 1.1rem;
+    font-weight: 700;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  thead th {
+    text-align: left;
+    padding: 12px 20px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--text-dim);
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+  }
+  tbody td {
+    padding: 12px 20px;
+    font-size: 0.88rem;
+    border-bottom: 1px solid rgba(42,48,66,0.5);
+    color: #cbd5e1;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: rgba(79,142,247,0.03); }
+
+  .priority-badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 4px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+  }
+  .priority-badge.p0 { background: var(--red-dim); color: #fca5a5; }
+  .priority-badge.p1 { background: var(--orange-dim); color: #fcd34d; }
+  .priority-badge.p2 { background: var(--purple-dim); color: #c4b5fd; }
+
+  .risk-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 6px;
+  }
+  .risk-dot.critical { background: var(--red); }
+  .risk-dot.high     { background: var(--orange); }
+  .risk-dot.medium   { background: var(--purple); }
+
+  .effort-bar {
+    display: inline-block;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--accent);
+    vertical-align: middle;
+    margin-right: 8px;
+  }
+
+  /* ── Stats bar ──────────────────────────────────── */
+  .stats-bar {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin: 32px 0;
+  }
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    text-align: center;
+  }
+  .stat-value {
+    font-size: 2rem;
+    font-weight: 800;
+    letter-spacing: -1px;
+  }
+  .stat-value.red    { color: #f87171; }
+  .stat-value.orange { color: #fbbf24; }
+  .stat-value.purple { color: #a78bfa; }
+  .stat-value.blue   { color: #60a5fa; }
+  .stat-label {
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    margin-top: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+  }
+
+  /* ── Footer ─────────────────────────────────────── */
+  .footer {
+    text-align: center;
+    padding: 32px;
+    border-top: 1px solid var(--border);
+    color: var(--text-dim);
+    font-size: 0.78rem;
+  }
+
+  /* ── Responsive ─────────────────────────────────── */
+  @media (max-width: 768px) {
+    .hero { padding: 40px 20px 36px; }
+    .hero h1 { font-size: 1.6rem; }
+    .container { padding: 24px 16px 60px; }
+    .scenario-content { padding: 12px 16px 20px; }
+    .nav-bar { padding: 0 16px; }
+    .stats-bar { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
+</head>
+<body>
+
+<!-- ════════════════ HERO ════════════════ -->
+<div class="hero">
+  <h1>Production Issues, Scenarios & Solutions</h1>
+  <p class="subtitle">Real-world production scenarios causing latency, user frustration, and reliability failures in AI-powered IVR systems. Codebase-specific findings + industry-wide data points.</p>
+  <div class="badge-row">
+    <span class="badge critical">4 Critical</span>
+    <span class="badge high">5 High</span>
+    <span class="badge medium">3 Medium</span>
+    <span class="badge info">20 Scenarios</span>
+  </div>
+</div>
+
+<!-- ════════════════ NAV ════════════════ -->
+<div class="nav-bar">
+  <button class="nav-btn active" onclick="showSection('all',this)">All Scenarios</button>
+  <button class="nav-btn" onclick="showSection('section-a',this)">Section A: This Codebase</button>
+  <button class="nav-btn" onclick="showSection('section-b',this)">Section B: Industry-Wide</button>
+  <button class="nav-btn" onclick="showSection('priority',this)">Priority Matrix</button>
+</div>
+
+<div class="container">
+
+  <!-- ════════════════ STATS ════════════════ -->
+  <div class="stats-bar">
+    <div class="stat-card"><div class="stat-value red">4</div><div class="stat-label">P0 Critical</div></div>
+    <div class="stat-card"><div class="stat-value orange">5</div><div class="stat-label">P1 High</div></div>
+    <div class="stat-card"><div class="stat-value purple">3</div><div class="stat-label">P2 Medium</div></div>
+    <div class="stat-card"><div class="stat-value blue">75%</div><div class="stat-label">Customers Frustrated by IVR</div></div>
+  </div>
+
+  <!-- ════════════════ SECTION A ════════════════ -->
+  <div class="section-group" data-section="section-a">
+    <div class="section-header">
+      <div class="section-icon a">A</div>
+      <h2>Issues Identified in This IVR Codebase</h2>
+      <span class="count">10 scenarios</span>
+    </div>
+
+    <!-- S1 -->
+    <div class="scenario open" onclick="toggleScenario(this, event)">
+      <div class="scenario-header">
+        <div class="scenario-num high">01</div>
+        <div class="scenario-title-block">
+          <div class="scenario-title">15-20s Silence During Policy/Payment Lookups</div>
+          <div class="scenario-tags">
+            <span class="tag latency">Latency</span>
+            <span class="tag ux">UX</span>
+          </div>
+        </div>
+        <div class="scenario-chevron">&#9654;</div>
+      </div>
+      <div class="scenario-body">
+        <div class="scenario-content">
+          <div class="field">
+            <div class="field-label problem">Problem</div>
+            <p>Each service node (policy, payment, loan, beneficiary) makes <strong>sequential calls</strong>: first a backend API call (up to 10s timeout), then an LLM call to format the response (2-5s). The caller hears <strong>nothing</strong> during this entire window.</p>
+          </div>
+          <div class="field">
+            <div class="field-label files">Files</div>
+            <div class="file-chips">
+              <span class="file-chip">core/graph/nodes/policy.py:42-67</span>
+              <span class="file-chip">payment.py:41-68</span>
+              <span class="file-chip">loan.py:29-47</span>
+            </div>
+          </div>
+          <div class="field impact-field">
+            <div class="field-label impact">Impact</div>
+            <ul>
+              <li>Callers perceive a dead line after ~5s of silence</li>
+              <li>Industry data: <strong>60% of callers hang up after 10s of silence</strong></li>
+              <li>15-20s gap causes most callers to abandon or repeat, creating duplicate processing</li>
+            </ul>
+          </div>
+          <div class="field solution-field">
+            <div class="field-label solution">Solution</div>
+            <ul>
+              <li>Add intermediate filler TTS: <em>"Let me look that up for you..."</em> before the API call</li>
+              <li>Stream LLM response token-by-token into TTS (overlap generation + synthesis)</li>
+              <li>Set aggressive API timeouts (5s) with cached fallback for recently queried policies</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- S2 -->
+    <div class="scenario" onclick="toggleScenario(this, event)">
+      <div class="scenario-header">
+        <div class="scenario-num high">02</div>
+        <div class="scenario-title-block">
+          <div class="scenario-title">Auth Flow Creates 30s+ Cumulative Latency</div>
+          <div class="scenario-tags">
+            <span class="tag latency">Latency</span>
+            <span class="tag ux">UX</span>
+          </div>
+        </div>
+        <div class="scenario-chevron">&#9654;</div>
+      </div>
+      <div class="scenario-body">
+        <div class="scenario-content">
+          <div class="field">
+            <div class="field-label problem">Problem</div>
+            <p>Every phone/policy lookup triggers a fresh <strong>party_search API call with 10s timeout</strong>. A typical 2-retry auth flow: 3 API calls x 10s = <strong>30s of waiting</strong>. No intermediate prompt means callers hear silence and repeat themselves.</p>
+          </div>
+          <div class="field">
+            <div class="field-label files">Files</div>
+            <div class="file-chips">
+              <span class="file-chip">core/graph/nodes/auth.py:178-264</span>
+              <span class="file-chip">core/tools/party_search.py:32-44</span>
+            </div>
+          </div>
+          <div class="field solution-field">
+            <div class="field-label solution">Solution</div>
+            <ul>
+              <li>Cache party_search results for the session (phone number rarely changes mid-call)</li>
+              <li>Add "One moment while I verify..." filler TTS before each API call</li>
+              <li>Pre-fetch party data during phone number confirmation step</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- S3 -->
+    <div class="scenario" onclick="toggleScenario(this, event)">
+      <div class="scenario-header">
+        <div class="scenario-num critical">03</div>
+        <div class="scenario-title-block">
+          <div class="scenario-title">No Connection Pooling Exhausts File Descriptors Under Load</div>
+          <div class="scenario-tags">
+            <span class="tag scale">Scalability</span>
+            <span class="tag reliability">Reliability</span>
+          </div>
+        </div>
+        <div class="scenario-chevron">&#9654;</div>
+      </div>
+      <div class="scenario-body">
+        <div class="scenario-content">
+          <div class="field">
+            <div class="field-label problem">Problem</div>
+            <p>Every backend API call creates and destroys a new <strong>aiohttp.ClientSession()</strong>. Each session opens a new TCP connection (~50-100ms overhead per call). At 100 concurrent calls x 3 API calls = <strong>300 simultaneous TCP connections</strong>, hitting Linux file descriptor limits (1024).</p>
+          </div>
+          <div class="field">
+            <div class="field-label files">Files</div>
+            <div class="file-chips">
+              <span class="file-chip">core/tools/party_search.py</span>
+              <span class="file-chip">auth_token.py</span>
+              <span class="file-chip">payment_api.py</span>
+              <span class="file-chip">holding_inquiry.py</span>
+              <span class="file-chip">contact.py</span>
+              <span class="file-chip">document.py</span>
+            </div>
+          </div>
+          <div class="data-callout"><strong>OSError: Too many open files</strong> - server crashes entirely. All in-flight calls dropped.</div>
+          <div class="field solution-field">
+            <div class="field-label solution">Solution</div>
+            <ul>
+              <li>Create a shared aiohttp.ClientSession at startup with TCPConnector(limit=100)</li>
+              <li>Inject via FastAPI dependency or module-level singleton</li>
+              <li>Add connection keep-alive to reuse TCP connections</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- S4 -->
+    <div class="scenario" onclick="toggleScenario(this, event)">
+      <div class="scenario-header">
+        <div class="scenario-num critical">04</div>
+        <div class="scenario-title-block">
+          <div class="scenario-title">MemorySaver Loses All In-Flight Calls on Restart</div>
+          <div class="scenario-tags">
+            <span class="tag reliability">Reliability</span>
+            <span class="tag scale">Scalability</span>
+          </div>
+        </div>
+        <div class="scenario-chevron">&#9654;</div>
+      </div>
+      <div class="scenario-body">
+        <div class="scenario-content">
+          <div class="field">
+            <div class="field-label problem">Problem</div>
+            <p><strong>main.py:92</strong> uses MemorySaver() as the LangGraph checkpointer even when PostgreSQL is available. All graph state lives in-process memory. A server restart (deploy, crash, OOM kill) instantly <strong>loses state for every active call</strong>.</p>
+          </div>
+          <div class="field">
+            <div class="field-label files">Files</div>
+            <div class="file-chips"><span class="file-chip">main.py:59-96</span></div>
+          </div>
+          <div class="field solution-field">
+            <div class="field-label solution">Solution</div>
+            <ul>
+              <li>Use AsyncPostgresSaver for the graph checkpointer (not just table setup)</li>
+              <li>Implement graceful shutdown that drains active calls before restart</li>
+              <li>Add health check warning when >N calls are in-flight before deploys</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- S5 -->
+    <div class="scenario" onclick="toggleScenario(this, event)">
+      <div class="scenario-header">
+        <div class="scenario-num medium">05</div>
+        <div class="scenario-title-block">
+          <div class="scenario-title">First FAQ Caller Hits 5-10s Cold Start</div>
+          <div class="scenario-tags">
+            <span class="tag latency">Latency</span>
+          </div>
+        </div>
+        <div class="scenario-chevron">&#9654;</div>
+      </div>
+      <div class="scenario-body">
+        <div class="scenario-content">
+          <div class="field">
+            <div class="field-label problem">Problem</div>
+            <p>The RAG vector store lazy-initializes on the first FAQ query, triggering OpenAI embedding model init + pgvector connection setup. <strong>5-10s delay</strong> for the first FAQ caller after every deploy/restart.</p>
+          </div>
+          <div class="field">
+            <div class="field-label files">Files</div>
+            <div class="file-chips"><span class="file-chip">services/rag.py:11-23</span></div>
+          </div>
+          <div class="field solution-field">
+            <div class="field-label solution">Solution</div>
+            <ul>
+              <li>Pre-warm the vector store during lifespan startup in main.py</li>
+              <li>Add _get_store() call in startup sequence after graph compilation</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- S6 -->
+    <div class="scenario" onclick="toggleScenario(this, event)">
+      <div class="scenario-header">
+        <div class="scenario-num high">06</div>
+        <div class="scenario-title-block">
+          <div class="scenario-title">Groq 503/429 Errors Cause Unnecessary Agent Transfers</div>
+          <div class="scenario-tags">
+            <span class="tag reliability">Reliability</span>
+            <span class="tag ux">UX</span>
+          </div>
+        </div>
+        <div class="scenario-chevron">&#9654;</div>
+      </div>
+      <div class="scenario-body">
+        <div class="scenario-content">
+          <div class="field">
+            <div class="field-label problem">Problem</div>
+            <p>Backend API calls in tool functions have <strong>no retry logic</strong>. A single transient 503 or network blip returns failure and escalates to a live agent. The router node has retry logic, but service nodes and tools do not.</p>
+          </div>
+          <div class="field">
+            <div class="field-label files">Files</div>
+            <div class="file-chips">
+              <span class="file-chip">core/tools/party_search.py:32-44</span>
+              <span class="file-chip">core/tools/auth_token.py:33-52</span>
+            </div>
+          </div>
+          <div class="data-callout">Groq returns 503s under load at <strong>~1-3% rate</strong>. Without retry, these become false escalations - real callers queued behind fake transfers.</div>
+          <div class="field solution-field">
+            <div class="field-label solution">Solution</div>
+            <ul>
+              <li>Add exponential backoff retry (1s, 2s) for 503/429 in all tool functions</li>
+              <li>Distinguish retryable errors (503, 429, timeout) from permanent (400, 404)</li>
+              <li>Log retry attempts for monitoring dashboards</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- S7 -->
+    <div class="scenario" onclick="toggleScenario(this, event)">
+      <div class="scenario-header">
+        <div class="scenario-num critical">07</div>
+        <div class="scenario-title-block">
+          <div class="scenario-title">DTMF Race Condition Can Cause Duplicate Payment Processing</div>
+          <div class="scenario-tags">
+            <span class="tag pci">PCI</span>
+            <span class="tag reliability">Reliability</span>
+          </div>
+        </div>
+        <div class="scenario-chevron">&#9654;</div>
+      </div>
+      <div class="scenario-body">
+        <div class="scenario-content">
+          <div class="field">
+            <div class="field-label problem">Problem</div>
+            <p>DTMF completion fetches state from Redis, merges OTP data, and invokes the graph. If two DTMF events arrive close together, both read <strong>stale state</strong> and both invoke the graph - potentially <strong>processing a payment twice</strong>.</p>
+          </div>
+          <div class="field">
+            <div class="field-label files">Files</div>
+            <div class="file-chips"><span class="file-chip">webhooks/twilio_stream.py:336-346</span></div>
+          </div>
+          <div class="data-callout">PCI compliance violation + direct financial risk. Duplicate charges require manual refunds and erode customer trust.</div>
+          <div class="field solution-field">
+            <div class="field-label solution">Solution</div>
+            <ul>
+              <li>Add Redis-based distributed lock (SETNX) before DTMF processing</li>
+              <li>Use optimistic locking with state version numbers</li>
+              <li>Debounce DTMF events with 500ms window before processing</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- S8 -->
+    <div class="scenario" onclick="toggleScenario(this, event)">
+      <div class="scenario-header">
+        <div class="scenario-num high">08</div>
+        <div class="scenario-title-block">
+          <div class="scenario-title">Deepgram Connection Drop Makes Caller "Deaf"</div>
+          <div class="scenario-tags">
+            <span class="tag reliability">Reliability</span>
+            <span class="tag ux">UX</span>
+          </div>
+        </div>
+        <div class="scenario-chevron">&#9654;</div>
+      </div>
+      <div class="scenario-body">
+        <div class="scenario-content">
+          <div class="field">
+            <div class="field-label problem">Problem</div>
+            <p>If the Deepgram WebSocket drops mid-call, the STT handler <strong>silently catches the exception</strong>. No reconnection, no fallback to webhook STT. The caller keeps speaking but the bot hears nothing. Repeated timeouts until Twilio disconnects at 60s.</p>
+          </div>
+          <div class="field">
+            <div class="field-label files">Files</div>
+            <div class="file-chips"><span class="file-chip">services/stt.py:76-90</span></div>
+          </div>
+          <div class="field solution-field">
+            <div class="field-label solution">Solution</div>
+            <ul>
+              <li>Implement Deepgram WebSocket auto-reconnect with exponential backoff</li>
+              <li>Add "no transcript received" watchdog (15s = reconnect)</li>
+              <li>Fall back to Twilio &lt;Gather&gt; webhook STT if reconnect fails</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- S9 -->
+    <div class="scenario" onclick="toggleScenario(this, event)">
+      <div class="scenario-header">
+        <div class="scenario-num high">09</div>
+        <div class="scenario-title-block">
+          <div class="scenario-title">Silent Transfer Failures Leave Callers Stranded</div>
+          <div class="scenario-tags">
+            <span class="tag ux">UX</span>
+            <span class="tag reliability">Reliability</span>
+          </div>
+        </div>
+        <div class="scenario-chevron">&#9654;</div>
+      </div>
+      <div class="scenario-body">
+        <div class="scenario-content">
+          <div class="field">
+            <div class="field-label problem">Problem</div>
+            <p>If the Twilio API returns an error during agent transfer (invalid phone, account limits), the exception is logged but <strong>the caller receives no TTS notification</strong>. They hear "Please hold..." followed by silence, then disconnection.</p>
+          </div>
+          <div class="field">
+            <div class="field-label files">Files</div>
+            <div class="file-chips"><span class="file-chip">webhooks/twilio_stream.py:469-484</span></div>
+          </div>
+          <div class="field solution-field">
+            <div class="field-label solution">Solution</div>
+            <ul>
+              <li>Add fallback TTS: "I wasn't able to connect you. Please call us back at [main number]."</li>
+              <li>Retry transfer once with a 2s delay</li>
+              <li>Log transfer failures as critical alerts for ops monitoring</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- S10 -->
+    <div class="scenario" onclick="toggleScenario(this, event)">
+      <div class="scenario-header">
+        <div class="scenario-num critical">10</div>
+        <div class="scenario-title-block">
+          <div class="scenario-title">In-Memory Call History Limited to 100 Calls</div>
+          <div class="scenario-tags">
+            <span class="tag compliance">Compliance</span>
+            <span class="tag scale">Scalability</span>
+          </div>
+        </div>
+        <div class="scenario-chevron">&#9654;</div>
+      </div>
+      <div class="scenario-body">
+        <div class="scenario-content">
+          <div class="field">
+            <div class="field-label problem">Problem</div>
+            <p>Call history uses <strong>deque(maxlen=100)</strong>. Dashboard only shows the last 100 calls even though older ones exist in PostgreSQL. Insurance regulations require <strong>1+ year call record retention</strong>.</p>
+          </div>
+          <div class="field">
+            <div class="field-label files">Files</div>
+            <div class="file-chips"><span class="file-chip">services/conversation_store.py:16-17</span></div>
+          </div>
+          <div class="data-callout">High-volume periods (open enrollment) overflow this limit in <strong>hours</strong>. Auditors see gaps in call records - a regulatory violation.</div>
+          <div class="field solution-field">
+            <div class="field-label solution">Solution</div>
+            <ul>
+              <li>Paginate dashboard call history directly from PostgreSQL</li>
+              <li>Keep in-memory deque only as fast cache for "recent calls" view</li>
+              <li>Add date-range filters to the dashboard API</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div><!-- /section-a -->
+
+  <!-- ════════════════ SECTION B ════════════════ -->
+  <div class="section-group" data-section="section-b">
+    <div class="section-header">
+      <div class="section-icon b">B</div>
+      <h2>Industry-Wide Production Issues & Data Points</h2>
+      <span class="count">10 scenarios</span>
+    </div>
+
+    <!-- S11 -->
+    <div class="scenario" onclick="toggleScenario(this, event)">
+      <div class="scenario-header">
+        <div class="scenario-num high">11</div>
+        <div class="scenario-title-block">
+          <div class="scenario-title">The 800ms Latency Ceiling</div>
+          <div class="scenario-tags">
+            <span class="tag latency">Latency</span>
+          </div>
+        </div>
+        <div class="scenario-chevron">&#9654;</div>
+      </div>
+      <div class="scenario-body">
+        <div class="scenario-content">
+          <div class="field">
+            <div class="field-label problem">Problem</div>
+            <p>2026 industry benchmark: acceptable voice AI response time is <strong>under 800ms end-to-end</strong>. Typical pipeline: STT (100-300ms) + LLM (350-1,000ms) + TTS (90-200ms) + network (50-200ms). <strong>LLM inference alone = 70% of total latency.</strong></p>
+          </div>
+          <div class="data-callout">A five-service pipeline across providers adds <strong>500-1,000ms in pure network transit</strong> before any AI processing begins.</div>
+          <div class="field solution-field">
+            <div class="field-label solution">Industry Solution</div>
+            <ul>
+              <li><strong>Streaming pipeline overlap:</strong> STT sends partials while caller talks; LLM starts before full input; TTS synthesizes from first tokens. Cuts <strong>300-600ms/turn</strong></li>
+              <li><strong>Speech-to-speech models</strong> skip STT-LLM-TTS relay, saving ~600ms</li>
+              <li>Co-locate all services in the same cloud region</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- S12 -->
+    <div class="scenario" onclick="toggleScenario(this, event)">
+      <div class="scenario-header">
+        <div class="scenario-num medium">12</div>
+        <div class="scenario-title-block">
+          <div class="scenario-title">OpenAI Realtime API Measured Latency in Production</div>
+          <div class="scenario-tags">
+            <span class="tag latency">Latency</span>
+          </div>
+        </div>
+        <div class="scenario-chevron">&#9654;</div>
+      </div>
+      <div class="scenario-body">
+        <div class="scenario-content">
+          <div class="field">
+            <div class="field-label data">Data Points</div>
+            <p>Production testing of gpt-realtime-2 over 40 calls: <strong>p50 = 1.1s, p95 = 1.9s</strong>. Optimized implementations reduced p95 to <strong>320ms</strong> (50% reduction) by using streaming APIs and eliminating the STT-LLM-TTS relay.</p>
+          </div>
+          <div class="field solution-field">
+            <div class="field-label solution">Industry Solution</div>
+            <ul>
+              <li>Use WebRTC over WebSockets (UDP vs TCP = lower latency)</li>
+              <li>Speculative LLM generation during VAD silence detection</li>
+              <li>Pre-warm LLM connections to eliminate cold-start per turn</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- S13 -->
+    <div class="scenario" onclick="toggleScenario(this, event)">
+      <div class="scenario-header">
+        <div class="scenario-num high">13</div>
+        <div class="scenario-title-block">
+          <div class="scenario-title">Call Abandonment Statistics</div>
+          <div class="scenario-tags">
+            <span class="tag ux">UX</span>
+          </div>
+        </div>
+        <div class="scenario-chevron">&#9654;</div>
+      </div>
+      <div class="scenario-body">
+        <div class="scenario-content">
+          <div class="field data-field">
+            <div class="field-label data">Data Points</div>
+            <ul>
+              <li><strong>75%</strong> of customers report frustration with IVR systems</li>
+              <li><strong>83%</strong> would avoid a company after a poor IVR experience</li>
+              <li><strong>51%</strong> have abandoned a business entirely because of IVR</li>
+              <li>Touch-tone IVR: <strong>67% abandon within 90 seconds</strong></li>
+              <li>IVR frustration costs <strong>$262 per customer per year</strong></li>
+              <li>Conversational AI IVR reduces abandonment from ~35% to <strong>5-10%</strong></li>
+            </ul>
+          </div>
+          <div class="field solution-field">
+            <div class="field-label solution">Industry Solution</div>
+            <ul>
+              <li>Replace DTMF-only menus with natural language understanding</li>
+              <li>Offer callback option after 30s wait time</li>
+              <li>Allow "say agent at any time" as an escape hatch</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- S14 -->
+    <div class="scenario" onclick="toggleScenario(this, event)">
+      <div class="scenario-header">
+        <div class="scenario-num medium">14</div>
+        <div class="scenario-title-block">
+          <div class="scenario-title">Authentication Failure Loops Lock Out Legitimate Callers</div>
+          <div class="scenario-tags">
+            <span class="tag ux">UX</span>
+            <span class="tag reliability">Reliability</span>
+          </div>
+        </div>
+        <div class="scenario-chevron">&#9654;</div>
+      </div>
+      <div class="scenario-body">
+        <div class="scenario-content">
+          <div class="field">
+            <div class="field-label problem">Problem</div>
+            <p>Knowledge-based auth (DOB, SSN, policy number) causes <strong>legitimate customers to fail 10-30% of the time</strong>. Reasons: wrong DOB format, middle vs first name, married vs maiden name. Overly aggressive auth inflates escalation rates by <strong>15-25%</strong>.</p>
+          </div>
+          <div class="field solution-field">
+            <div class="field-label solution">Industry Solution</div>
+            <ul>
+              <li>Use ANI (caller phone number) as first-factor match before questions</li>
+              <li>Voice biometrics as passive second factor</li>
+              <li>Fuzzy name matching (Soundex/phonetic similarity > 80%)</li>
+              <li>Limit to 2 PII factors (not 3+) for phone-based auth</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- S15 -->
+    <div class="scenario" onclick="toggleScenario(this, event)">
+      <div class="scenario-header">
+        <div class="scenario-num medium">15</div>
+        <div class="scenario-title-block">
+          <div class="scenario-title">Barge-In False Triggers Derail Conversations</div>
+          <div class="scenario-tags">
+            <span class="tag ux">UX</span>
+            <span class="tag reliability">Reliability</span>
+          </div>
+        </div>
+        <div class="scenario-chevron">&#9654;</div>
+      </div>
+      <div class="scenario-body">
+        <div class="scenario-content">
+          <div class="field">
+            <div class="field-label problem">Problem</div>
+            <p>Agent cuts itself off when user wasn't interrupting. Three patterns: (1) background noise triggers VAD, (2) side conversations trigger VAD, (3) echo from agent's own audio feeds back.</p>
+          </div>
+          <div class="data-callout">Production targets: barge-in latency <strong>&lt;400ms</strong>, false barge-in <strong>&lt;2%</strong>, missed true interruptions <strong>&lt;1%</strong>.</div>
+          <div class="field solution-field">
+            <div class="field-label solution">Industry Solution</div>
+            <ul>
+              <li>Smart Turn Detection models (e.g., Pipecat Smart Turn v3)</li>
+              <li>5-scenario barge-in test matrix: true correction, backchannel, noise, DTMF, timeout</li>
+              <li>Acoustic echo cancellation before VAD processing</li>
+              <li>300ms debounce window before confirming barge-in intent</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- S16 -->
+    <div class="scenario" onclick="toggleScenario(this, event)">
+      <div class="scenario-header">
+        <div class="scenario-num high">16</div>
+        <div class="scenario-title-block">
+          <div class="scenario-title">WebSocket Connection Scaling is Non-Linear</div>
+          <div class="scenario-tags">
+            <span class="tag scale">Scalability</span>
+          </div>
+        </div>
+        <div class="scenario-chevron">&#9654;</div>
+      </div>
+      <div class="scenario-body">
+        <div class="scenario-content">
+          <div class="field">
+            <div class="field-label problem">Problem</div>
+            <p>Each voice session holds: WebSocket + STT stream + LLM context + TTS stream. Performance degrades non-linearly. A single stuck WebSocket can back up 50 calls. Single Python process: <strong>20-50 concurrent calls before latency degrades</strong>.</p>
+          </div>
+          <div class="field solution-field">
+            <div class="field-label solution">Industry Solution</div>
+            <ul>
+              <li><strong>1-container-per-session</strong> architecture eliminates concurrency bugs</li>
+              <li>Horizontal pod autoscaling with session affinity</li>
+              <li>WebSocket health checks with automatic reconnection</li>
+              <li>Kill idle connections after 5 minutes</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- S17 -->
+    <div class="scenario" onclick="toggleScenario(this, event)">
+      <div class="scenario-header">
+        <div class="scenario-num high">17</div>
+        <div class="scenario-title-block">
+          <div class="scenario-title">Silent WebSocket Failures (Twilio + LiveKit)</div>
+          <div class="scenario-tags">
+            <span class="tag reliability">Reliability</span>
+          </div>
+        </div>
+        <div class="scenario-chevron">&#9654;</div>
+      </div>
+      <div class="scenario-body">
+        <div class="scenario-content">
+          <div class="field">
+            <div class="field-label problem">Problem</div>
+            <p>Reported production issue (LiveKit #3379): Twilio WebSocket connects successfully but <strong>no media packets are ever received</strong>. Mark packets sent from server are never acknowledged. Connection appears healthy but is <strong>completely non-functional</strong> - a silent failure mode.</p>
+          </div>
+          <div class="field solution-field">
+            <div class="field-label solution">Industry Solution</div>
+            <ul>
+              <li>"First media packet" watchdog (no audio in 3s = tear down + reconnect)</li>
+              <li>Periodic Twilio mark events with acknowledgment verification</li>
+              <li>Alert when media frames = 0 after 5s of connection</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- S18 -->
+    <div class="scenario" onclick="toggleScenario(this, event)">
+      <div class="scenario-header">
+        <div class="scenario-num high">18</div>
+        <div class="scenario-title-block">
+          <div class="scenario-title">LLM Generates Incorrect/Hallucinated Information</div>
+          <div class="scenario-tags">
+            <span class="tag reliability">Reliability</span>
+            <span class="tag compliance">Compliance</span>
+          </div>
+        </div>
+        <div class="scenario-chevron">&#9654;</div>
+      </div>
+      <div class="scenario-body">
+        <div class="scenario-content">
+          <div class="field">
+            <div class="field-label problem">Problem</div>
+            <p>An appliance manufacturer's AI generated a <strong>"munged-together version of multiple instruction sets"</strong> delivering dangerous, incorrect repair instructions. Analysis of <strong>7,246 AI incidents</strong> found <strong>188 cases of direct production harm</strong> with no attacker involved.</p>
+          </div>
+          <div class="data-callout">Gartner predicts by 2027, <strong>40% of enterprises will demote or decommission autonomous AI agents</strong> due to governance gaps identified only after production incidents.</div>
+          <div class="field solution-field">
+            <div class="field-label solution">Industry Solution</div>
+            <ul>
+              <li>RAG with strict source attribution (never answer without retrieval)</li>
+              <li>Output guardrails that validate LLM responses against known data</li>
+              <li>Confidence scoring - escalate to agent when confidence &lt;70%</li>
+              <li>Log every LLM response for post-hoc audit</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- S19 -->
+    <div class="scenario" onclick="toggleScenario(this, event)">
+      <div class="scenario-header">
+        <div class="scenario-num medium">19</div>
+        <div class="scenario-title-block">
+          <div class="scenario-title">Cloud STT Regional Latency Spikes</div>
+          <div class="scenario-tags">
+            <span class="tag latency">Latency</span>
+          </div>
+        </div>
+        <div class="scenario-chevron">&#9654;</div>
+      </div>
+      <div class="scenario-body">
+        <div class="scenario-content">
+          <div class="field">
+            <div class="field-label problem">Problem</div>
+            <p>Production voicebot on Azure Speech Services (India): <strong>150-250ms TTFB</strong> from regional distance. Human conversation gaps = 100-300ms. Voice AI exceeding 500ms feels laggy. Cross-region calls add <strong>50-200ms per hop</strong>.</p>
+          </div>
+          <div class="field solution-field">
+            <div class="field-label solution">Industry Solution</div>
+            <ul>
+              <li>Co-locate all AI services in same region as telephony endpoint</li>
+              <li>Edge-deployed STT (Deepgram on-prem, Whisper local)</li>
+              <li>Regional failover with latency-based DNS routing</li>
+              <li>Cache frequently used TTS segments (greetings, confirmations)</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- S20 -->
+    <div class="scenario" onclick="toggleScenario(this, event)">
+      <div class="scenario-header">
+        <div class="scenario-num medium">20</div>
+        <div class="scenario-title-block">
+          <div class="scenario-title">Memory Leaks in Long-Running Voice Pipelines</div>
+          <div class="scenario-tags">
+            <span class="tag scale">Scalability</span>
+            <span class="tag reliability">Reliability</span>
+          </div>
+        </div>
+        <div class="scenario-chevron">&#9654;</div>
+      </div>
+      <div class="scenario-body">
+        <div class="scenario-content">
+          <div class="field">
+            <div class="field-label problem">Problem</div>
+            <p>Unconsumed frames queue in memory indefinitely. Abandoned sessions (caller hangs up, WebSocket lingers) leak continuously. Pipecat's SmallWebRTCTransport had a confirmed leak. Memory grows <strong>~500KB/session/minute</strong> for orphaned connections.</p>
+          </div>
+          <div class="field solution-field">
+            <div class="field-label solution">Industry Solution</div>
+            <ul>
+              <li>Session TTL with automatic cleanup (max 30 min call duration)</li>
+              <li>Kill connections exceeding 50MB</li>
+              <li>Explicit cleanup handlers for WebSocket on_close</li>
+              <li>Docker --memory flag as safety net</li>
+              <li>Periodic GC sweeps for orphaned session state</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div><!-- /section-b -->
+
+  <!-- ════════════════ PRIORITY TABLE ════════════════ -->
+  <div class="section-group" data-section="priority">
+    <div class="priority-table-wrap">
+      <div class="priority-table-header">
+        <span style="font-size:1.2rem">&#9888;</span>
+        <h3>Production Hardening Priority Matrix</h3>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Priority</th>
+            <th>#</th>
+            <th>Scenario</th>
+            <th>Risk</th>
+            <th>Effort</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="priority-badge p0">P0</span></td>
+            <td>7</td>
+            <td>DTMF race condition (duplicate payments)</td>
+            <td><span class="risk-dot critical"></span>Critical</td>
+            <td><span class="effort-bar" style="width:40px"></span>Medium</td>
+          </tr>
+          <tr>
+            <td><span class="priority-badge p0">P0</span></td>
+            <td>4</td>
+            <td>MemorySaver loses state on restart</td>
+            <td><span class="risk-dot critical"></span>Critical</td>
+            <td><span class="effort-bar" style="width:60px"></span>High</td>
+          </tr>
+          <tr>
+            <td><span class="priority-badge p0">P0</span></td>
+            <td>3</td>
+            <td>No connection pooling (server crash under load)</td>
+            <td><span class="risk-dot critical"></span>Critical</td>
+            <td><span class="effort-bar" style="width:20px"></span>Low</td>
+          </tr>
+          <tr>
+            <td><span class="priority-badge p0">P0</span></td>
+            <td>10</td>
+            <td>100-call history limit (compliance violation)</td>
+            <td><span class="risk-dot critical"></span>Critical</td>
+            <td><span class="effort-bar" style="width:40px"></span>Medium</td>
+          </tr>
+          <tr>
+            <td><span class="priority-badge p1">P1</span></td>
+            <td>1</td>
+            <td>15-20s silence during lookups</td>
+            <td><span class="risk-dot high"></span>High</td>
+            <td><span class="effort-bar" style="width:40px"></span>Medium</td>
+          </tr>
+          <tr>
+            <td><span class="priority-badge p1">P1</span></td>
+            <td>2</td>
+            <td>Auth flow 30s+ cumulative latency</td>
+            <td><span class="risk-dot high"></span>High</td>
+            <td><span class="effort-bar" style="width:40px"></span>Medium</td>
+          </tr>
+          <tr>
+            <td><span class="priority-badge p1">P1</span></td>
+            <td>6</td>
+            <td>No retry on transient API errors</td>
+            <td><span class="risk-dot high"></span>High</td>
+            <td><span class="effort-bar" style="width:20px"></span>Low</td>
+          </tr>
+          <tr>
+            <td><span class="priority-badge p1">P1</span></td>
+            <td>8</td>
+            <td>Deepgram drop = deaf caller</td>
+            <td><span class="risk-dot high"></span>High</td>
+            <td><span class="effort-bar" style="width:40px"></span>Medium</td>
+          </tr>
+          <tr>
+            <td><span class="priority-badge p1">P1</span></td>
+            <td>9</td>
+            <td>Silent transfer failures</td>
+            <td><span class="risk-dot high"></span>High</td>
+            <td><span class="effort-bar" style="width:20px"></span>Low</td>
+          </tr>
+          <tr>
+            <td><span class="priority-badge p2">P2</span></td>
+            <td>5</td>
+            <td>RAG cold start (5-10s first FAQ)</td>
+            <td><span class="risk-dot medium"></span>Medium</td>
+            <td><span class="effort-bar" style="width:20px"></span>Low</td>
+          </tr>
+          <tr>
+            <td><span class="priority-badge p2">P2</span></td>
+            <td>14</td>
+            <td>Auth failure loops (industry)</td>
+            <td><span class="risk-dot medium"></span>Medium</td>
+            <td><span class="effort-bar" style="width:40px"></span>Medium</td>
+          </tr>
+          <tr>
+            <td><span class="priority-badge p2">P2</span></td>
+            <td>15</td>
+            <td>Barge-in false triggers (industry)</td>
+            <td><span class="risk-dot medium"></span>Medium</td>
+            <td><span class="effort-bar" style="width:60px"></span>High</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div><!-- /priority -->
+
+</div><!-- /container -->
+
+<div class="footer">
+  US Insurance Company (UIC) IVR &mdash; Production Issues Report &mdash; Generated 2026-08-18 &mdash; Based on codebase analysis + industry research
+</div>
+
+<script>
+function toggleScenario(el, e) {
+  if (e.target.closest('a')) return;
+  el.classList.toggle('open');
+}
+
+function showSection(section, btn) {
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+
+  document.querySelectorAll('.section-group').forEach(g => {
+    if (section === 'all') {
+      g.style.display = '';
+    } else {
+      g.style.display = g.dataset.section === section ? '' : 'none';
+    }
+  });
+
+  // Show/hide stats bar
+  const stats = document.querySelector('.stats-bar');
+  if (stats) stats.style.display = (section === 'priority') ? 'none' : '';
+}
+
+// Open first scenario by default
+document.addEventListener('DOMContentLoaded', () => {
+  const first = document.querySelector('.scenario');
+  if (first) first.classList.add('open');
+});
+</script>
+</body>
+</html>

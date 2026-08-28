@@ -1,0 +1,188 @@
+{
+  "overall_avg": 6.0,
+  "scenarios": [
+    {
+      "name": "policy_inquiry",
+      "description": "Caller authenticates and asks about policy status",
+      "transcript": "CALLER: five five five one two three four five six seven\nIVR: Thank you. What is the insured's date of birth?\nCALLER: July fifteenth nineteen sixty five\nIVR: I've verified your identity. May I ask your name please?\nCALLER: John Smith\nIVR: Thank you, John Smith. Your last three payments were $125.50 each, made on May 1st, April 1st, and March 1st, all of which have been posted. Please note that payment posting times are 24 to 48 hours for online payments and 7 to 10 business days for mailed payments. Is there anything else I can help you with today? Please allow 24 to 48 hours for your payment to post if made online, or 7 to 10 business days if mailed.\nCALLER: I want to check my policy status\nIVR: Your policy is active, with a monthly premium of $125.50, and you're paid up to July 1st, 2026. Is there anything else I can help you with today?\nCALLER: goodbye\nIVR: Thank you for calling. Have a great day. Goodbye.",
+      "authenticated": true,
+      "final_node": "goodbye",
+      "final_intent": "goodbye",
+      "turn_count": 5,
+      "scores": {
+        "greeting_quality": {
+          "score": 2,
+          "reason": "IVR did not provide a greeting, company identification, or an offer to help at the beginning of the call, instead it immediately asked for authentication."
+        },
+        "auth_flow": {
+          "score": 8,
+          "reason": "Authentication process was mostly smooth, but IVR asked for policy number first, then date of birth, and finally name, which is mostly one piece at a time, but the initial prompt for the policy number was not explicitly mentioned in the evaluation transcript."
+        },
+        "intent_handling": {
+          "score": 9,
+          "reason": "The system correctly understood and routed the caller's intent, providing relevant policy status information, but initially asked for the caller's name after authentication, which was unnecessary."
+        },
+        "response_quality": {
+          "score": 8,
+          "reason": "Most responses were natural and concise, but some had slightly redundant information, such as the repeated payment posting times."
+        },
+        "error_recovery": {
+          "score": 10,
+          "reason": "No invalid input was given, so the system did not need to recover, but the conversation flowed smoothly and the caller's requests were handled efficiently."
+        },
+        "conversation_flow": {
+          "score": 8,
+          "reason": "Conversation was mostly logical and efficient, but IVR repeated payment posting times unnecessarily."
+        },
+        "closure": {
+          "score": 10,
+          "reason": "The caller's query about policy status was resolved, and the call ended with a proper goodbye message from both the caller and the IVR."
+        }
+      },
+      "avg_score": 7.86
+    },
+    {
+      "name": "loan_inquiry",
+      "description": "Caller authenticates and asks about loan balance",
+      "transcript": "CALLER: five five five one two three four five six seven\nIVR: Thank you. What is the insured's date of birth?\nCALLER: July 15th 1965\nIVR: I've verified your identity. May I ask your name please?\nCALLER: John Smith\nIVR: Thank you, John Smith. Your last three payments were $125.50 each, made on May 1st, April 1st, and March 1st, all of which have been posted. Please note that payment posting times are 24 to 48 hours for online payments and 7 to 10 business days for mailed payments. Is there anything else I can help you with today? Please allow 24 to 48 hours for your payment to post if made online, or 7 to 10 business days if mailed.\nCALLER: What is my loan balance?\nIVR: Your current loan balance is $5000, with accrued interest of $187.50, making your payoff amount $5187.50. Is there anything else I can help you with today?\nCALLER: no thanks goodbye\nIVR: Thank you for calling. Have a great day. Goodbye.",
+      "authenticated": true,
+      "final_node": "goodbye",
+      "final_intent": "goodbye",
+      "turn_count": 5,
+      "scores": {
+        "greeting_quality": {
+          "score": 2,
+          "reason": "IVR did not provide a greeting, company identification, or an offer to assist the caller at the beginning of the conversation."
+        },
+        "auth_flow": {
+          "score": 8,
+          "reason": "Authentication asked for multiple PII pieces at once, but was generally smooth with clear instructions"
+        },
+        "intent_handling": {
+          "score": 9,
+          "reason": "The system correctly understood and routed the caller's intent, providing relevant loan balance information, but required unnecessary authentication steps after initial verification."
+        },
+        "response_quality": {
+          "score": 8,
+          "reason": "Most responses were natural and concise, but some were slightly lengthy, such as the payment posting times explanation."
+        },
+        "error_recovery": {
+          "score": 0,
+          "reason": "No invalid input was given to test the system's recovery"
+        },
+        "conversation_flow": {
+          "score": 8,
+          "reason": "Conversation was mostly logical and efficient, but IVR repeated payment posting times unnecessarily."
+        },
+        "closure": {
+          "score": 10,
+          "reason": "The caller's question about loan balance was answered, and the call ended with a proper goodbye."
+        }
+      },
+      "avg_score": 6.43
+    },
+    {
+      "name": "faq_and_escalate",
+      "description": "Caller asks FAQ then requests escalation",
+      "transcript": "CALLER: What is the grace period for a missed payment?\nIVR: What is the 10-digit phone number associated with your policy?\nCALLER: I want to speak to a representative\nIVR: Of course. Let me connect you with a representative right away. Please hold while I transfer you to a representative.",
+      "authenticated": false,
+      "final_node": "escalation",
+      "final_intent": "escalate",
+      "turn_count": 2,
+      "scores": {
+        "greeting_quality": {
+          "score": 2,
+          "reason": "IVR did not provide a greeting, identify the company, or ask how it can help before asking for policy information"
+        },
+        "auth_flow": {
+          "score": 2,
+          "reason": "IVR did not provide clear instructions or ask for PII in relation to the caller's question, instead abruptly asking for a phone number without context."
+        },
+        "intent_handling": {
+          "score": 2,
+          "reason": "IVR failed to provide relevant information for the FAQ and incorrectly asked for policy phone number, but correctly routed caller to representative after escalation request"
+        },
+        "response_quality": {
+          "score": 2,
+          "reason": "IVR response to FAQ was not natural or relevant, and escalation response was suitable but initial response failed the criterion"
+        },
+        "error_recovery": {
+          "score": 2,
+          "reason": "The system failed to address the caller's initial question and instead asked for unrelated information, only recovering when the caller explicitly requested escalation."
+        },
+        "conversation_flow": {
+          "score": 2,
+          "reason": "IVR failed to address caller's initial question and instead asked for unrelated information, leading to unnecessary escalation"
+        },
+        "closure": {
+          "score": 8,
+          "reason": "Caller's initial question was not addressed, but escalation to a representative was handled promptly"
+        }
+      },
+      "avg_score": 2.86
+    },
+    {
+      "name": "auth_failure",
+      "description": "Caller gives wrong PII and gets escalated",
+      "transcript": "CALLER: five five five one two three four five six seven\nIVR: Thank you. What is the insured's date of birth?\nCALLER: January first two thousand\nIVR: I wasn't able to verify that date. What is the first and last name of the insured?\nCALLER: Donald Duck\nIVR: I'm sorry, I wasn't able to verify your information. Let me transfer you to a representative who can help.",
+      "authenticated": false,
+      "final_node": "auth",
+      "final_intent": "payment",
+      "turn_count": 3,
+      "scores": {
+        "greeting_quality": {
+          "score": 2,
+          "reason": "IVR did not provide a greeting, identify the company, or ask how it can help the caller."
+        },
+        "auth_flow": {
+          "score": 8,
+          "reason": "The IVR asked for one piece of PII at a time, but the caller provided incorrect information, leading to escalation; instructions were clear"
+        },
+        "intent_handling": {
+          "score": 8,
+          "reason": "System correctly detected incorrect PII and routed caller to representative, but did not provide additional relevant information to caller before transfer"
+        },
+        "response_quality": {
+          "score": 8,
+          "reason": "IVR responses were concise and suitable, but slightly formal and lacking personal touch."
+        },
+        "error_recovery": {
+          "score": 6,
+          "reason": "System did not provide re-prompts for incorrect PII, instead escalated to representative after initial failure"
+        },
+        "conversation_flow": {
+          "score": 8,
+          "reason": "Conversation was logical and efficient, but IVR could have asked for verification of PII in a single step instead of multiple questions"
+        },
+        "closure": {
+          "score": 8,
+          "reason": "Call was transferred to a representative after failed verification attempts, but no confirmation or apology message was provided before the transfer."
+        }
+      },
+      "avg_score": 6.86
+    }
+  ],
+  "dimensions": {
+    "greeting_quality": {
+      "avg": 2.0
+    },
+    "auth_flow": {
+      "avg": 6.5
+    },
+    "intent_handling": {
+      "avg": 7.0
+    },
+    "response_quality": {
+      "avg": 6.5
+    },
+    "error_recovery": {
+      "avg": 4.5
+    },
+    "conversation_flow": {
+      "avg": 6.5
+    },
+    "closure": {
+      "avg": 9.0
+    }
+  }
+}

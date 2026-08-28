@@ -1,0 +1,1354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AWS Architecture Study Guide — CNO IVR</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #232734;
+    --border: #2e3345;
+    --text: #e1e4ed;
+    --text-dim: #8b90a0;
+    --accent: #6c8cff;
+    --accent2: #4ecdc4;
+    --green: #4ade80;
+    --orange: #fb923c;
+    --red: #f87171;
+    --purple: #a78bfa;
+    --yellow: #fbbf24;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+  }
+
+  /* ── Navigation ── */
+  .top-bar {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    background: rgba(15,17,23,0.95);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 24px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .top-bar h1 { font-size: 18px; font-weight: 600; }
+  .top-bar h1 span { color: var(--accent); }
+  .progress-bar-container {
+    display: flex; align-items: center; gap: 12px;
+  }
+  .progress-bar-bg {
+    width: 200px; height: 8px; background: var(--surface2);
+    border-radius: 4px; overflow: hidden;
+  }
+  .progress-bar-fill {
+    height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2));
+    border-radius: 4px; transition: width 0.5s ease;
+  }
+  .progress-text { font-size: 13px; color: var(--text-dim); }
+
+  /* ── Sidebar ── */
+  .layout { display: flex; margin-top: 56px; }
+  .sidebar {
+    position: fixed; top: 56px; left: 0; bottom: 0;
+    width: 260px; background: var(--surface);
+    border-right: 1px solid var(--border);
+    overflow-y: auto; padding: 16px 0;
+  }
+  .sidebar a {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 20px; color: var(--text-dim);
+    text-decoration: none; font-size: 14px;
+    transition: all 0.2s;
+  }
+  .sidebar a:hover { background: var(--surface2); color: var(--text); }
+  .sidebar a.active { color: var(--accent); background: rgba(108,140,255,0.1); border-right: 3px solid var(--accent); }
+  .sidebar .day-num {
+    width: 28px; height: 28px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700;
+    background: var(--surface2); flex-shrink: 0;
+  }
+  .sidebar a.completed .day-num { background: var(--green); color: var(--bg); }
+  .sidebar .section-label {
+    padding: 16px 20px 6px; font-size: 11px; text-transform: uppercase;
+    letter-spacing: 1.5px; color: var(--text-dim);
+  }
+
+  /* ── Main Content ── */
+  .main { margin-left: 260px; padding: 32px 48px 80px; max-width: 960px; }
+
+  /* ── Architecture Tab ── */
+  .arch-section { display: none; }
+  .arch-section.visible { display: block; }
+
+  /* ── Day Cards ── */
+  .day-header {
+    display: flex; align-items: center; gap: 16px; margin-bottom: 24px;
+  }
+  .day-badge {
+    width: 48px; height: 48px; border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; font-weight: 800;
+    background: linear-gradient(135deg, var(--accent), var(--purple));
+    color: white; flex-shrink: 0;
+  }
+  .day-header h2 { font-size: 24px; font-weight: 700; }
+  .day-header .day-subtitle { font-size: 14px; color: var(--text-dim); margin-top: 2px; }
+
+  .day-complete-btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 8px 20px; border-radius: 8px; border: 2px solid var(--green);
+    background: transparent; color: var(--green); cursor: pointer;
+    font-size: 14px; font-weight: 600; transition: all 0.2s;
+    margin-bottom: 32px;
+  }
+  .day-complete-btn:hover { background: rgba(74,222,128,0.15); }
+  .day-complete-btn.done { background: var(--green); color: var(--bg); }
+
+  /* ── Hour Blocks ── */
+  .hour-block {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 24px; margin-bottom: 20px;
+  }
+  .hour-block h3 {
+    font-size: 16px; font-weight: 700; margin-bottom: 12px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .hour-tag {
+    font-size: 11px; padding: 3px 10px; border-radius: 20px;
+    background: rgba(108,140,255,0.15); color: var(--accent);
+    font-weight: 600;
+  }
+  .hour-tag.practice { background: rgba(78,205,196,0.15); color: var(--accent2); }
+  .hour-tag.interview { background: rgba(251,191,36,0.15); color: var(--yellow); }
+
+  /* ── Content Elements ── */
+  .concept-list { list-style: none; padding: 0; }
+  .concept-list li {
+    padding: 8px 0 8px 24px; position: relative;
+    font-size: 15px; color: var(--text);
+  }
+  .concept-list li::before {
+    content: ''; position: absolute; left: 8px; top: 16px;
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent);
+  }
+  .concept-list li strong { color: var(--accent2); }
+
+  .diagram-box {
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 8px; padding: 20px; margin: 16px 0;
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    font-size: 13px; line-height: 1.5; overflow-x: auto;
+    white-space: pre; color: var(--text-dim);
+  }
+  .diagram-box .highlight { color: var(--accent); }
+  .diagram-box .green { color: var(--green); }
+  .diagram-box .orange { color: var(--orange); }
+  .diagram-box .purple { color: var(--purple); }
+
+  .interview-answer {
+    background: linear-gradient(135deg, rgba(108,140,255,0.08), rgba(167,139,250,0.08));
+    border-left: 4px solid var(--accent);
+    border-radius: 0 8px 8px 0; padding: 20px 24px; margin: 20px 0;
+    font-size: 14px; line-height: 1.7;
+  }
+  .interview-answer .label {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px;
+    color: var(--accent); font-weight: 700; margin-bottom: 8px;
+  }
+
+  .config-table {
+    width: 100%; border-collapse: collapse; margin: 16px 0;
+    font-size: 14px;
+  }
+  .config-table th {
+    text-align: left; padding: 10px 14px;
+    background: var(--bg); color: var(--text-dim);
+    font-size: 12px; text-transform: uppercase; letter-spacing: 1px;
+    border-bottom: 2px solid var(--border);
+  }
+  .config-table td {
+    padding: 10px 14px; border-bottom: 1px solid var(--border);
+  }
+  .config-table tr:hover td { background: rgba(108,140,255,0.05); }
+
+  .code-block {
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 8px; padding: 16px 20px; margin: 12px 0;
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    font-size: 13px; line-height: 1.6; overflow-x: auto;
+  }
+  .code-block .comment { color: #6a737d; }
+  .code-block .keyword { color: var(--purple); }
+  .code-block .string { color: var(--green); }
+  .code-block .key { color: var(--accent); }
+
+  .tip-box {
+    background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.25);
+    border-radius: 8px; padding: 14px 18px; margin: 16px 0;
+    font-size: 14px;
+  }
+  .tip-box .tip-label { color: var(--yellow); font-weight: 700; font-size: 12px; margin-bottom: 4px; }
+  .yt-link {
+    color: var(--accent2); text-decoration: none; display: inline-block;
+    padding: 3px 0; font-size: 14px; transition: color 0.2s;
+  }
+  .yt-link:hover { color: var(--accent); text-decoration: underline; }
+  .yt-link::before { content: '\25B6  '; font-size: 10px; }
+
+  .qa-card {
+    background: var(--surface2); border-radius: 8px;
+    margin: 12px 0; overflow: hidden;
+  }
+  .qa-question {
+    padding: 14px 20px; cursor: pointer; font-weight: 600;
+    font-size: 14px; display: flex; align-items: center; justify-content: space-between;
+    user-select: none;
+  }
+  .qa-question:hover { background: rgba(108,140,255,0.08); }
+  .qa-question .arrow { transition: transform 0.2s; color: var(--text-dim); }
+  .qa-card.open .qa-question .arrow { transform: rotate(90deg); }
+  .qa-answer {
+    padding: 0 20px; max-height: 0; overflow: hidden;
+    transition: max-height 0.3s ease, padding 0.3s ease;
+    font-size: 14px; line-height: 1.7; color: var(--text-dim);
+  }
+  .qa-card.open .qa-answer { max-height: 500px; padding: 0 20px 16px; }
+
+  /* ── Architecture Diagram (SVG-like) ── */
+  .arch-visual {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; padding: 32px; margin: 24px 0;
+    overflow-x: auto;
+  }
+  .arch-row {
+    display: flex; align-items: center; justify-content: center;
+    gap: 16px; margin: 12px 0; flex-wrap: wrap;
+  }
+  .arch-box {
+    padding: 12px 20px; border-radius: 10px; text-align: center;
+    font-size: 13px; font-weight: 600; min-width: 120px;
+    border: 2px solid; transition: transform 0.2s;
+  }
+  .arch-box:hover { transform: scale(1.05); }
+  .arch-box.external { border-color: var(--orange); color: var(--orange); background: rgba(251,146,60,0.08); }
+  .arch-box.network { border-color: var(--accent); color: var(--accent); background: rgba(108,140,255,0.08); }
+  .arch-box.compute { border-color: var(--green); color: var(--green); background: rgba(74,222,128,0.08); }
+  .arch-box.data { border-color: var(--purple); color: var(--purple); background: rgba(167,139,250,0.08); }
+  .arch-box.security { border-color: var(--yellow); color: var(--yellow); background: rgba(251,191,36,0.08); }
+  .arch-arrow {
+    color: var(--text-dim); font-size: 20px; flex-shrink: 0;
+  }
+  .arch-arrow.down {
+    display: flex; justify-content: center; font-size: 24px;
+  }
+  .arch-label {
+    font-size: 11px; color: var(--text-dim); text-align: center;
+    margin-top: 2px;
+  }
+  .arch-group {
+    border: 1px dashed var(--border); border-radius: 12px;
+    padding: 16px; margin: 8px 0;
+  }
+  .arch-group-label {
+    font-size: 11px; color: var(--text-dim); text-transform: uppercase;
+    letter-spacing: 1px; margin-bottom: 8px; text-align: center;
+  }
+
+  /* ── Call Flow Timeline ── */
+  .flow-timeline { position: relative; padding-left: 32px; margin: 20px 0; }
+  .flow-timeline::before {
+    content: ''; position: absolute; left: 12px; top: 0; bottom: 0;
+    width: 2px; background: var(--border);
+  }
+  .flow-step {
+    position: relative; margin-bottom: 16px; padding: 12px 16px;
+    background: var(--surface2); border-radius: 8px;
+    font-size: 14px;
+  }
+  .flow-step::before {
+    content: ''; position: absolute; left: -25px; top: 16px;
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--accent); border: 2px solid var(--bg);
+  }
+  .flow-step .step-num {
+    font-size: 11px; color: var(--accent); font-weight: 700;
+  }
+  .flow-step .step-service {
+    font-size: 11px; padding: 2px 8px; border-radius: 4px;
+    background: var(--surface); color: var(--text-dim);
+    display: inline-block; margin-top: 4px;
+  }
+
+  /* ── Tabs ── */
+  .tabs {
+    display: flex; gap: 0; margin-bottom: 24px;
+    border-bottom: 2px solid var(--border);
+  }
+  .tab {
+    padding: 10px 24px; cursor: pointer; font-size: 14px;
+    font-weight: 600; color: var(--text-dim);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px; transition: all 0.2s;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab-content { display: none; }
+  .tab-content.visible { display: block; }
+
+  /* ── Cost Calculator ── */
+  .cost-grid {
+    display: grid; grid-template-columns: 1fr 1fr 1fr 1fr;
+    gap: 12px; margin: 16px 0;
+  }
+  .cost-card {
+    background: var(--surface2); border-radius: 10px;
+    padding: 16px; text-align: center;
+  }
+  .cost-card .cost-val {
+    font-size: 24px; font-weight: 800; color: var(--green);
+  }
+  .cost-card .cost-label {
+    font-size: 12px; color: var(--text-dim); margin-top: 4px;
+  }
+  .cost-total {
+    background: linear-gradient(135deg, var(--accent), var(--purple));
+    border-radius: 10px; padding: 20px; text-align: center;
+    margin: 16px 0;
+  }
+  .cost-total .cost-val { font-size: 32px; font-weight: 800; color: white; }
+  .cost-total .cost-label { font-size: 14px; color: rgba(255,255,255,0.7); }
+
+  /* ── Responsive ── */
+  @media (max-width: 900px) {
+    .sidebar { display: none; }
+    .main { margin-left: 0; padding: 24px 16px 80px; }
+    .cost-grid { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Top Bar -->
+<div class="top-bar">
+  <h1><span>AWS</span> Architecture Study Guide</h1>
+  <div class="progress-bar-container">
+    <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressFill" style="width:0%"></div></div>
+    <span class="progress-text" id="progressText">0 / 10 days</span>
+  </div>
+</div>
+
+<!-- Sidebar -->
+<div class="layout">
+<nav class="sidebar" id="sidebar">
+  <div class="section-label">Overview</div>
+  <a href="#" onclick="showSection('overview')" class="active" data-section="overview">
+    <div class="day-num" style="background:var(--accent);color:white">*</div>
+    Architecture & Call Flow
+  </a>
+  <div class="section-label">Study Days</div>
+  <a href="#" onclick="showSection('day1')" data-section="day1"><div class="day-num">1</div>VPC & Networking</a>
+  <a href="#" onclick="showSection('day2')" data-section="day2"><div class="day-num">2</div>ECS Fargate</a>
+  <a href="#" onclick="showSection('day3')" data-section="day3"><div class="day-num">3</div>ALB + WebSocket + SSL</a>
+  <a href="#" onclick="showSection('day4')" data-section="day4"><div class="day-num">4</div>RDS PostgreSQL</a>
+  <a href="#" onclick="showSection('day5')" data-section="day5"><div class="day-num">5</div>Redis + Secrets</a>
+  <a href="#" onclick="showSection('day6')" data-section="day6"><div class="day-num">6</div>CloudWatch</a>
+  <a href="#" onclick="showSection('day7')" data-section="day7"><div class="day-num">7</div>CI/CD Pipeline</a>
+  <a href="#" onclick="showSection('day8')" data-section="day8"><div class="day-num">8</div>Scaling + HA</a>
+  <a href="#" onclick="showSection('day9')" data-section="day9"><div class="day-num">9</div>Cost + Security</a>
+  <a href="#" onclick="showSection('day10')" data-section="day10"><div class="day-num">10</div>Mock Interview</a>
+</nav>
+
+<!-- Main Content -->
+<div class="main">
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- OVERVIEW SECTION -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div class="arch-section visible" id="overview">
+  <div class="day-header">
+    <div class="day-badge" style="background:linear-gradient(135deg,var(--accent),var(--accent2))">*</div>
+    <div><h2>Production Architecture Overview</h2>
+    <div class="day-subtitle">CNO IVR on AWS — 3k calls/day, 100+ concurrent</div></div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab(this,'archDiagram')">Architecture</div>
+    <div class="tab" onclick="switchTab(this,'callFlow')">Call Flow</div>
+    <div class="tab" onclick="switchTab(this,'costCalc')">Cost</div>
+    <div class="tab" onclick="switchTab(this,'techStack')">Tech Stack Mapping</div>
+  </div>
+
+  <!-- Architecture Diagram -->
+  <div class="tab-content visible" id="archDiagram">
+    <div class="arch-visual">
+      <div class="arch-row">
+        <div class="arch-box external">Twilio<div class="arch-label">Inbound calls</div></div>
+        <div class="arch-arrow">---></div>
+        <div class="arch-box network">Route 53<div class="arch-label">DNS</div></div>
+        <div class="arch-arrow">---></div>
+        <div class="arch-box network">ACM<div class="arch-label">TLS cert (free)</div></div>
+        <div class="arch-arrow">---></div>
+        <div class="arch-box network">ALB<div class="arch-label">WebSocket + HTTP</div></div>
+      </div>
+
+      <div class="arch-arrow down">|</div>
+      <div style="text-align:center;font-size:11px;color:var(--text-dim)">idle_timeout=3600s | sticky_sessions=on | deregistration=300s</div>
+      <div class="arch-arrow down">v</div>
+
+      <div class="arch-group">
+        <div class="arch-group-label">ECS Fargate Cluster (Auto-scaling: min 2, max 6)</div>
+        <div class="arch-row">
+          <div class="arch-box compute">ECS Task 1<div class="arch-label">AZ-a | 2vCPU 4GB</div></div>
+          <div class="arch-box compute">ECS Task 2<div class="arch-label">AZ-b | 2vCPU 4GB</div></div>
+          <div class="arch-box compute" style="opacity:0.4;border-style:dashed">ECS Task 3-6<div class="arch-label">Auto-scaled</div></div>
+        </div>
+      </div>
+
+      <div class="arch-arrow down">|</div>
+      <div class="arch-arrow down">v</div>
+
+      <div class="arch-row">
+        <div class="arch-box data">RDS Proxy<div class="arch-label">Connection pool</div></div>
+        <div class="arch-arrow">---></div>
+        <div class="arch-box data">RDS PostgreSQL 16<div class="arch-label">Multi-AZ | pgvector</div></div>
+      </div>
+
+      <div class="arch-row" style="margin-top:16px">
+        <div class="arch-box data">ElastiCache Redis<div class="arch-label">Session state</div></div>
+        <div class="arch-box security">Secrets Manager<div class="arch-label">API keys</div></div>
+        <div class="arch-box security">CloudWatch<div class="arch-label">Logs + Metrics</div></div>
+      </div>
+
+      <div style="margin-top:20px;padding-top:16px;border-top:1px dashed var(--border)">
+        <div class="arch-group-label">External APIs (via NAT Gateway)</div>
+        <div class="arch-row">
+          <div class="arch-box external">Groq<div class="arch-label">LLM (Llama 3.3)</div></div>
+          <div class="arch-box external">Deepgram<div class="arch-label">STT (Nova-2)</div></div>
+          <div class="arch-box external">ElevenLabs<div class="arch-label">TTS (Rachel)</div></div>
+          <div class="arch-box external">OpenAI<div class="arch-label">Realtime Auth</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Call Flow -->
+  <div class="tab-content" id="callFlow">
+    <h3 style="margin-bottom:16px">End-to-End Call Flow</h3>
+    <div class="flow-timeline">
+      <div class="flow-step">
+        <div class="step-num">STEP 1</div>
+        Caller dials the Twilio phone number
+        <div class="step-service">Twilio PSTN</div>
+      </div>
+      <div class="flow-step">
+        <div class="step-num">STEP 2</div>
+        Twilio sends HTTP POST to <code>https://ivr.domain.com/voice/incoming</code>
+        <div class="step-service">ALB -> ECS (FastAPI)</div>
+      </div>
+      <div class="flow-step">
+        <div class="step-num">STEP 3</div>
+        FastAPI responds with TwiML: <code>&lt;Stream url="wss://ivr.domain.com/stream"&gt;</code>
+        <div class="step-service">FastAPI -> Twilio</div>
+      </div>
+      <div class="flow-step">
+        <div class="step-num">STEP 4</div>
+        Twilio opens WebSocket through ALB to ECS task. Connection is pinned (sticky).
+        <div class="step-service">ALB WebSocket Upgrade</div>
+      </div>
+      <div class="flow-step" style="border-left:3px solid var(--orange)">
+        <div class="step-num" style="color:var(--orange)">STEP 5 — AUTH (Realtime Mode)</div>
+        Audio streams to OpenAI Realtime API. OpenAI handles STT + NLU + TTS + barge-in natively. Collects phone number, policy number, DOB via function calls. Calls party_search API.
+        <div class="step-service">OpenAI Realtime API</div>
+      </div>
+      <div class="flow-step">
+        <div class="step-num">STEP 6</div>
+        Auth complete. Close Realtime session. Acquire access token from CNO API. Start Deepgram STT WebSocket.
+        <div class="step-service">Switch: Realtime -> Standard pipeline</div>
+      </div>
+      <div class="flow-step" style="border-left:3px solid var(--green)">
+        <div class="step-num" style="color:var(--green)">STEP 7 — INTENT HANDLING (Standard Pipeline)</div>
+        Audio -> Deepgram (STT) -> transcript -> LangGraph on Groq (intent + response) -> ElevenLabs (TTS) -> audio back to Twilio. Barge-in via local VAD.
+        <div class="step-service">Deepgram + Groq + ElevenLabs</div>
+      </div>
+      <div class="flow-step">
+        <div class="step-num">STEP 8</div>
+        Each turn: conversation logged to RDS via RDS Proxy. Session state cached in ElastiCache Redis. Metrics to CloudWatch.
+        <div class="step-service">RDS + Redis + CloudWatch</div>
+      </div>
+      <div class="flow-step">
+        <div class="step-num">STEP 9</div>
+        Call ends. WebSocket closed. Session cleaned up. Final metrics logged.
+        <div class="step-service">Cleanup</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cost Calculator -->
+  <div class="tab-content" id="costCalc">
+    <h3 style="margin-bottom:16px">Monthly Cost Estimate</h3>
+    <div class="cost-grid">
+      <div class="cost-card"><div class="cost-val">$140</div><div class="cost-label">ECS Fargate<br>2 tasks avg</div></div>
+      <div class="cost-card"><div class="cost-val">$300</div><div class="cost-label">RDS PostgreSQL<br>r6g.large Multi-AZ</div></div>
+      <div class="cost-card"><div class="cost-val">$130</div><div class="cost-label">ElastiCache<br>r6g.medium x2</div></div>
+      <div class="cost-card"><div class="cost-val">$25</div><div class="cost-label">ALB<br>Load Balancer</div></div>
+      <div class="cost-card"><div class="cost-val">$45</div><div class="cost-label">NAT Gateway<br>Data transfer</div></div>
+      <div class="cost-card"><div class="cost-val">$20</div><div class="cost-label">CloudWatch<br>Logs + Metrics</div></div>
+      <div class="cost-card"><div class="cost-val">$4</div><div class="cost-label">Secrets Mgr<br>10 secrets</div></div>
+      <div class="cost-card"><div class="cost-val">$1</div><div class="cost-label">Route 53<br>DNS</div></div>
+    </div>
+    <div class="cost-total">
+      <div class="cost-val">~$665/mo</div>
+      <div class="cost-label">On-demand pricing | With reserved instances: ~$450/mo</div>
+    </div>
+    <div class="tip-box">
+      <div class="tip-label">COST OPTIMIZATION TIPS</div>
+      Scheduled scaling (night min=0): -50% compute | RDS Reserved 1yr: -40% | Fargate Spot for MLflow: -70% | Log retention 30d not forever
+    </div>
+  </div>
+
+  <!-- Tech Stack Mapping -->
+  <div class="tab-content" id="techStack">
+    <h3 style="margin-bottom:16px">Local -> AWS Mapping</h3>
+    <table class="config-table">
+      <tr><th>Local (Current)</th><th>AWS Service</th><th>Why</th></tr>
+      <tr><td>docker-compose app</td><td>ECS Fargate</td><td>No server management, auto-scaling</td></tr>
+      <tr><td>ngrok tunnel</td><td>ALB + Route 53 + ACM</td><td>Stable public endpoint with SSL</td></tr>
+      <tr><td>docker postgres:16</td><td>RDS PostgreSQL 16</td><td>Multi-AZ, automated backups, pgvector</td></tr>
+      <tr><td>docker redis:7</td><td>ElastiCache Redis 7</td><td>Managed failover, encryption</td></tr>
+      <tr><td>.env file</td><td>Secrets Manager + SSM</td><td>Rotation, IAM access, audit trail</td></tr>
+      <tr><td>console logs</td><td>CloudWatch Logs</td><td>Centralized, queryable, alarms</td></tr>
+      <tr><td>restart.py</td><td>ECS Service</td><td>Auto-restart, health checks, rolling deploy</td></tr>
+      <tr><td>GHCR + Railway</td><td>ECR + ECS deploy</td><td>Private registry, zero-downtime deploy</td></tr>
+      <tr><td>MLflow (localhost:5000)</td><td>Separate ECS service or drop</td><td>Not on critical path</td></tr>
+    </table>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- DAY 1 -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div class="arch-section" id="day1">
+  <div class="day-header">
+    <div class="day-badge">1</div>
+    <div><h2>VPC & Networking</h2>
+    <div class="day-subtitle">The foundation — everything in AWS lives inside a VPC</div></div>
+  </div>
+  <button class="day-complete-btn" onclick="toggleDay(1)">Mark Day Complete</button>
+
+  <div class="hour-block">
+    <h3><span class="hour-tag">Hour 1-2</span> VPC Core Concepts</h3>
+    <ul class="concept-list">
+      <li><strong>VPC</strong> = your private network in AWS (like your own data center)</li>
+      <li><strong>CIDR block</strong> = IP range. 10.0.0.0/16 gives you 65,536 IPs</li>
+      <li><strong>Region</strong> = geographic area (us-east-1). <strong>AZ</strong> = physical data center within region (us-east-1a, us-east-1b)</li>
+      <li>Always deploy across <strong>2 AZs minimum</strong> for high availability</li>
+    </ul>
+    <div class="tip-box">
+      <div class="tip-label">WATCH THESE</div>
+      <a href="https://www.youtube.com/watch?v=g2JOHLHh4rI" target="_blank" class="yt-link">AWS VPC Beginner to Pro — Stephane Maarek</a><br>
+      <a href="https://www.youtube.com/watch?v=Z8ySkTmsR8Q" target="_blank" class="yt-link">AWS VPC Explained | Complete Networking Tutorial for Beginners (2026)</a><br>
+      <a href="https://www.youtube.com/watch?v=iSOfkw_YyOU" target="_blank" class="yt-link">Learn Networking in 3 Hours | Fundamentals + AWS VPC</a><br>
+      <a href="https://www.youtube.com/watch?v=_NJ2xSi4zJ0" target="_blank" class="yt-link">AWS VPC Tutorial for Beginners | Guided Lab (2025)</a>
+    </div>
+  </div>
+
+  <div class="hour-block">
+    <h3><span class="hour-tag">Hour 3-4</span> Subnets, Route Tables, Gateways</h3>
+    <ul class="concept-list">
+      <li><strong>Public subnet</strong> = has route to Internet Gateway. ALB lives here.</li>
+      <li><strong>Private subnet</strong> = no direct internet. Your app + DB live here.</li>
+      <li><strong>NAT Gateway</strong> = lets private subnet make outbound calls (Groq, Deepgram APIs) without being publicly reachable</li>
+      <li><strong>Route table</strong> = rules: "traffic to 0.0.0.0/0 goes to IGW" or "goes to NAT"</li>
+    </ul>
+    <div class="diagram-box"><span class="highlight">VPC (10.0.0.0/16)</span>
+├── <span class="green">AZ-a</span>
+│   ├── Public subnet  (10.0.1.0/24)  <span class="orange"><- ALB, NAT Gateway</span>
+│   └── Private subnet (10.0.3.0/24)  <span class="purple"><- ECS tasks, RDS</span>
+├── <span class="green">AZ-b</span>
+│   ├── Public subnet  (10.0.2.0/24)  <span class="orange"><- ALB (cross-AZ)</span>
+│   └── Private subnet (10.0.4.0/24)  <span class="purple"><- ECS tasks, RDS standby</span></div>
+  </div>
+
+  <div class="hour-block">
+    <h3><span class="hour-tag">Hour 5-6</span> Security Groups</h3>
+    <ul class="concept-list">
+      <li><strong>Security Group</strong> = firewall at instance/container level (stateful)</li>
+      <li>Stateful means: if you allow inbound, the response is auto-allowed</li>
+      <li><strong>NACL</strong> = firewall at subnet level (stateless) — less common in interviews</li>
+    </ul>
+    <table class="config-table">
+      <tr><th>Security Group</th><th>Inbound Rule</th><th>Source</th></tr>
+      <tr><td>ALB SG</td><td>443 (HTTPS)</td><td>0.0.0.0/0 (public)</td></tr>
+      <tr><td>ECS SG</td><td>8000 (app)</td><td>ALB SG only</td></tr>
+      <tr><td>RDS SG</td><td>5432 (PostgreSQL)</td><td>ECS SG only</td></tr>
+      <tr><td>Redis SG</td><td>6379 (Redis)</td><td>ECS SG only</td></tr>
+    </table>
+  </div>
+
+  <div class="hour-block">
+    <h3><span class="hour-tag practice">Hour 7-8</span> Hands-on (Free Tier)</h3>
+    <ul class="concept-list">
+      <li>Log into AWS Console -> Create VPC with VPC Wizard (2 AZ, public+private)</li>
+      <li>Observe what it creates: subnets, route tables, IGW, NAT</li>
+      <li>Delete everything after to avoid charges</li>
+    </ul>
+  </div>
+
+  <div class="interview-answer">
+    <div class="label">Interview Answer — "Describe the networking"</div>
+    "I'd deploy in a VPC with 2 AZs for high availability. ALB sits in public subnets, ECS tasks and databases in private subnets. NAT Gateway lets containers call external APIs like Groq and Deepgram without being publicly exposed. Security groups restrict traffic — only ALB can reach ECS on port 8000, only ECS can reach RDS on 5432 and Redis on 6379."
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- DAY 2 -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div class="arch-section" id="day2">
+  <div class="day-header">
+    <div class="day-badge">2</div>
+    <div><h2>ECS Fargate</h2>
+    <div class="day-subtitle">Where your FastAPI app runs — serverless containers</div></div>
+  </div>
+  <button class="day-complete-btn" onclick="toggleDay(2)">Mark Day Complete</button>
+
+  <div class="hour-block">
+    <h3><span class="hour-tag">Hour 1-2</span> ECS Concepts</h3>
+    <ul class="concept-list">
+      <li><strong>Cluster</strong> = logical grouping (just a namespace with Fargate, no servers)</li>
+      <li><strong>Task Definition</strong> = like docker-compose.yml for AWS (image, CPU, memory, ports, secrets)</li>
+      <li><strong>Task</strong> = a running container instance</li>
+      <li><strong>Service</strong> = ensures N tasks always running, connects to ALB, handles deploys</li>
+      <li><strong>Fargate</strong> = serverless (no EC2 to manage). <strong>EC2 launch type</strong> = you manage servers</li>
+    </ul>
+    <div class="tip-box">
+      <div class="tip-label">WATCH THESE</div>
+      <a href="https://www.youtube.com/watch?v=tVuEw8by_zE" target="_blank" class="yt-link">Master AWS ECS Fargate in 15 Minutes — Complete Expert Guide</a><br>
+      <a href="https://www.youtube.com/watch?v=ZMNWy7csy3U" target="_blank" class="yt-link">Orchestrating Containers With AWS ECS (2025)</a><br>
+      <a href="https://www.youtube.com/watch?v=FXZHOxvLB5g" target="_blank" class="yt-link">AWS Fargate + ECS: Deploy Microservices with Load Balancer</a><br>
+      <a href="https://www.youtube.com/watch?v=C6v1GVHfOow" target="_blank" class="yt-link">Deploy Applications on AWS Fargate — Hands-On Project</a>
+    </div>
+  </div>
+
+  <div class="hour-block">
+    <h3><span class="hour-tag">Hour 3-4</span> Task Definition — Your App</h3>
+    <table class="config-table">
+      <tr><th>docker-compose.yml</th><th>ECS Task Definition</th></tr>
+      <tr><td>image: your-app</td><td>containerDefinitions[0].image (from ECR)</td></tr>
+      <tr><td>ports: "8080:8080"</td><td>containerDefinitions[0].portMappings</td></tr>
+      <tr><td>env_file: .env</td><td>secrets (Secrets Manager) + environment</td></tr>
+      <tr><td>depends_on: redis, postgres</td><td>Separate AWS services (ElastiCache, RDS)</td></tr>
+      <tr><td>command: uvicorn ...</td><td>containerDefinitions[0].command</td></tr>
+    </table>
+    <div class="code-block"><span class="comment">// ECS Task Definition (key parts)</span>
+{
+  <span class="key">"family"</span>: <span class="string">"cno-ivr"</span>,
+  <span class="key">"networkMode"</span>: <span class="string">"awsvpc"</span>,
+  <span class="key">"requiresCompatibilities"</span>: [<span class="string">"FARGATE"</span>],
+  <span class="key">"cpu"</span>: <span class="string">"2048"</span>,        <span class="comment">// 2 vCPU</span>
+  <span class="key">"memory"</span>: <span class="string">"4096"</span>,     <span class="comment">// 4 GB</span>
+  <span class="key">"containerDefinitions"</span>: [{
+    <span class="key">"name"</span>: <span class="string">"ivr-app"</span>,
+    <span class="key">"image"</span>: <span class="string">"123456.dkr.ecr.us-east-1.amazonaws.com/cno-ivr:latest"</span>,
+    <span class="key">"portMappings"</span>: [{<span class="key">"containerPort"</span>: 8000}],
+    <span class="key">"secrets"</span>: [
+      {<span class="key">"name"</span>: <span class="string">"GROQ_API_KEY"</span>, <span class="key">"valueFrom"</span>: <span class="string">"arn:aws:secretsmanager:..."</span>}
+    ]
+  }]
+}</div>
+  </div>
+
+  <div class="hour-block">
+    <h3><span class="hour-tag">Hour 5-6</span> ECS Service Config</h3>
+    <table class="config-table">
+      <tr><th>Setting</th><th>Value</th><th>Why</th></tr>
+      <tr><td>Desired count</td><td>2</td><td>HA across 2 AZs</td></tr>
+      <tr><td>Min healthy %</td><td>50%</td><td>Can take down 1 of 2 during deploy</td></tr>
+      <tr><td>Max %</td><td>200%</td><td>Temporarily run 4 tasks during deploy</td></tr>
+      <tr><td>Deregistration delay</td><td>300s</td><td>Active WebSocket calls finish</td></tr>
+      <tr><td>Health check</td><td>GET /health</td><td>ALB routes only to healthy tasks</td></tr>
+    </table>
+    <div class="tip-box">
+      <div class="tip-label">WHY NOT LAMBDA?</div>
+      Lambda max timeout = 15 min (calls can be longer). No WebSocket support. Cold starts kill real-time audio latency. Lambda is for request/response, not persistent streams.
+    </div>
+  </div>
+
+  <div class="interview-answer">
+    <div class="label">Interview Answer — "Why ECS Fargate?"</div>
+    "ECS Fargate because I don't want to manage EC2 instances. Each task runs 2 vCPU / 4 GB — a single call holds a WebSocket to Twilio plus outbound streams to Deepgram and ElevenLabs, so it's CPU-bound. I'd run a service with desired count 2 across 2 AZs, with 300-second deregistration delay so active calls finish during deployments. Lambda isn't viable because WebSocket connections must persist for the entire call duration."
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- DAY 3 -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div class="arch-section" id="day3">
+  <div class="day-header">
+    <div class="day-badge">3</div>
+    <div><h2>ALB + WebSocket + SSL</h2>
+    <div class="day-subtitle">The entry point — where Twilio connects to your app</div></div>
+  </div>
+  <button class="day-complete-btn" onclick="toggleDay(3)">Mark Day Complete</button>
+
+  <div class="hour-block">
+    <h3><span class="hour-tag">Hour 1-2</span> ALB Concepts</h3>
+    <ul class="concept-list">
+      <li><strong>ALB</strong> = Application Load Balancer, Layer 7 (understands HTTP, WebSocket)</li>
+      <li><strong>NLB</strong> = Network Load Balancer, Layer 4 (TCP only). Can't do path-based routing.</li>
+      <li><strong>Listener</strong> = port 443 HTTPS with ACM certificate</li>
+      <li><strong>Target Group</strong> = group of ECS tasks receiving traffic</li>
+      <li><strong>Routing rules</strong>: /stream -> WebSocket, /voice/* -> HTTP, /health -> HTTP</li>
+    </ul>
+    <div class="tip-box">
+      <div class="tip-label">WATCH THESE</div>
+      <a href="https://www.youtube.com/watch?v=_86YTKFcp00" target="_blank" class="yt-link">AWS ALB Explained | AWS Zero to Hero (2025)</a><br>
+      <a href="https://www.youtube.com/watch?v=ccd2krtw0o8" target="_blank" class="yt-link">AWS ALB Step-by-Step Tutorial for Beginners (2026)</a><br>
+      <a href="https://www.youtube.com/watch?v=HN_oYv9xD2A" target="_blank" class="yt-link">Create Your First ALB: Complete Configuration Guide (2025)</a>
+    </div>
+  </div>
+
+  <div class="hour-block">
+    <h3><span class="hour-tag">Hour 3-4</span> WebSocket on ALB (Critical Topic)</h3>
+    <ul class="concept-list">
+      <li>ALB supports WebSocket via HTTP/1.1 <strong>Connection: Upgrade</strong> header</li>
+      <li>Once upgraded, connection is <strong>persistent + bidirectional</strong> — audio flows both ways</li>
+      <li><strong>Idle timeout</strong>: default 60s. Set to <strong>3600s</strong> for phone calls (long pauses are normal)</li>
+      <li>WebSocket connections are <strong>inherently sticky</strong> — pinned to one target after upgrade</li>
+      <li><strong>Risk during deploy</strong>: deregistration forcefully closes WebSockets after delay</li>
+    </ul>
+    <div class="diagram-box"><span class="highlight">Twilio Call Flow Through ALB:</span>
+
+1. Twilio POST /voice/incoming  ──<span class="green"> HTTP request </span>──>  ALB  ──>  ECS Task
+   Response: TwiML with &lt;Stream url="wss://..."&gt;
+
+2. Twilio opens WebSocket       ──<span class="orange"> WS Upgrade </span>──>  ALB  ──>  ECS Task
+   Connection: Upgrade
+   Upgrade: websocket
+   ALB passes upgrade through, connection pinned to this task
+
+3. Audio streaming              <span class="purple"><──── bidirectional ────></span>
+   Mulaw audio bytes flow continuously in both directions
+   Connection stays open for entire call (minutes)</div>
+    <table class="config-table">
+      <tr><th>ALB Setting</th><th>Value</th><th>Why</th></tr>
+      <tr><td>Idle timeout</td><td>3600s</td><td>Phone calls can have long silences</td></tr>
+      <tr><td>Deregistration delay</td><td>300s</td><td>Active calls finish before task kill</td></tr>
+      <tr><td>Health check path</td><td>/health</td><td>Only route to healthy tasks</td></tr>
+      <tr><td>Health check interval</td><td>30s</td><td>Quick detection of dead tasks</td></tr>
+      <tr><td>Stickiness</td><td>Enabled</td><td>Same caller stays on same task</td></tr>
+    </table>
+  </div>
+
+  <div class="hour-block">
+    <h3><span class="hour-tag">Hour 5-6</span> Route 53 + ACM (replaces ngrok)</h3>
+    <ul class="concept-list">
+      <li><strong>ACM</strong> = free SSL certificates. Request for ivr.yourdomain.com, validate via DNS.</li>
+      <li><strong>Route 53</strong> = DNS. Create A record (alias) pointing to ALB.</li>
+      <li>After setup: Twilio webhook = <code>https://ivr.yourdomain.com/voice/incoming</code></li>
+      <li>Twilio stream = <code>wss://ivr.yourdomain.com/stream</code></li>
+      <li><strong>No more ngrok</strong> — stable, production-grade public endpoint</li>
+    </ul>
+    <div class="tip-box">
+      <div class="tip-label">WATCH THESE</div>
+      <a href="https://www.youtube.com/watch?v=vTKGTy6vCSA" target="_blank" class="yt-link">How to Set Up Domain with SSL on AWS | Route 53 + ACM + CloudFront</a><br>
+      <a href="https://www.youtube.com/watch?v=1r3_iZ9v1cg" target="_blank" class="yt-link">SSL Certificate for Custom Domain Using AWS ACM (2025)</a><br>
+      <a href="https://www.youtube.com/watch?v=v-2vob8wBlc" target="_blank" class="yt-link">AWS Load Balancer HTTPS Setup with Route 53 and ACM</a>
+    </div>
+  </div>
+
+  <div class="interview-answer">
+    <div class="label">Interview Answer — "How does Twilio connect?"</div>
+    "ALB terminates TLS and handles WebSocket upgrade natively. When Twilio initiates a media stream, it sends an HTTP upgrade request. ALB passes this through to an ECS task, and the connection becomes a persistent bidirectional WebSocket for the duration of the call. I'd set idle timeout to 3600 seconds since phone calls can have long pauses. Route 53 provides DNS, ACM gives a free SSL cert — this completely replaces ngrok. Why ALB over NLB? Because we need Layer 7 for HTTP path routing and WebSocket upgrade — NLB is Layer 4 and can't do that."
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- DAY 4 -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div class="arch-section" id="day4">
+  <div class="day-header">
+    <div class="day-badge">4</div>
+    <div><h2>RDS PostgreSQL</h2>
+    <div class="day-subtitle">Conversation persistence — managed database</div></div>
+  </div>
+  <button class="day-complete-btn" onclick="toggleDay(4)">Mark Day Complete</button>
+
+  <div class="hour-block">
+    <h3><span class="hour-tag">Hour 1-2</span> RDS Basics</h3>
+    <ul class="concept-list">
+      <li><strong>RDS</strong> = managed PostgreSQL. AWS handles patching, backups, replication.</li>
+      <li><strong>Multi-AZ</strong>: primary in AZ-a, synchronous standby in AZ-b. Auto-failover ~60s.</li>
+      <li>You connect to a <strong>single endpoint</strong> — RDS routes to active primary automatically.</li>
+      <li><strong>Instance</strong>: db.r6g.large (2 vCPU, 16 GB) for production.</li>
+      <li><strong>Storage</strong>: gp3 SSD, 50 GB with auto-scaling to 200 GB.</li>
+      <li><strong>pgvector</strong> extension supported natively — for FAQ embeddings.</li>
+    </ul>
+    <div class="tip-box">
+      <div class="tip-label">WATCH THESE</div>
+      <a href="https://www.youtube.com/watch?v=wMOQnsNNmSg" target="_blank" class="yt-link">AWS RDS PostgreSQL Tutorial: Create & Connect with pgAdmin (2026)</a><br>
+      <a href="https://www.youtube.com/watch?v=RbrBMsN_Odo" target="_blank" class="yt-link">Amazon RDS Complete Guide 2025 | Create & Connect MySQL/PostgreSQL</a><br>
+      <a href="https://www.youtube.com/watch?v=U2HTIirxNCE" target="_blank" class="yt-link">AWS RDS Tutorial | Auto Scale, Read Replica & Hands-on Demo</a>
+    </div>
+  </div>
+
+  <div class="hour-block">
+    <h3><span class="hour-tag">Hour 3-4</span> RDS Proxy (Critical for ECS)</h3>
+    <ul class="concept-list">
+      <li>PostgreSQL has hard limit on connections (~100-200 default)</li>
+      <li>Each ECS task opens ~10 connections. Scale from 2->6 tasks = 60 connections.</li>
+      <li>During deploy, old + new tasks both connect = <strong>double connections</strong></li>
+      <li><strong>RDS Proxy</strong> sits between ECS and RDS, multiplexes many app connections into few DB connections</li>
+      <li>Also handles failover transparently and supports <strong>IAM authentication</strong></li>
+    </ul>
+    <div class="tip-box">
+      <div class="tip-label">WATCH THESE</div>
+      <a href="https://www.youtube.com/watch?v=IxkKts54Nfc" target="_blank" class="yt-link">Amazon RDS Proxy Tutorial — What is AWS RDS Proxy? (2025)</a><br>
+      <a href="https://www.youtube.com/watch?v=W6p9B7iecp4" target="_blank" class="yt-link">How to Setup RDS Proxy for Streamlined Database Connectivity</a>
+    </div>
+    <div class="diagram-box"><span class="highlight">Without RDS Proxy:</span>
+ECS Task 1 (10 conn) ──┐
+ECS Task 2 (10 conn) ──┼──> RDS PostgreSQL (max 200 connections)
+ECS Task 3 (10 conn) ──┤    During deploy: 60 connections!
+ECS Task 4 (10 conn) ──┤    During scale + deploy: 120 connections!!
+ECS Task 5 (10 conn) ──┤
+ECS Task 6 (10 conn) ──┘
+
+<span class="green">With RDS Proxy:</span>
+ECS Task 1 ──┐
+ECS Task 2 ──┼──> <span class="purple">RDS Proxy</span> ──> RDS PostgreSQL
+ECS Task 3 ──┤    60 app connections
+ECS Task 4 ──┤    multiplexed to         <span class="green">10 DB connections</span>
+ECS Task 5 ──┤
+ECS Task 6 ──┘</div>
+  </div>
+
+  <div class="hour-block">
+    <h3><span class="hour-tag">Hour 5-6</span> Backups & Security</h3>
+    <ul class="concept-list">
+      <li><strong>Automated backups</strong>: daily snapshot, 7-day retention</li>
+      <li><strong>Point-in-time recovery</strong>: restore to any second within retention window</li>
+      <li><strong>Encryption at rest</strong> (KMS) and <strong>in transit</strong> (SSL)</li>
+      <li>RDS in private subnet, SG allows only ECS tasks on port 5432</li>
+    </ul>
+  </div>
+
+  <div class="interview-answer">
+    <div class="label">Interview Answer — "Database strategy?"</div>
+    "RDS PostgreSQL 16 with Multi-AZ for automatic failover. RDS Proxy in front because ECS auto-scaling causes connection spikes — during a rolling deployment, both old and new tasks connect simultaneously. RDS Proxy multiplexes these into a small pool. pgvector is supported natively for our FAQ embeddings. The DB sits in a private subnet, accessible only from ECS tasks via security group rules."
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- DAY 5 -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div class="arch-section" id="day5">
+  <div class="day-header">
+    <div class="day-badge">5</div>
+    <div><h2>ElastiCache Redis + Secrets Manager</h2>
+    <div class="day-subtitle">Session state + secure configuration</div></div>
+  </div>
+  <button class="day-complete-btn" onclick="toggleDay(5)">Mark Day Complete</button>
+
+  <div class="hour-block">
+    <h3><span class="hour-tag">Hour 1-3</span> ElastiCache Redis</h3>
+    <ul class="concept-list">
+      <li><strong>ElastiCache</strong> = managed Redis. Patching, failover, backups handled by AWS.</li>
+      <li><strong>Cluster mode disabled</strong>: 1 primary + 1 replica (simpler, sufficient for IVR)</li>
+      <li>Automatic failover: replica promoted if primary dies</li>
+      <li>Your use case: <code>session:{call_sid}</code> -> LangGraph state JSON. TTL 3600s.</li>
+      <li>At 100 concurrent calls: ~100 keys x ~5KB = 500KB. Tiny.</li>
+      <li>Connection: <code>rediss://</code> (double s = TLS)</li>
+    </ul>
+    <div class="tip-box">
+      <div class="tip-label">WATCH THESE</div>
+      <a href="https://www.youtube.com/watch?v=h-lTTtf3A98" target="_blank" class="yt-link">AWS ElastiCache Tutorial | Redis & Memcached Explained with Live Demo (2025)</a><br>
+      <a href="https://www.youtube.com/watch?v=tYk-ksdhkZ4" target="_blank" class="yt-link">AWS ElastiCache: Redis vs Memcached In-Memory Caching Explained (2025)</a><br>
+      <a href="https://www.youtube.com/watch?v=Q1WQqxwsIMk" target="_blank" class="yt-link">ElastiCache Redis & EC2 with Python | Data Storage & Retrieval</a>
+    </div>
+  </div>
+
+  <div class="hour-block">
+    <h3><span class="hour-tag">Hour 4-6</span> Secrets Manager + SSM Parameter Store</h3>
+    <table class="config-table">
+      <tr><th>Secret / Param</th><th>Where</th><th>Cost</th></tr>
+      <tr><td>GROQ_API_KEY</td><td>Secrets Manager</td><td>$0.40/mo</td></tr>
+      <tr><td>DEEPGRAM_API_KEY</td><td>Secrets Manager</td><td>$0.40/mo</td></tr>
+      <tr><td>ELEVENLABS_API_KEY</td><td>Secrets Manager</td><td>$0.40/mo</td></tr>
+      <tr><td>OPENAI_API_KEY</td><td>Secrets Manager</td><td>$0.40/mo</td></tr>
+      <tr><td>TWILIO_AUTH_TOKEN</td><td>Secrets Manager</td><td>$0.40/mo</td></tr>
+      <tr><td>DB_PASSWORD</td><td>Secrets Manager</td><td>$0.40/mo</td></tr>
+      <tr><td>AUTH_MODE=realtime</td><td>SSM Parameter Store</td><td>Free</td></tr>
+      <tr><td>GROQ_MODEL=llama-3.3-70b</td><td>SSM Parameter Store</td><td>Free</td></tr>
+    </table>
+    <ul class="concept-list">
+      <li>ECS pulls secrets at task startup (declared in task definition <code>secrets</code> block)</li>
+      <li>Secrets Manager supports <strong>automatic rotation</strong></li>
+      <li>SSM Parameter Store is <strong>free</strong> for standard parameters</li>
+    </ul>
+  </div>
+
+  <div class="hour-block">
+    <h3><span class="hour-tag">Hour 7-8</span> IAM Roles for ECS</h3>
+    <ul class="concept-list">
+      <li><strong>Execution Role</strong> — lets ECS pull images (ECR) and read secrets (Secrets Manager)</li>
+      <li><strong>Task Role</strong> — lets your running app access AWS services (CloudWatch, S3)</li>
+      <li>No hardcoded AWS credentials. Ever.</li>
+    </ul>
+    <div class="tip-box">
+      <div class="tip-label">WATCH THESE</div>
+      <a href="https://www.youtube.com/watch?v=wpFJekMhYLk" target="_blank" class="yt-link">AWS ECS IAM: Task Role vs Execution Role & Secrets (must-watch)</a><br>
+      <a href="https://www.youtube.com/watch?v=KkCu8N84abU" target="_blank" class="yt-link">How to Use AWS Secrets Manager [2026 Full Guide]</a><br>
+      <a href="https://www.youtube.com/watch?v=aFEbqpuvHOw" target="_blank" class="yt-link">AWS Secrets Manager Deep Dive | API Keys & Rotation Explained (2025)</a><br>
+      <a href="https://www.youtube.com/watch?v=yc7SthqzMYI" target="_blank" class="yt-link">AWS IAM Roles Explained: Temporary Credentials & Cross-Account (2025)</a>
+    </div>
+    <div class="diagram-box"><span class="highlight">ecsTaskExecutionRole:</span>
+  <span class="green">ecr:GetAuthorizationToken</span>     (pull Docker image)
+  <span class="green">ecr:BatchGetImage</span>              (pull Docker image)
+  <span class="green">secretsmanager:GetSecretValue</span>  (read API keys at startup)
+  <span class="green">logs:CreateLogStream</span>           (send logs to CloudWatch)
+  <span class="green">logs:PutLogEvents</span>              (send logs to CloudWatch)
+
+<span class="highlight">cnoIvrTaskRole:</span>
+  <span class="orange">cloudwatch:PutMetricData</span>       (custom metrics)
+  <span class="orange">s3:PutObject</span>                   (call recordings, if needed)</div>
+  </div>
+
+  <div class="interview-answer">
+    <div class="label">Interview Answer — "How do you manage secrets and session state?"</div>
+    "ElastiCache Redis for session state — each active call stores its LangGraph state keyed by call_sid with a 1-hour TTL. At 100 concurrent calls that's trivial memory. API keys stored in Secrets Manager, injected into ECS tasks at startup via the task definition — no .env files in the container. The execution role allows pulling secrets and images, the task role grants only specific permissions the app needs at runtime. Least privilege throughout."
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- DAY 6 -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div class="arch-section" id="day6">
+  <div class="day-header">
+    <div class="day-badge">6</div>
+    <div><h2>CloudWatch Observability</h2>
+    <div class="day-subtitle">Monitor 3k calls/day — catch issues before callers notice</div></div>
+  </div>
+  <button class="day-complete-btn" onclick="toggleDay(6)">Mark Day Complete</button>
+
+  <div class="hour-block">
+    <h3><span class="hour-tag">Hour 1-3</span> CloudWatch Logs</h3>
+    <ul class="concept-list">
+      <li><strong>Log Group</strong>: <code>/ecs/cno-ivr</code> — all container stdout/stderr</li>
+      <li>Your app uses <strong>structlog (JSON)</strong> — CloudWatch parses it automatically</li>
+      <li><strong>Log Insights</strong> = SQL-like queries on logs</li>
+      <li>Set <strong>retention to 30 days</strong> (default = forever = expensive)</li>
+    </ul>
+    <div class="tip-box">
+      <div class="tip-label">WATCH THESE</div>
+      <a href="https://www.youtube.com/watch?v=L8qt9Pse0-U" target="_blank" class="yt-link">AWS CloudWatch for Absolute Beginners (2026) | Logs & Monitoring</a><br>
+      <a href="https://www.youtube.com/watch?v=dQPXBohP0hw" target="_blank" class="yt-link">AWS CloudWatch Tutorial | Metrics, Alarms, Dashboards & Logs (2025)</a><br>
+      <a href="https://www.youtube.com/watch?v=3qXSHMTZPKM" target="_blank" class="yt-link">AWS CloudWatch Explained | Metrics, Alarms & Monitoring (2025)</a><br>
+      <a href="https://www.youtube.com/watch?v=3ln6lBRveSY" target="_blank" class="yt-link">CloudWatch Monitoring & Alarms | Real-Time Metrics Guide (2026)</a>
+    </div>
+    <div class="code-block"><span class="comment">-- Find failed auth attempts in last hour</span>
+<span class="keyword">fields</span> @timestamp, call_sid, @message
+| <span class="keyword">filter</span> @message <span class="keyword">like</span> <span class="string">/auth_failed/</span>
+| <span class="keyword">sort</span> @timestamp <span class="keyword">desc</span>
+| <span class="keyword">limit</span> 50
+
+<span class="comment">-- Average LangGraph invocation time</span>
+<span class="keyword">fields</span> @timestamp, @message
+| <span class="keyword">filter</span> @message <span class="keyword">like</span> <span class="string">/graph_invoke/</span>
+| <span class="keyword">stats</span> avg(duration_ms) <span class="keyword">by</span> bin(5m)</div>
+  </div>
+
+  <div class="hour-block">
+    <h3><span class="hour-tag">Hour 4-6</span> Custom Metrics & Alarms</h3>
+    <table class="config-table">
+      <tr><th>Metric</th><th>Type</th><th>Source</th></tr>
+      <tr><td>active_calls</td><td>Custom</td><td>WebSocket connection count</td></tr>
+      <tr><td>auth_success_rate</td><td>Custom</td><td>% calls passing auth</td></tr>
+      <tr><td>stt_latency_p99</td><td>Custom</td><td>Deepgram response time</td></tr>
+      <tr><td>tts_latency_p99</td><td>Custom</td><td>ElevenLabs response time</td></tr>
+      <tr><td>graph_invoke_p99</td><td>Custom</td><td>LangGraph processing time</td></tr>
+      <tr><td>CPUUtilization</td><td>Default</td><td>ECS (free)</td></tr>
+      <tr><td>DatabaseConnections</td><td>Default</td><td>RDS (free)</td></tr>
+    </table>
+    <table class="config-table" style="margin-top:16px">
+      <tr><th>Alarm</th><th>Threshold</th><th>Severity</th></tr>
+      <tr><td>ECS CPU</td><td>> 80% for 5 min</td><td style="color:var(--red)">CRITICAL</td></tr>
+      <tr><td>Active calls</td><td>> 90</td><td style="color:var(--red)">CRITICAL</td></tr>
+      <tr><td>ALB 5xx rate</td><td>> 5%</td><td style="color:var(--red)">CRITICAL</td></tr>
+      <tr><td>Auth success rate</td><td>< 70%</td><td style="color:var(--orange)">WARNING</td></tr>
+      <tr><td>Graph invoke p99</td><td>> 3s</td><td style="color:var(--orange)">WARNING</td></tr>
+    </table>
+  </div>
+
+  <div class="interview-answer">
+    <div class="label">Interview Answer — "Monitoring strategy?"</div>
+    "Structured JSON logging via structlog to CloudWatch Logs with 30-day retention. Log Insights for ad-hoc debugging — filtering by call_sid to trace a single call's journey. Custom metrics for active calls, auth success rate, and P99 latencies for STT, LLM, and TTS independently. Alarms on CPU above 80%, error rate above 5%, and auth success rate dropping below 70%. A CloudWatch dashboard gives real-time visibility into call volume and system health."
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- DAY 7 -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div class="arch-section" id="day7">
+  <div class="day-header">
+    <div class="day-badge">7</div>
+    <div><h2>CI/CD Pipeline</h2>
+    <div class="day-subtitle">Zero-downtime deployments that don't drop active calls</div></div>
+  </div>
+  <button class="day-complete-btn" onclick="toggleDay(7)">Mark Day Complete</button>
+
+  <div class="hour-block">
+    <h3><span class="hour-tag">Hour 1-3</span> ECR (Elastic Container Registry)</h3>
+    <ul class="concept-list">
+      <li><strong>ECR</strong> = private Docker registry in AWS (replaces GHCR)</li>
+      <li><strong>Image scanning</strong> — scans for CVEs on push</li>
+      <li><strong>Lifecycle policies</strong> — auto-delete images older than 30 days</li>
+    </ul>
+    <div class="tip-box">
+      <div class="tip-label">WATCH THESE</div>
+      <a href="https://www.youtube.com/watch?v=gfCkScWWTvk" target="_blank" class="yt-link">Set Up CI/CD to Auto Deploy to AWS ECS (GitHub + GitLab) (2025)</a><br>
+      <a href="https://www.youtube.com/watch?v=_RcdDvBvKdA" target="_blank" class="yt-link">CI/CD Pipeline with GitHub Actions | Deploy to AWS ECS + Terraform (2026)</a><br>
+      <a href="https://www.youtube.com/watch?v=wLsWALjM-Uk" target="_blank" class="yt-link">CI/CD using Docker + GitHub + AWS ECS</a><br>
+      <a href="https://www.youtube.com/watch?v=uanUWutRPq4" target="_blank" class="yt-link">GitHub Actions CI/CD to AWS ECS using IAM Assume Role</a>
+    </div>
+  </div>
+
+  <div class="hour-block">
+    <h3><span class="hour-tag">Hour 4-6</span> GitHub Actions -> ECR -> ECS</h3>
+    <div class="code-block"><span class="comment"># .github/workflows/deploy.yml</span>
+<span class="keyword">steps:</span>
+  <span class="comment"># 1. Authenticate to AWS (OIDC — no long-lived keys)</span>
+  - uses: aws-actions/configure-aws-credentials@v4
+    with:
+      role-to-assume: arn:aws:iam::...:role/github-actions-deploy
+
+  <span class="comment"># 2. Login to ECR</span>
+  - uses: aws-actions/amazon-ecr-login@v2
+
+  <span class="comment"># 3. Build and push Docker image</span>
+  - run: |
+      docker build -t $REGISTRY/cno-ivr:$GITHUB_SHA .
+      docker push $REGISTRY/cno-ivr:$GITHUB_SHA
+
+  <span class="comment"># 4. Update task definition with new image tag</span>
+  - uses: aws-actions/amazon-ecs-render-task-definition@v1
+
+  <span class="comment"># 5. Deploy to ECS (rolling update)</span>
+  - uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+    with:
+      wait-for-service-stability: true  <span class="comment"># waits until healthy</span></div>
+  </div>
+
+  <div class="hour-block">
+    <h3><span class="hour-tag">Hour 7-8</span> Rolling Deploy Mechanics</h3>
+    <div class="flow-timeline">
+      <div class="flow-step"><div class="step-num">STEP 1</div>New task definition registered with new image tag</div>
+      <div class="flow-step"><div class="step-num">STEP 2</div>ECS launches new task (new version)</div>
+      <div class="flow-step"><div class="step-num">STEP 3</div>ALB health check passes on new task</div>
+      <div class="flow-step"><div class="step-num">STEP 4</div>ECS starts draining old task: ALB stops sending NEW connections. Existing WebSocket connections stay open.</div>
+      <div class="flow-step"><div class="step-num">STEP 5</div>After deregistration delay (300s), force-close remaining connections</div>
+      <div class="flow-step"><div class="step-num">STEP 6</div>Old task stopped. Repeat for next task.</div>
+    </div>
+  </div>
+
+  <div class="interview-answer">
+    <div class="label">Interview Answer — "Deployment strategy?"</div>
+    "GitHub Actions builds the Docker image, pushes to ECR, then updates the ECS service with the new task definition. ECS does a rolling deployment — launches a new task, waits for ALB health checks to pass, then drains the old task. The 300-second deregistration delay is critical — active WebSocket connections for ongoing phone calls need time to complete naturally. The deploy waits for service stability before marking success. ECS circuit breaker auto-rolls back if new tasks keep failing health checks."
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- DAY 8 -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div class="arch-section" id="day8">
+  <div class="day-header">
+    <div class="day-badge">8</div>
+    <div><h2>Auto-Scaling + HA + Graceful Shutdown</h2>
+    <div class="day-subtitle">Handle 100+ concurrent calls and survive failures</div></div>
+  </div>
+  <button class="day-complete-btn" onclick="toggleDay(8)">Mark Day Complete</button>
+
+  <div class="hour-block">
+    <h3><span class="hour-tag">Hour 1-3</span> ECS Auto-Scaling</h3>
+    <table class="config-table">
+      <tr><th>Setting</th><th>Value</th><th>Reasoning</th></tr>
+      <tr><td>Min tasks</td><td>2</td><td>Always HA across 2 AZs</td></tr>
+      <tr><td>Max tasks</td><td>6</td><td>Handles 300 concurrent (burst)</td></tr>
+      <tr><td>Scale-out</td><td>CPU > 60% for 2 min</td><td>Add 1 task</td></tr>
+      <tr><td>Scale-in</td><td>CPU < 30% for 10 min</td><td>Remove 1 task</td></tr>
+      <tr><td>Cooldown</td><td>120s out, 300s in</td><td>Prevent flapping</td></tr>
+    </table>
+    <ul class="concept-list">
+      <li><strong>Scale-in protection</strong>: task marks itself protected when handling active calls</li>
+      <li>Custom metric alternative: scale on <code>active_calls_per_task</code> > 40</li>
+    </ul>
+    <div class="tip-box">
+      <div class="tip-label">WATCH THESE</div>
+      <a href="https://www.youtube.com/watch?v=FJPE-fAkCM0" target="_blank" class="yt-link">AWS ECS Auto Scaling Explained | Target Tracking & Step Scaling (2025)</a><br>
+      <a href="https://www.youtube.com/watch?v=2Qe_50eEbrc" target="_blank" class="yt-link">Hands-on: How to Setup Autoscaling in AWS ECS Fargate</a><br>
+      <a href="https://www.youtube.com/playlist?list=PLcWsizQR0OZAbaQH1vksKAPhehtXiD9Ra" target="_blank" class="yt-link">AWS ECS Deep Dive | From Basics to Production-Ready (Playlist)</a>
+    </div>
+  </div>
+
+  <div class="hour-block">
+    <h3><span class="hour-tag">Hour 4-5</span> High Availability</h3>
+    <ul class="concept-list">
+      <li><strong>Multi-AZ everything</strong>: ECS tasks, RDS, ElastiCache — all across 2 AZs</li>
+      <li><strong>AZ failure scenario</strong>: ALB stops routing to failed AZ. ECS launches replacement tasks in healthy AZ. RDS fails over ~60s. Active calls in failed AZ are lost (callers redial).</li>
+      <li><strong>RTO</strong> (Recovery Time): ~2 minutes</li>
+      <li><strong>RPO</strong> (Recovery Point): 0 (synchronous RDS replication)</li>
+    </ul>
+  </div>
+
+  <div class="hour-block">
+    <h3><span class="hour-tag">Hour 6-8</span> Graceful Shutdown (SIGTERM)</h3>
+    <ul class="concept-list">
+      <li>ECS sends <strong>SIGTERM</strong> when stopping a task (deploy, scale-in)</li>
+      <li>You have <code>stopTimeout</code> seconds (set to 120) before SIGKILL</li>
+      <li>App must: stop accepting new calls, drain active calls, return 503 on health check</li>
+    </ul>
+    <div class="code-block"><span class="keyword">import</span> signal, asyncio
+
+active_calls: set[str] = set()
+shutting_down = <span class="keyword">False</span>
+
+<span class="keyword">def</span> handle_sigterm(signum, frame):
+    <span class="keyword">global</span> shutting_down
+    shutting_down = <span class="keyword">True</span>
+    <span class="comment"># Stop accepting new WebSocket connections</span>
+    <span class="comment"># Wait for active_calls to drain</span>
+
+signal.signal(signal.SIGTERM, handle_sigterm)
+
+<span class="comment"># In /stream endpoint:</span>
+<span class="keyword">async def</span> media_stream(websocket):
+    <span class="keyword">if</span> shutting_down:
+        <span class="keyword">await</span> websocket.close(code=1001)  <span class="comment"># Going Away</span>
+        <span class="keyword">return</span>
+    active_calls.add(call_sid)
+    <span class="keyword">try</span>:
+        <span class="keyword">await</span> handler.run()
+    <span class="keyword">finally</span>:
+        active_calls.discard(call_sid)
+
+<span class="comment"># Health check returns 503 when draining:</span>
+@app.get(<span class="string">"/health"</span>)
+<span class="keyword">async def</span> health():
+    <span class="keyword">if</span> shutting_down:
+        <span class="keyword">return</span> JSONResponse({<span class="string">"status"</span>: <span class="string">"draining"</span>}, status_code=503)
+    <span class="keyword">return</span> {<span class="string">"status"</span>: <span class="string">"ok"</span>}</div>
+  </div>
+
+  <div class="interview-answer">
+    <div class="label">Interview Answer — "How do you scale and handle failures?"</div>
+    "Auto-scaling on CPU with 60% target. Min 2 tasks across 2 AZs, max 6 for burst. The tricky part is scale-in — I use ECS scale-in protection: when a task handles active calls, it marks itself protected. On SIGTERM during deployments, the app stops accepting new connections, returns 503 on health checks so ALB drains it, and waits for active calls to complete. The stop timeout is 120 seconds. Between ALB deregistration delay and the SIGTERM handler, active calls finish naturally."
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- DAY 9 -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div class="arch-section" id="day9">
+  <div class="day-header">
+    <div class="day-badge">9</div>
+    <div><h2>Cost Optimization + Security</h2>
+    <div class="day-subtitle">Interview favorites: "how would you reduce cost?" and "how do you secure it?"</div></div>
+  </div>
+  <button class="day-complete-btn" onclick="toggleDay(9)">Mark Day Complete</button>
+
+  <div class="hour-block">
+    <h3><span class="hour-tag">Hour 1-3</span> Cost Optimization Strategies</h3>
+    <ul class="concept-list">
+      <li><strong>Fargate Spot</strong> for non-critical services (MLflow) — 70% cheaper</li>
+      <li><strong>Scheduled scaling</strong>: if calls are business-hours only, min=0 at night — saves ~50% compute</li>
+      <li><strong>RDS Reserved Instances</strong>: 1-year commit = 40% savings</li>
+      <li><strong>NAT Gateway alternative</strong>: VPC endpoints for AWS services ($45/mo saving)</li>
+      <li><strong>Log retention</strong>: 30 days, not forever</li>
+      <li><strong>ECR lifecycle</strong>: auto-delete images older than 30 days</li>
+    </ul>
+  </div>
+
+  <div class="hour-block">
+    <h3><span class="hour-tag">Hour 4-6</span> Security Best Practices</h3>
+    <ul class="concept-list">
+      <li><strong>No secrets in code or Docker image</strong> — all from Secrets Manager</li>
+      <li><strong>IAM least privilege</strong> — task role has only needed permissions</li>
+      <li><strong>Private subnets</strong> — app and DB not publicly accessible</li>
+      <li><strong>TLS everywhere</strong>: ALB (ACM), ECS->RDS (require SSL), ECS->Redis (in-transit encryption)</li>
+      <li><strong>RDS encryption at rest</strong> — KMS managed key</li>
+      <li><strong>ECR image scanning</strong> — scan for CVEs on push</li>
+      <li><strong>WAF on ALB</strong> (optional) — rate limiting, block known bad IPs</li>
+    </ul>
+  </div>
+
+  <div class="hour-block">
+    <h3><span class="hour-tag interview">Hour 7-8</span> Security Interview Scenarios</h3>
+    <div class="qa-card" onclick="this.classList.toggle('open')">
+      <div class="qa-question">Q: How do you handle API key rotation? <span class="arrow">></span></div>
+      <div class="qa-answer">Secrets Manager supports automatic rotation. When a secret rotates, ECS tasks pick up the new value on next deployment or restart. For zero-downtime rotation, the app can fetch secrets at runtime with SDK caching.</div>
+    </div>
+    <div class="qa-card" onclick="this.classList.toggle('open')">
+      <div class="qa-question">Q: What if someone gets access to your container? <span class="arrow">></span></div>
+      <div class="qa-answer">Task role limits blast radius — it can only access CloudWatch and S3, not other services. Container runs in a private subnet with no inbound internet. DB credentials are fetched from Secrets Manager, not baked into the image. VPC Flow Logs show unusual outbound traffic.</div>
+    </div>
+    <div class="qa-card" onclick="this.classList.toggle('open')">
+      <div class="qa-question">Q: How do you prevent unauthorized access to the IVR endpoints? <span class="arrow">></span></div>
+      <div class="qa-answer">Twilio signs webhook requests with X-Twilio-Signature. The app validates this signature to ensure requests come from Twilio, not attackers. WebSocket stream uses a shared secret token in the URL query parameter. ALB only accepts HTTPS (443), HTTP (80) redirects to HTTPS.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- DAY 10 -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div class="arch-section" id="day10">
+  <div class="day-header">
+    <div class="day-badge">10</div>
+    <div><h2>Mock Interview — Full Practice</h2>
+    <div class="day-subtitle">Tie everything together. Draw from memory. Answer confidently.</div></div>
+  </div>
+  <button class="day-complete-btn" onclick="toggleDay(10)">Mark Day Complete</button>
+
+  <div class="hour-block">
+    <h3><span class="hour-tag interview">Hour 1-3</span> Draw the Architecture from Memory</h3>
+    <ul class="concept-list">
+      <li>Open a blank paper / whiteboard / draw.io</li>
+      <li>Draw the complete architecture WITHOUT looking at notes</li>
+      <li>For each component, explain: why this service, how it connects, what happens when it fails, how it scales</li>
+      <li>Practice narrating the call flow end-to-end</li>
+    </ul>
+  </div>
+
+  <div class="hour-block">
+    <h3><span class="hour-tag interview">Hour 4-8</span> Mock Interview Q&A</h3>
+    <p style="color:var(--text-dim);margin-bottom:16px">Click each question to reveal the answer. Practice answering OUT LOUD before clicking.</p>
+
+    <div class="qa-card" onclick="this.classList.toggle('open')">
+      <div class="qa-question">1. Walk me through the architecture <span class="arrow">></span></div>
+      <div class="qa-answer">Use the architecture diagram. Start from Twilio, go through Route 53, ALB, ECS Fargate, then explain data layer (RDS, Redis), security (Secrets Manager, IAM), and observability (CloudWatch). Mention external APIs going through NAT Gateway.</div>
+    </div>
+    <div class="qa-card" onclick="this.classList.toggle('open')">
+      <div class="qa-question">2. Why ECS Fargate over Lambda? <span class="arrow">></span></div>
+      <div class="qa-answer">Lambda has 15-min max timeout, no WebSocket support, and cold starts kill real-time audio latency. IVR calls need persistent connections for the entire duration. Fargate gives you long-running containers without managing EC2.</div>
+    </div>
+    <div class="qa-card" onclick="this.classList.toggle('open')">
+      <div class="qa-question">3. Why ALB over NLB? <span class="arrow">></span></div>
+      <div class="qa-answer">ALB is Layer 7 — understands HTTP, can do path-based routing (/stream vs /voice/*), and handles WebSocket upgrade. NLB is Layer 4 (TCP) and can't distinguish between HTTP paths or handle the upgrade protocol.</div>
+    </div>
+    <div class="qa-card" onclick="this.classList.toggle('open')">
+      <div class="qa-question">4. How do you deploy without dropping calls? <span class="arrow">></span></div>
+      <div class="qa-answer">Rolling deploy: replace one task at a time. ALB deregistration delay (300s) lets active WebSocket connections finish. App handles SIGTERM by stopping new call acceptance and returning 503 on health checks. ECS circuit breaker auto-rolls back if new tasks fail.</div>
+    </div>
+    <div class="qa-card" onclick="this.classList.toggle('open')">
+      <div class="qa-question">5. How do you handle an AZ failure? <span class="arrow">></span></div>
+      <div class="qa-answer">Multi-AZ everything. ALB stops routing to failed AZ. ECS launches replacement tasks in healthy AZ. RDS fails over to standby (~60s). Active calls in failed AZ are lost — callers redial. RTO ~2 minutes, RPO 0 (synchronous replication).</div>
+    </div>
+    <div class="qa-card" onclick="this.classList.toggle('open')">
+      <div class="qa-question">6. How do you scale to 100 concurrent calls? <span class="arrow">></span></div>
+      <div class="qa-answer">~50 calls per task (CPU-bound: each call runs STT + LLM + TTS streams). Auto-scale on CPU target 60%. Min 2, max 6 tasks. Scale-in protection prevents killing tasks with active calls. Custom metric active_calls_per_task as secondary trigger.</div>
+    </div>
+    <div class="qa-card" onclick="this.classList.toggle('open')">
+      <div class="qa-question">7. How do you handle database connection spikes during deploy? <span class="arrow">></span></div>
+      <div class="qa-answer">RDS Proxy. During rolling deploy, old + new tasks both have connection pools open. RDS Proxy multiplexes many app connections into few DB connections, preventing PostgreSQL max_connections exhaustion. Also handles failover transparently.</div>
+    </div>
+    <div class="qa-card" onclick="this.classList.toggle('open')">
+      <div class="qa-question">8. What's the cost and how would you optimize it? <span class="arrow">></span></div>
+      <div class="qa-answer">~$665/mo on-demand. Optimize: scheduled scaling (min=0 at night) saves 50% compute. RDS Reserved 1yr saves 40%. Fargate Spot for non-critical services. Log retention 30 days. NAT Gateway per AZ (not shared). Down to ~$450/mo.</div>
+    </div>
+    <div class="qa-card" onclick="this.classList.toggle('open')">
+      <div class="qa-question">9. Why not use Bedrock instead of Groq? <span class="arrow">></span></div>
+      <div class="qa-answer">Could use Bedrock for Llama or Claude. Advantage: stays within AWS (lower latency, simpler billing, no NAT Gateway needed for LLM calls). Trade-off: Groq has faster inference speed for Llama specifically. Bedrock is a valid alternative — it's an architectural decision based on latency vs simplicity.</div>
+    </div>
+    <div class="qa-card" onclick="this.classList.toggle('open')">
+      <div class="qa-question">10. What's the single point of failure? <span class="arrow">></span></div>
+      <div class="qa-answer">NAT Gateway — if it dies, no outbound API calls (Groq, Deepgram, ElevenLabs all fail). Mitigate by deploying NAT Gateway in each AZ. External APIs themselves are SPOFs but outside our control — mitigate with timeouts, circuit breakers, and fallback responses.</div>
+    </div>
+    <div class="qa-card" onclick="this.classList.toggle('open')">
+      <div class="qa-question">11. How do you trace a single call through the system? <span class="arrow">></span></div>
+      <div class="qa-answer">Every log line includes call_sid (structured JSON via structlog). CloudWatch Log Insights: filter by call_sid to see the complete journey — from WebSocket connect through auth, intent handling, every STT transcript, LLM response, TTS generation, to disconnect. X-Ray tracing optional for latency breakdown.</div>
+    </div>
+    <div class="qa-card" onclick="this.classList.toggle('open')">
+      <div class="qa-question">12. How do you handle a bad deployment? <span class="arrow">></span></div>
+      <div class="qa-answer">ECS deployment circuit breaker. If new tasks keep failing health checks (configurable threshold), ECS automatically rolls back to the previous working task definition. No manual intervention needed. The deploy GitHub Action also waits for service stability — if it times out, the pipeline fails and alerts the team.</div>
+    </div>
+    <div class="qa-card" onclick="this.classList.toggle('open')">
+      <div class="qa-question">13. Why Redis for session state instead of DynamoDB? <span class="arrow">></span></div>
+      <div class="qa-answer">Sub-millisecond reads for real-time audio pipeline. DynamoDB single-digit ms is fine for most apps but Redis is simpler for key-value with TTL, and we already use it locally. DynamoDB would be valid too — trade-off is managed scaling (DynamoDB) vs raw speed (Redis).</div>
+    </div>
+    <div class="qa-card" onclick="this.classList.toggle('open')">
+      <div class="qa-question">14. Walk me through what happens when a caller speaks <span class="arrow">></span></div>
+      <div class="qa-answer">Twilio captures mulaw audio from the phone. Sends it over WebSocket (through ALB) to our ECS task. Task forwards audio bytes to Deepgram's streaming STT API. Deepgram returns partial + final transcripts. Final transcript goes to LangGraph running on Groq (Llama 3.3 70B) for intent detection and response generation. Response text goes to ElevenLabs streaming TTS API. ElevenLabs returns mulaw audio chunks. We stream those back through the WebSocket to Twilio, which plays them to the caller. All of this happens in real-time — total latency target is under 2 seconds.</div>
+    </div>
+  </div>
+</div>
+
+</div><!-- /main -->
+</div><!-- /layout -->
+
+<script>
+// ── Section Navigation ──
+function showSection(id) {
+  document.querySelectorAll('.arch-section').forEach(s => s.classList.remove('visible'));
+  document.getElementById(id).classList.add('visible');
+  document.querySelectorAll('.sidebar a').forEach(a => a.classList.remove('active'));
+  document.querySelector(`[data-section="${id}"]`).classList.add('active');
+  window.scrollTo(0, 0);
+}
+
+// ── Tab Switching ──
+function switchTab(tabEl, contentId) {
+  const parent = tabEl.closest('.arch-section');
+  parent.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  parent.querySelectorAll('.tab-content').forEach(c => c.classList.remove('visible'));
+  tabEl.classList.add('active');
+  document.getElementById(contentId).classList.add('visible');
+}
+
+// ── Day Completion ──
+const completedDays = JSON.parse(localStorage.getItem('aws_study_completed') || '[]');
+
+function toggleDay(day) {
+  const idx = completedDays.indexOf(day);
+  if (idx === -1) completedDays.push(day);
+  else completedDays.splice(idx, 1);
+  localStorage.setItem('aws_study_completed', JSON.stringify(completedDays));
+  updateProgress();
+}
+
+function updateProgress() {
+  // Update sidebar
+  for (let d = 1; d <= 10; d++) {
+    const link = document.querySelector(`[data-section="day${d}"]`);
+    if (link) {
+      if (completedDays.includes(d)) link.classList.add('completed');
+      else link.classList.remove('completed');
+    }
+    // Update button
+    const btn = document.querySelector(`#day${d} .day-complete-btn`);
+    if (btn) {
+      if (completedDays.includes(d)) {
+        btn.classList.add('done');
+        btn.textContent = 'Completed';
+      } else {
+        btn.classList.remove('done');
+        btn.textContent = 'Mark Day Complete';
+      }
+    }
+  }
+  // Update progress bar
+  const pct = Math.round((completedDays.length / 10) * 100);
+  document.getElementById('progressFill').style.width = pct + '%';
+  document.getElementById('progressText').textContent = `${completedDays.length} / 10 days`;
+}
+
+updateProgress();
+</script>
+</body>
+</html>

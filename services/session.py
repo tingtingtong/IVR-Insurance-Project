@@ -16,16 +16,7 @@ class SessionService:
     async def _get_redis(self) -> aioredis.Redis:
         if self._redis is None:
             try:
-                # socket_connect_timeout / socket_timeout ensure ping() fails fast
-                # (within 2 s) when Docker just started and Redis isn't ready yet.
-                # Without these, ping() blocks for OS-level timeout (~minutes on
-                # Windows), causing Twilio's 15 s webhook deadline to expire → 31005.
-                r = await aioredis.from_url(
-                    settings.redis_url,
-                    decode_responses=True,
-                    socket_connect_timeout=2,
-                    socket_timeout=2,
-                )
+                r = await aioredis.from_url(settings.redis_url, decode_responses=True)
                 await r.ping()
                 self._redis = r
             except Exception:

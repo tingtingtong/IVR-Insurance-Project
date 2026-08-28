@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>IVR — Complete Architecture</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    font-size: 13px;
+    color: #1e293b;
+    background: #fff;
+    line-height: 1.6;
+    padding: 40px 48px;
+    max-width: 960px;
+    margin: 0 auto;
+  }
+
+  /* ── Cover ── */
+  .cover {
+    text-align: center;
+    padding: 48px 0 36px;
+    border-bottom: 3px solid #1e3a5f;
+    margin-bottom: 36px;
+  }
+  .cover h1 {
+    font-size: 28px;
+    font-weight: 700;
+    color: #1e3a5f;
+    letter-spacing: -0.5px;
+  }
+  .cover .subtitle {
+    font-size: 14px;
+    color: #64748b;
+    margin-top: 6px;
+  }
+  .cover .meta {
+    margin-top: 16px;
+    font-size: 12px;
+    color: #94a3b8;
+  }
+
+  /* ── Sections ── */
+  h2 {
+    font-size: 16px;
+    font-weight: 700;
+    color: #1e3a5f;
+    margin: 32px 0 12px;
+    padding-bottom: 6px;
+    border-bottom: 2px solid #e2e8f0;
+  }
+  h3 {
+    font-size: 13px;
+    font-weight: 600;
+    color: #334155;
+    margin: 18px 0 8px;
+  }
+  p { margin-bottom: 10px; color: #475569; }
+
+  /* ── Tables ── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0 20px;
+    font-size: 12.5px;
+  }
+  th {
+    background: #1e3a5f;
+    color: #fff;
+    font-weight: 600;
+    padding: 8px 12px;
+    text-align: left;
+    letter-spacing: 0.3px;
+  }
+  td {
+    padding: 7px 12px;
+    border-bottom: 1px solid #e2e8f0;
+    vertical-align: top;
+  }
+  tr:nth-child(even) td { background: #f8fafc; }
+  td code, th code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    background: #f1f5f9;
+    padding: 1px 5px;
+    border-radius: 3px;
+    color: #0f172a;
+  }
+
+  /* ── Code / Diagram blocks ── */
+  pre {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11.5px;
+    background: #0f172a;
+    color: #e2e8f0;
+    padding: 18px 20px;
+    border-radius: 8px;
+    overflow-x: auto;
+    margin: 12px 0 20px;
+    line-height: 1.7;
+  }
+
+  /* ── Badges ── */
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .badge-blue  { background: #dbeafe; color: #1e40af; }
+  .badge-green { background: #dcfce7; color: #166534; }
+  .badge-amber { background: #fef9c3; color: #854d0e; }
+  .badge-red   { background: #fee2e2; color: #991b1b; }
+
+  /* ── Two-column grid ── */
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+  .card {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 14px 16px;
+  }
+  .card h4 { font-size: 12px; font-weight: 700; color: #1e3a5f; margin-bottom: 8px; }
+  .card ul { padding-left: 16px; }
+  .card li { margin-bottom: 4px; color: #475569; font-size: 12px; }
+
+  /* ── Print ── */
+  @media print {
+    body { padding: 20px 30px; }
+    pre  { white-space: pre-wrap; word-break: break-word; }
+    h2   { page-break-after: avoid; }
+    table, pre { page-break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ── Cover ── -->
+<div class="cover">
+  <h1>IVR — Complete Architecture</h1>
+  <div class="subtitle">AI-Powered Voice IVR</div>
+  <div class="meta">LangGraph + Groq + Deepgram + ElevenLabs + Twilio &nbsp;|&nbsp; Version 1.0 &nbsp;|&nbsp; June 2026</div>
+</div>
+
+<!-- ── 1. Overview ── -->
+<h2>1. Overview</h2>
+<p>
+  A production-grade voice IVR replacing a deterministic Amelia/BPM system with an LLM-powered LangGraph agent.
+  Callers interact via phone (Twilio PSTN) or browser (WebRTC softphone). Audio is processed in real time:
+  Deepgram for speech-to-text, ElevenLabs for text-to-speech, and the OpenAI Realtime API for PII-based
+  identity authentication. Post-auth intent routing and all service flows run on Groq (llama-3.3-70b).
+</p>
+
+<div class="grid2">
+  <div class="card">
+    <h4>Core Capabilities</h4>
+    <ul>
+      <li>Multi-factor voice authentication (phone, DOB, name)</li>
+      <li>Policy info, loan, payment, beneficiary inquiries</li>
+      <li>PCI-compliant DTMF card / bank payment collection</li>
+      <li>GLBA privacy opt-out (verbatim script)</li>
+      <li>RAG-powered FAQ (pgvector knowledge base)</li>
+      <li>Live agent escalation / transfer</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h4>Compliance</h4>
+    <ul>
+      <li>PCI DSS — card data via DTMF only, never LLM</li>
+      <li>GLBA — verbatim privacy script, beneficiary restrictions</li>
+      <li>Max 3 auth attempts before escalation</li>
+      <li>Context lock during sensitive flows (payment)</li>
+      <li>Per-call session state, 1-hour TTL</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ── 2. Call Flow ── -->
+<h2>2. End-to-End Call Flow</h2>
+<pre>
+Caller (phone / browser WebRTC)
+        │
+        ▼
+   Twilio Platform
+        │  POST /webhook/voice  →  TwiML: start bidirectional Media Stream
+        ▼
+   FastAPI WebSocket /stream   ←──── mulaw G.711 8kHz audio (bidirectional)
+        │
+        ├── Deepgram STT (nova-2, streaming) ──► transcript
+        ├── WebRTC VAD ──► barge-in detection
+        │
+        ├── AUTH MODE: realtime ───────────────────────────────────┐
+        │       OpenAI Realtime API (WebSocket)                     │
+        │       • Raw audio → server VAD → function calling         │
+        │       • collect_phone → party_search                      │
+        │       • collect_dob  → check_auth_success                 │
+        │       • collect_name → policy selection (multi-policy)    │
+        │       • on complete  → acquire_access_token               │
+        │                                                           │
+        └── AUTH MODE: standard ────────────────────────────────────┤
+                LangGraph auth_node (state machine)                  │
+                                                                     │
+        ◄────────────────── Auth complete ──────────────────────────┘
+        │
+        ▼
+   LangGraph StateGraph  ←── Redis session state (per call_sid)
+        │
+        ├── router_node  (Groq: intent classification)
+        │        │
+        │   ┌────┴──────────────────────────────────────────────┐
+        │   │         Post-Auth Service Nodes                    │
+        │   ├── policy_node      (Groq + holding_inquiry API)   │
+        │   ├── payment_node     (Groq + DTMF collector)        │
+        │   ├── otp_node         (DTMF card/bank flow)          │
+        │   ├── loan_node        (Groq + loan_inquiry API)      │
+        │   ├── beneficiary_node (Groq + GLBA restrictions)     │
+        │   ├── faq_node         (Groq + pgvector RAG)          │
+        │   ├── contact_node     (address / phone update)       │
+        │   ├── document_node    (document delivery request)    │
+        │   ├── privacy_node     (GLBA opt-out, verbatim)       │
+        │   └── escalation_node  (transfer to live agent)       │
+        │
+        ▼  tts_text
+   ElevenLabs Turbo v2 (streaming TTS)
+        │  PCM 24kHz → mulaw 8kHz (audioop)
+        ▼
+   Twilio ──► Caller
+</pre>
+
+<!-- ── 3. Technology Stack ── -->
+<h2>3. Technology Stack</h2>
+<table>
+  <tr><th>Layer</th><th>Technology</th><th>Notes</th></tr>
+  <tr><td>Transport</td><td>Twilio Media Streams</td><td>Bidirectional WebSocket, mulaw G.711 8kHz</td></tr>
+  <tr><td>STT</td><td>Deepgram nova-2</td><td>Streaming, real-time, mulaw input</td></tr>
+  <tr><td>TTS</td><td>ElevenLabs Turbo v2</td><td>Streaming PCM → mulaw conversion</td></tr>
+  <tr><td>Auth audio</td><td>OpenAI Realtime API</td><td>WebSocket, server VAD, function calling</td></tr>
+  <tr><td>LLM (inference)</td><td>Groq <code>llama-3.3-70b-versatile</code></td><td>All post-auth nodes via <code>ChatGroq</code></td></tr>
+  <tr><td>Embeddings</td><td>OpenAI <code>text-embedding-3-small</code></td><td>RAG knowledge base only</td></tr>
+  <tr><td>Orchestration</td><td>LangGraph <code>StateGraph</code></td><td><code>MemorySaver</code> checkpointer</td></tr>
+  <tr><td>Session state</td><td>Redis (aioredis)</td><td>fakeredis fallback for dev</td></tr>
+  <tr><td>Vector store</td><td>pgvector / PostgreSQL</td><td>FAQ knowledge base</td></tr>
+  <tr><td>Framework</td><td>FastAPI + uvicorn</td><td>Async, port 8888</td></tr>
+  <tr><td>Config</td><td>pydantic-settings</td><td>.env file, typed settings</td></tr>
+  <tr><td>Browser client</td><td>Twilio Voice JS SDK v2</td><td>WebRTC softphone at <code>/client</code></td></tr>
+  <tr><td>Tunnel (dev)</td><td>ngrok v3</td><td>Public HTTPS for Twilio webhooks</td></tr>
+  <tr><td>Logging</td><td>structlog</td><td>Structured JSON logs</td></tr>
+</table>
+
+<!-- ── 4. LangGraph Nodes ── -->
+<h2>4. LangGraph Nodes</h2>
+<table>
+  <tr><th>Node</th><th>Intent</th><th>LLM</th><th>External API</th></tr>
+  <tr><td><code>auth_node</code></td><td>Identity authentication</td><td>—</td><td>party_search, acquire_access_token</td></tr>
+  <tr><td><code>router_node</code></td><td>Intent classification</td><td>✅ Groq</td><td>—</td></tr>
+  <tr><td><code>policy_node</code></td><td>Policy info lookup</td><td>✅ Groq</td><td>holding_inquiry</td></tr>
+  <tr><td><code>payment_node</code></td><td>Payment history + initiation</td><td>✅ Groq</td><td>payment_history</td></tr>
+  <tr><td><code>otp_node</code></td><td>One-time DTMF payment</td><td>—</td><td>payment/process</td></tr>
+  <tr><td><code>loan_node</code></td><td>Loan inquiry</td><td>✅ Groq</td><td>loan_inquiry</td></tr>
+  <tr><td><code>beneficiary_node</code></td><td>Beneficiary info (GLBA)</td><td>✅ Groq</td><td>beneficiary API</td></tr>
+  <tr><td><code>faq_node</code></td><td>General Q&amp;A (RAG)</td><td>✅ Groq</td><td>pgvector search</td></tr>
+  <tr><td><code>contact_node</code></td><td>Address / phone update</td><td>—</td><td>contact/update</td></tr>
+  <tr><td><code>document_node</code></td><td>Document delivery</td><td>—</td><td>document/request</td></tr>
+  <tr><td><code>privacy_node</code></td><td>GLBA opt-out</td><td>—</td><td>privacy/optout</td></tr>
+  <tr><td><code>escalation_node</code></td><td>Live agent transfer</td><td>—</td><td>Twilio &lt;Dial&gt;</td></tr>
+</table>
+
+<!-- ── 5. Auth State Machine ── -->
+<h2>5. Authentication State Machine</h2>
+<pre>
+collecting_phone
+    ├── found (party_search hit)
+    │       └──► collecting_dob
+    └── not found
+            └──► confirming_phone
+                    ├── yes ──► collecting_policy ──► collecting_dob
+                    └── no  ──► collecting_phone (retry)
+
+collecting_dob ──► confirming_dob
+    ├── yes + auth match + 1 policy   ──► complete ✓  ──► acquire_access_token
+    ├── yes + auth match + N policies ──► collecting_policy_selection ──► complete ✓
+    ├── yes + no match                ──► collecting_name
+    └── no                            ──► collecting_dob (retry)
+
+collecting_name
+    ├── match ──► complete ✓
+    └── fail  ──► escalate  (max 3 total attempts)
+
+On complete: acquire_access_token → all downstream API calls use Bearer token
+</pre>
+
+<!-- ── 6. DTMF Payment Flow ── -->
+<h2>6. DTMF Payment Flow (PCI)</h2>
+<pre>
+payment_node sets otp_step = "collecting_card_dtmf" or "collecting_bank_dtmf"
+        │
+        ▼
+STT is SUSPENDED — Deepgram transcripts ignored during DTMF collection
+        │
+Twilio event: "dtmf" ──► DTMFCollector.push_digit()
+        │
+        ├── CARD flow:  card_number (16d) → expiry (4d) → cvv (3-4d) → amount
+        └── BANK flow:  routing_number (9d) → account_number → amount
+                │
+                ▼  on complete
+        _on_dtmf_complete() ──► POST /payment/process (Bearer token)
+                │
+                ▼
+        STT RESUMED — normal conversation continues
+</pre>
+
+<!-- ── 7. File Structure ── -->
+<h2>7. Key Files</h2>
+<table>
+  <tr><th>File</th><th>Role</th></tr>
+  <tr><td><code>main.py</code></td><td>FastAPI app, middleware, router registration</td></tr>
+  <tr><td><code>config/settings.py</code></td><td>Pydantic settings — all API keys and config</td></tr>
+  <tr><td><code>webhooks/twilio_voice.py</code></td><td><code>POST /webhook/voice</code> — TwiML + stream URL</td></tr>
+  <tr><td><code>webhooks/twilio_stream.py</code></td><td><code>WS /stream</code> — main call handler, VAD, DTMF, graph</td></tr>
+  <tr><td><code>webhooks/browser_client.py</code></td><td><code>GET /client</code> softphone UI + <code>/client/token</code></td></tr>
+  <tr><td><code>core/graph/graph.py</code></td><td>LangGraph <code>StateGraph</code> definition and compilation</td></tr>
+  <tr><td><code>core/graph/state.py</code></td><td><code>State</code> TypedDict — all state fields</td></tr>
+  <tr><td><code>core/graph/nodes/auth.py</code></td><td>Auth state machine + multi-policy disambiguation</td></tr>
+  <tr><td><code>core/graph/nodes/router.py</code></td><td>Groq intent classifier</td></tr>
+  <tr><td><code>core/tools/party_search.py</code></td><td>Party lookup + <code>check_auth_success</code></td></tr>
+  <tr><td><code>core/tools/auth_token.py</code></td><td>POST /auth/token — exchange party key for Bearer token</td></tr>
+  <tr><td><code>core/tools/holding_inquiry.py</code></td><td>Policy / payment / loan API wrappers</td></tr>
+  <tr><td><code>services/session.py</code></td><td>Redis per-call session state (TTL 1hr)</td></tr>
+  <tr><td><code>services/stt.py</code></td><td>Deepgram streaming STT service</td></tr>
+  <tr><td><code>services/tts.py</code></td><td>ElevenLabs streaming TTS service</td></tr>
+  <tr><td><code>services/rag.py</code></td><td>pgvector knowledge base search</td></tr>
+  <tr><td><code>services/realtime_auth.py</code></td><td>OpenAI Realtime API auth session</td></tr>
+  <tr><td><code>utils/pii_validator.py</code></td><td>Phone, DOB, policy number normalisation</td></tr>
+  <tr><td><code>utils/name_extractor.py</code></td><td>Groq LLM name extraction from utterance</td></tr>
+  <tr><td><code>core/prompts/retry_prompts.py</code></td><td>Slot retry TTS scripts</td></tr>
+</table>
+
+<!-- ── 8. Environment Variables ── -->
+<h2>8. Environment Variables</h2>
+<table>
+  <tr><th>Variable</th><th>Purpose</th><th>Status</th></tr>
+  <tr><td><code>OPENAI_API_KEY</code></td><td>Embeddings + Realtime API</td><td><span class="badge badge-green">Set</span></td></tr>
+  <tr><td><code>GROQ_API_KEY</code></td><td>LLM inference (all nodes)</td><td><span class="badge badge-green">Set</span></td></tr>
+  <tr><td><code>DEEPGRAM_API_KEY</code></td><td>Streaming STT</td><td><span class="badge badge-green">Set</span></td></tr>
+  <tr><td><code>ELEVENLABS_API_KEY</code></td><td>Streaming TTS</td><td><span class="badge badge-green">Set</span></td></tr>
+  <tr><td><code>TWILIO_ACCOUNT_SID</code></td><td>Twilio account</td><td><span class="badge badge-green">Set</span></td></tr>
+  <tr><td><code>TWILIO_AUTH_TOKEN</code></td><td>Twilio auth</td><td><span class="badge badge-green">Set</span></td></tr>
+  <tr><td><code>TWILIO_PHONE_NUMBER</code></td><td>IVR inbound number</td><td><span class="badge badge-green">Set</span></td></tr>
+  <tr><td><code>TWILIO_API_KEY</code></td><td>Browser client token signing</td><td><span class="badge badge-green">Set</span></td></tr>
+  <tr><td><code>TWILIO_API_SECRET</code></td><td>Browser client token signing</td><td><span class="badge badge-green">Set</span></td></tr>
+  <tr><td><code>TWILIO_TWIML_APP_SID</code></td><td>Browser client TwiML App</td><td><span class="badge badge-green">Set</span></td></tr>
+  <tr><td><code>REDIS_URL</code></td><td>Session state store</td><td><span class="badge badge-amber">fakeredis (dev)</span></td></tr>
+  <tr><td><code>DATABASE_URL</code></td><td>pgvector RAG store</td><td><span class="badge badge-amber">Dev default</span></td></tr>
+  <tr><td><code>CNO_API_BASE_URL</code></td><td>Backend APIs</td><td><span class="badge badge-amber">Mock</span></td></tr>
+</table>
+
+<!-- ── 9. Running ── -->
+<h2>9. Running the System</h2>
+<pre>
+# 1. Start the app (venv activated)
+uvicorn main:app --host 0.0.0.0 --port 8888 --reload
+
+# 2. ngrok tunnel (already running)
+#    Public URL: https://utilize-paramedic-departed.ngrok-free.dev
+
+# 3. Browser softphone
+#    Open: http://localhost:8888/client
+#    Click "Call IVR" — full audio path, no phone needed
+
+# 4. Twilio number webhook
+#    https://utilize-paramedic-departed.ngrok-free.dev/webhook/voice  (HTTP POST)
+
+# Health check
+curl http://localhost:8888/health
+# → {"status":"ok","environment":"dev"}
+</pre>
+
+<div style="text-align:center; color:#94a3b8; font-size:11px; margin-top:48px; padding-top:16px; border-top:1px solid #e2e8f0;">
+  IVR Architecture · Confidential · June 2026
+</div>
+
+</body>
+</html>

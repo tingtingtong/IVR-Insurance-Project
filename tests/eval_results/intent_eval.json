@@ -1,0 +1,623 @@
+{
+  "accuracy": 90.32,
+  "correct": 56,
+  "total": 62,
+  "by_intent": {
+    "beneficiary": {
+      "precision": 0.714,
+      "recall": 1.0,
+      "f1": 0.833,
+      "support": 5
+    },
+    "contact_change": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 5
+    },
+    "document": {
+      "precision": 1.0,
+      "recall": 0.8,
+      "f1": 0.889,
+      "support": 5
+    },
+    "escalate": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 5
+    },
+    "faq": {
+      "precision": 1.0,
+      "recall": 0.571,
+      "f1": 0.727,
+      "support": 7
+    },
+    "goodbye": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 6
+    },
+    "loan": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 5
+    },
+    "otp": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 5
+    },
+    "owner_change": {
+      "precision": 1.0,
+      "recall": 0.667,
+      "f1": 0.8,
+      "support": 3
+    },
+    "payment": {
+      "precision": 0.714,
+      "recall": 1.0,
+      "f1": 0.833,
+      "support": 5
+    },
+    "policy_info": {
+      "precision": 0.714,
+      "recall": 0.833,
+      "f1": 0.769,
+      "support": 6
+    },
+    "privacy": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 5
+    }
+  },
+  "confusion": {
+    "policy_info": {
+      "policy_info": 5,
+      "payment": 1,
+      "beneficiary": 0,
+      "contact_change": 0,
+      "document": 0,
+      "escalate": 0,
+      "faq": 0,
+      "goodbye": 0,
+      "loan": 0,
+      "otp": 0,
+      "owner_change": 0,
+      "privacy": 0
+    },
+    "otp": {
+      "otp": 5,
+      "beneficiary": 0,
+      "contact_change": 0,
+      "document": 0,
+      "escalate": 0,
+      "faq": 0,
+      "goodbye": 0,
+      "loan": 0,
+      "owner_change": 0,
+      "payment": 0,
+      "policy_info": 0,
+      "privacy": 0
+    },
+    "payment": {
+      "payment": 5,
+      "beneficiary": 0,
+      "contact_change": 0,
+      "document": 0,
+      "escalate": 0,
+      "faq": 0,
+      "goodbye": 0,
+      "loan": 0,
+      "otp": 0,
+      "owner_change": 0,
+      "policy_info": 0,
+      "privacy": 0
+    },
+    "loan": {
+      "loan": 5,
+      "beneficiary": 0,
+      "contact_change": 0,
+      "document": 0,
+      "escalate": 0,
+      "faq": 0,
+      "goodbye": 0,
+      "otp": 0,
+      "owner_change": 0,
+      "payment": 0,
+      "policy_info": 0,
+      "privacy": 0
+    },
+    "beneficiary": {
+      "beneficiary": 5,
+      "contact_change": 0,
+      "document": 0,
+      "escalate": 0,
+      "faq": 0,
+      "goodbye": 0,
+      "loan": 0,
+      "otp": 0,
+      "owner_change": 0,
+      "payment": 0,
+      "policy_info": 0,
+      "privacy": 0
+    },
+    "owner_change": {
+      "owner_change": 2,
+      "beneficiary": 1,
+      "contact_change": 0,
+      "document": 0,
+      "escalate": 0,
+      "faq": 0,
+      "goodbye": 0,
+      "loan": 0,
+      "otp": 0,
+      "payment": 0,
+      "policy_info": 0,
+      "privacy": 0
+    },
+    "contact_change": {
+      "contact_change": 5,
+      "beneficiary": 0,
+      "document": 0,
+      "escalate": 0,
+      "faq": 0,
+      "goodbye": 0,
+      "loan": 0,
+      "otp": 0,
+      "owner_change": 0,
+      "payment": 0,
+      "policy_info": 0,
+      "privacy": 0
+    },
+    "document": {
+      "document": 4,
+      "beneficiary": 1,
+      "contact_change": 0,
+      "escalate": 0,
+      "faq": 0,
+      "goodbye": 0,
+      "loan": 0,
+      "otp": 0,
+      "owner_change": 0,
+      "payment": 0,
+      "policy_info": 0,
+      "privacy": 0
+    },
+    "privacy": {
+      "privacy": 5,
+      "beneficiary": 0,
+      "contact_change": 0,
+      "document": 0,
+      "escalate": 0,
+      "faq": 0,
+      "goodbye": 0,
+      "loan": 0,
+      "otp": 0,
+      "owner_change": 0,
+      "payment": 0,
+      "policy_info": 0
+    },
+    "faq": {
+      "faq": 4,
+      "payment": 1,
+      "policy_info": 2,
+      "beneficiary": 0,
+      "contact_change": 0,
+      "document": 0,
+      "escalate": 0,
+      "goodbye": 0,
+      "loan": 0,
+      "otp": 0,
+      "owner_change": 0,
+      "privacy": 0
+    },
+    "escalate": {
+      "escalate": 5,
+      "beneficiary": 0,
+      "contact_change": 0,
+      "document": 0,
+      "faq": 0,
+      "goodbye": 0,
+      "loan": 0,
+      "otp": 0,
+      "owner_change": 0,
+      "payment": 0,
+      "policy_info": 0,
+      "privacy": 0
+    },
+    "goodbye": {
+      "goodbye": 6,
+      "beneficiary": 0,
+      "contact_change": 0,
+      "document": 0,
+      "escalate": 0,
+      "faq": 0,
+      "loan": 0,
+      "otp": 0,
+      "owner_change": 0,
+      "payment": 0,
+      "policy_info": 0,
+      "privacy": 0
+    }
+  },
+  "predictions": [
+    {
+      "utterance": "What is the status of my policy?",
+      "expected": "policy_info",
+      "predicted": "policy_info",
+      "correct": true
+    },
+    {
+      "utterance": "Is my policy still active?",
+      "expected": "policy_info",
+      "predicted": "policy_info",
+      "correct": true
+    },
+    {
+      "utterance": "What is my premium amount?",
+      "expected": "policy_info",
+      "predicted": "policy_info",
+      "correct": true
+    },
+    {
+      "utterance": "When is my next payment due?",
+      "expected": "policy_info",
+      "predicted": "payment",
+      "correct": false
+    },
+    {
+      "utterance": "How much coverage do I have?",
+      "expected": "policy_info",
+      "predicted": "policy_info",
+      "correct": true
+    },
+    {
+      "utterance": "What is my paid-to-date?",
+      "expected": "policy_info",
+      "predicted": "policy_info",
+      "correct": true
+    },
+    {
+      "utterance": "I want to make a payment",
+      "expected": "otp",
+      "predicted": "otp",
+      "correct": true
+    },
+    {
+      "utterance": "Pay my bill",
+      "expected": "otp",
+      "predicted": "otp",
+      "correct": true
+    },
+    {
+      "utterance": "I need to make a one-time payment",
+      "expected": "otp",
+      "predicted": "otp",
+      "correct": true
+    },
+    {
+      "utterance": "Can I pay now with my credit card?",
+      "expected": "otp",
+      "predicted": "otp",
+      "correct": true
+    },
+    {
+      "utterance": "I want to pay by bank account",
+      "expected": "otp",
+      "predicted": "otp",
+      "correct": true
+    },
+    {
+      "utterance": "Show me my payment history",
+      "expected": "payment",
+      "predicted": "payment",
+      "correct": true
+    },
+    {
+      "utterance": "Did my last payment go through?",
+      "expected": "payment",
+      "predicted": "payment",
+      "correct": true
+    },
+    {
+      "utterance": "What were my recent transactions?",
+      "expected": "payment",
+      "predicted": "payment",
+      "correct": true
+    },
+    {
+      "utterance": "Has my payment been processed?",
+      "expected": "payment",
+      "predicted": "payment",
+      "correct": true
+    },
+    {
+      "utterance": "Check my payment status",
+      "expected": "payment",
+      "predicted": "payment",
+      "correct": true
+    },
+    {
+      "utterance": "Can I borrow against my policy?",
+      "expected": "loan",
+      "predicted": "loan",
+      "correct": true
+    },
+    {
+      "utterance": "What is my loan balance?",
+      "expected": "loan",
+      "predicted": "loan",
+      "correct": true
+    },
+    {
+      "utterance": "How much do I owe on my loan?",
+      "expected": "loan",
+      "predicted": "loan",
+      "correct": true
+    },
+    {
+      "utterance": "What is the interest rate on my policy loan?",
+      "expected": "loan",
+      "predicted": "loan",
+      "correct": true
+    },
+    {
+      "utterance": "Tell me about my loan payoff amount",
+      "expected": "loan",
+      "predicted": "loan",
+      "correct": true
+    },
+    {
+      "utterance": "Who is listed as my beneficiary?",
+      "expected": "beneficiary",
+      "predicted": "beneficiary",
+      "correct": true
+    },
+    {
+      "utterance": "I want to know my beneficiaries",
+      "expected": "beneficiary",
+      "predicted": "beneficiary",
+      "correct": true
+    },
+    {
+      "utterance": "Who gets the death benefit?",
+      "expected": "beneficiary",
+      "predicted": "beneficiary",
+      "correct": true
+    },
+    {
+      "utterance": "Tell me about my beneficiary information",
+      "expected": "beneficiary",
+      "predicted": "beneficiary",
+      "correct": true
+    },
+    {
+      "utterance": "What are the beneficiary designations on my policy?",
+      "expected": "beneficiary",
+      "predicted": "beneficiary",
+      "correct": true
+    },
+    {
+      "utterance": "I need to change the owner on my policy",
+      "expected": "owner_change",
+      "predicted": "owner_change",
+      "correct": true
+    },
+    {
+      "utterance": "I want to update my beneficiary",
+      "expected": "owner_change",
+      "predicted": "beneficiary",
+      "correct": false
+    },
+    {
+      "utterance": "How do I change the owner?",
+      "expected": "owner_change",
+      "predicted": "owner_change",
+      "correct": true
+    },
+    {
+      "utterance": "I need to update my address",
+      "expected": "contact_change",
+      "predicted": "contact_change",
+      "correct": true
+    },
+    {
+      "utterance": "My phone number has changed",
+      "expected": "contact_change",
+      "predicted": "contact_change",
+      "correct": true
+    },
+    {
+      "utterance": "Can I update my contact information?",
+      "expected": "contact_change",
+      "predicted": "contact_change",
+      "correct": true
+    },
+    {
+      "utterance": "I moved to a new address",
+      "expected": "contact_change",
+      "predicted": "contact_change",
+      "correct": true
+    },
+    {
+      "utterance": "Change my mailing address please",
+      "expected": "contact_change",
+      "predicted": "contact_change",
+      "correct": true
+    },
+    {
+      "utterance": "Send me a copy of my policy",
+      "expected": "document",
+      "predicted": "document",
+      "correct": true
+    },
+    {
+      "utterance": "I need a duplicate policy document",
+      "expected": "document",
+      "predicted": "document",
+      "correct": true
+    },
+    {
+      "utterance": "Can you mail me a form?",
+      "expected": "document",
+      "predicted": "document",
+      "correct": true
+    },
+    {
+      "utterance": "I want to request a letter",
+      "expected": "document",
+      "predicted": "document",
+      "correct": true
+    },
+    {
+      "utterance": "Send me the beneficiary change form",
+      "expected": "document",
+      "predicted": "beneficiary",
+      "correct": false
+    },
+    {
+      "utterance": "How do you use my personal information?",
+      "expected": "privacy",
+      "predicted": "privacy",
+      "correct": true
+    },
+    {
+      "utterance": "I want to opt out of information sharing",
+      "expected": "privacy",
+      "predicted": "privacy",
+      "correct": true
+    },
+    {
+      "utterance": "What is your privacy policy?",
+      "expected": "privacy",
+      "predicted": "privacy",
+      "correct": true
+    },
+    {
+      "utterance": "Don't share my data with anyone",
+      "expected": "privacy",
+      "predicted": "privacy",
+      "correct": true
+    },
+    {
+      "utterance": "I have a privacy question about my data",
+      "expected": "privacy",
+      "predicted": "privacy",
+      "correct": true
+    },
+    {
+      "utterance": "What is whole life insurance?",
+      "expected": "faq",
+      "predicted": "faq",
+      "correct": true
+    },
+    {
+      "utterance": "How does term life differ from whole life?",
+      "expected": "faq",
+      "predicted": "faq",
+      "correct": true
+    },
+    {
+      "utterance": "What is the grace period for a missed payment?",
+      "expected": "faq",
+      "predicted": "payment",
+      "correct": false
+    },
+    {
+      "utterance": "How does the cash value grow?",
+      "expected": "faq",
+      "predicted": "policy_info",
+      "correct": false
+    },
+    {
+      "utterance": "What happens if I stop paying premiums?",
+      "expected": "faq",
+      "predicted": "policy_info",
+      "correct": false
+    },
+    {
+      "utterance": "Can you explain universal life insurance?",
+      "expected": "faq",
+      "predicted": "faq",
+      "correct": true
+    },
+    {
+      "utterance": "What are the tax benefits of life insurance?",
+      "expected": "faq",
+      "predicted": "faq",
+      "correct": true
+    },
+    {
+      "utterance": "Let me talk to a person",
+      "expected": "escalate",
+      "predicted": "escalate",
+      "correct": true
+    },
+    {
+      "utterance": "I want to speak to a representative",
+      "expected": "escalate",
+      "predicted": "escalate",
+      "correct": true
+    },
+    {
+      "utterance": "Transfer me to an agent",
+      "expected": "escalate",
+      "predicted": "escalate",
+      "correct": true
+    },
+    {
+      "utterance": "Can I talk to a human?",
+      "expected": "escalate",
+      "predicted": "escalate",
+      "correct": true
+    },
+    {
+      "utterance": "I need to speak with a supervisor",
+      "expected": "escalate",
+      "predicted": "escalate",
+      "correct": true
+    },
+    {
+      "utterance": "Goodbye",
+      "expected": "goodbye",
+      "predicted": "goodbye",
+      "correct": true
+    },
+    {
+      "utterance": "That's all I need",
+      "expected": "goodbye",
+      "predicted": "goodbye",
+      "correct": true
+    },
+    {
+      "utterance": "No, nothing else, bye",
+      "expected": "goodbye",
+      "predicted": "goodbye",
+      "correct": true
+    },
+    {
+      "utterance": "Thank you goodbye",
+      "expected": "goodbye",
+      "predicted": "goodbye",
+      "correct": true
+    },
+    {
+      "utterance": "I'm done, thank you",
+      "expected": "goodbye",
+      "predicted": "goodbye",
+      "correct": true
+    },
+    {
+      "utterance": "No thanks, have a good day",
+      "expected": "goodbye",
+      "predicted": "goodbye",
+      "correct": true
+    }
+  ]
+}
