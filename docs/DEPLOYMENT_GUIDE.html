@@ -1,0 +1,1006 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UIC IVR — AWS Deployment Guide</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --surface: #1e293b;
+    --surface2: #334155;
+    --border: #475569;
+    --text: #e2e8f0;
+    --text-dim: #94a3b8;
+    --accent: #3b82f6;
+    --accent2: #38bdf8;
+    --green: #4ade80;
+    --red: #f87171;
+    --yellow: #fbbf24;
+    --orange: #fb923c;
+    --purple: #a78bfa;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg); color: var(--text); line-height:1.7; padding:0;
+  }
+
+  /* Header */
+  .header {
+    background: linear-gradient(135deg, #0c1929 0%, #132744 50%, #1a3a5c 100%);
+    border-bottom: 3px solid var(--accent);
+    padding: 2.5rem 2rem; text-align: center;
+  }
+  .header h1 {
+    font-size:2rem; font-weight:700;
+    background: linear-gradient(135deg, var(--accent2), var(--green));
+    -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+    margin-bottom:0.3rem;
+  }
+  .header p { color:var(--text-dim); font-size:1rem; }
+  .header .meta { font-size:0.8rem; color:var(--border); margin-top:0.5rem; }
+  .container { max-width:1000px; margin:0 auto; padding:2rem; }
+
+  /* TOC */
+  .toc {
+    background:var(--surface); border:1px solid var(--border);
+    border-radius:12px; padding:1.5rem 2rem; margin-bottom:2rem;
+  }
+  .toc h2 { font-size:1.1rem; color:var(--accent); margin-bottom:0.8rem; }
+  .toc ol { padding-left:1.5rem; columns:2; column-gap:2rem; }
+  .toc li { margin-bottom:0.3rem; break-inside:avoid; }
+  .toc a { color:var(--accent2); text-decoration:none; font-size:0.9rem; }
+  .toc a:hover { text-decoration:underline; }
+
+  /* Sections */
+  .section {
+    background:var(--surface); border:1px solid var(--border);
+    border-radius:12px; padding:1.8rem; margin-bottom:1.5rem;
+  }
+  .section h2 {
+    font-size:1.3rem; color:var(--accent);
+    border-bottom:2px solid var(--border); padding-bottom:0.4rem; margin-bottom:1.2rem;
+  }
+  .section h3 { font-size:1.05rem; color:var(--accent2); margin:1.3rem 0 0.6rem 0; }
+  p, li { margin-bottom:0.6rem; }
+  ul, ol { padding-left:1.5rem; margin-bottom:1rem; }
+
+  /* Code */
+  pre {
+    background:#0d1117; border:1px solid var(--border); border-radius:8px;
+    padding:1rem; overflow-x:auto; font-family:'Cascadia Code','Fira Code','Consolas',monospace;
+    font-size:0.82rem; line-height:1.6; margin-bottom:1rem; color:#c9d1d9;
+  }
+  code {
+    font-family:'Cascadia Code','Fira Code','Consolas',monospace;
+    background:var(--surface2); padding:0.1rem 0.35rem; border-radius:4px;
+    font-size:0.82rem; color:var(--yellow);
+  }
+  pre code { background:none; padding:0; color:inherit; }
+
+  /* Tables */
+  table { width:100%; border-collapse:collapse; margin-bottom:1rem; font-size:0.88rem; }
+  th {
+    background:var(--surface2); color:var(--accent2); font-weight:600;
+    text-align:left; padding:0.55rem 0.7rem; border:1px solid var(--border);
+  }
+  td { padding:0.5rem 0.7rem; border:1px solid var(--border); }
+  tr:nth-child(even) td { background:rgba(51,65,85,0.3); }
+
+  /* Badges */
+  .badge {
+    display:inline-block; padding:0.1rem 0.5rem; border-radius:9999px;
+    font-size:0.72rem; font-weight:600;
+  }
+  .badge-green { background:rgba(74,222,128,0.2); color:var(--green); border:1px solid var(--green); }
+  .badge-blue  { background:rgba(59,130,246,0.2); color:var(--accent); border:1px solid var(--accent); }
+  .badge-orange{ background:rgba(251,146,60,0.2); color:var(--orange); border:1px solid var(--orange); }
+  .badge-red   { background:rgba(248,113,113,0.2); color:var(--red); border:1px solid var(--red); }
+  .badge-purple{ background:rgba(167,139,250,0.2); color:var(--purple); border:1px solid var(--purple); }
+
+  /* Callout boxes */
+  .callout {
+    border-radius:0 8px 8px 0; padding:0.9rem 1.1rem; margin-bottom:1rem;
+    font-size:0.9rem;
+  }
+  .callout-info  { background:rgba(56,189,248,0.08); border-left:4px solid var(--accent2); }
+  .callout-warn  { background:rgba(251,146,60,0.08); border-left:4px solid var(--orange); }
+  .callout-ok    { background:rgba(74,222,128,0.08); border-left:4px solid var(--green); }
+  .callout strong { color:var(--accent2); }
+  .callout-warn strong { color:var(--orange); }
+  .callout-ok strong { color:var(--green); }
+
+  /* Step flow */
+  .step { display:flex; gap:12px; margin-bottom:0.6rem; align-items:flex-start; }
+  .step-num {
+    width:28px; height:28px; border-radius:50%; background:var(--accent);
+    color:#fff; display:flex; align-items:center; justify-content:center;
+    font-size:0.8rem; font-weight:700; flex-shrink:0; margin-top:2px;
+  }
+  .step-content { flex:1; }
+  .step-content .label { font-weight:600; color:var(--text); }
+  .step-content .detail { color:var(--text-dim); font-size:0.85rem; }
+
+  /* Cols */
+  .cols { display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1rem; }
+  .cols .col { background:var(--surface2); border-radius:8px; padding:0.9rem; }
+  .cols .col h4 { color:var(--accent2); margin-bottom:0.4rem; font-size:0.9rem; }
+  @media(max-width:768px) { .cols{grid-template-columns:1fr;} .toc ol{columns:1;} }
+
+  /* Pipeline diagram */
+  .pipeline {
+    display:flex; gap:0; margin:1rem 0; overflow-x:auto; padding-bottom:0.5rem;
+  }
+  .pipeline-stage {
+    background:var(--surface2); border:1px solid var(--border); border-radius:8px;
+    padding:0.7rem 0.9rem; min-width:140px; text-align:center; position:relative;
+  }
+  .pipeline-stage::after {
+    content:"→"; position:absolute; right:-14px; top:50%; transform:translateY(-50%);
+    color:var(--accent); font-size:1.1rem; font-weight:700;
+  }
+  .pipeline-stage:last-child::after { display:none; }
+  .pipeline-stage .ps-name { font-size:0.85rem; font-weight:600; color:var(--accent2); }
+  .pipeline-stage .ps-detail { font-size:0.72rem; color:var(--text-dim); margin-top:3px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>UIC IVR — AWS Deployment Guide</h1>
+  <p>Step-by-step guide to deploy, configure, and operate the IVR system on AWS</p>
+  <div class="meta">ECS Fargate &bull; Terraform &bull; GitHub Actions CI/CD &bull; Groq + Bedrock dual LLM</div>
+</div>
+
+<div class="container">
+
+<!-- TOC -->
+<div class="toc">
+  <h2>Table of Contents</h2>
+  <ol>
+    <li><a href="#s1">Prerequisites</a></li>
+    <li><a href="#s2">Infrastructure (Terraform)</a></li>
+    <li><a href="#s3">Docker Build &amp; Push</a></li>
+    <li><a href="#s4">Secrets Manager Setup</a></li>
+    <li><a href="#s5">ECS Deployment</a></li>
+    <li><a href="#s6">LLM Provider Configuration</a></li>
+    <li><a href="#s7">Twilio Setup</a></li>
+    <li><a href="#s8">Dashboard &amp; Softphone</a></li>
+    <li><a href="#s9">CI/CD Pipeline (GitHub Actions)</a></li>
+    <li><a href="#s10">Environment Promotion (Dev → Prod)</a></li>
+    <li><a href="#s11">Monitoring &amp; Troubleshooting</a></li>
+    <li><a href="#s12">Quick Reference</a></li>
+  </ol>
+</div>
+
+<!-- ===== SECTION 1 ===== -->
+<div class="section" id="s1">
+  <h2>1. Prerequisites</h2>
+
+  <h3>Tools required</h3>
+  <table>
+    <tr><th>Tool</th><th>Version</th><th>Purpose</th></tr>
+    <tr><td><code>aws</code> CLI</td><td>v2+</td><td>AWS resource management</td></tr>
+    <tr><td><code>terraform</code></td><td>≥ 1.5</td><td>Infrastructure as code</td></tr>
+    <tr><td><code>docker</code></td><td>24+</td><td>Container builds</td></tr>
+    <tr><td><code>git</code></td><td>2.40+</td><td>Source control</td></tr>
+    <tr><td><code>python</code></td><td>3.11+</td><td>Local development &amp; testing</td></tr>
+  </table>
+
+  <h3>AWS account setup</h3>
+  <ul>
+    <li>AWS account with <code>AdministratorAccess</code> or scoped IAM policy for ECS, ECR, RDS, ElastiCache, ALB, Secrets Manager, CloudWatch</li>
+    <li>AWS CLI configured: <code>aws configure</code> with access key + secret</li>
+    <li>Region: <code>us-east-1</code> (configurable via <code>var.aws_region</code>)</li>
+  </ul>
+
+  <h3>External API accounts</h3>
+  <table>
+    <tr><th>Service</th><th>Required For</th><th>Get Key</th></tr>
+    <tr><td>Groq</td><td>LLM inference (default provider)</td><td>console.groq.com → API Keys</td></tr>
+    <tr><td>OpenAI</td><td>Embeddings (RAG)</td><td>platform.openai.com → API Keys</td></tr>
+    <tr><td>Deepgram</td><td>Speech-to-text</td><td>console.deepgram.com → API Keys</td></tr>
+    <tr><td>ElevenLabs</td><td>Text-to-speech</td><td>elevenlabs.io → Profile → API Key</td></tr>
+    <tr><td>Twilio</td><td>Telephony + browser softphone</td><td>console.twilio.com</td></tr>
+  </table>
+</div>
+
+<!-- ===== SECTION 2 ===== -->
+<div class="section" id="s2">
+  <h2>2. Infrastructure (Terraform)</h2>
+
+  <h3>What Terraform creates</h3>
+  <pre><code>infra/
+├── main.tf              # VPC, subnets, IGW, route tables
+├── security_groups.tf   # SG for ALB, ECS, RDS, Redis
+├── alb.tf               # Application Load Balancer + target group
+├── ecr.tf               # ECR repository (ivr-app)
+├── ecs.tf               # ECS cluster, task definition (2 containers), service
+├── rds.tf               # PostgreSQL (pgvector for RAG + checkpoints)
+├── redis.tf             # ElastiCache Redis (session state)
+├── iam.tf               # Execution role + task role
+├── secrets.tf           # Secrets Manager secret shell
+├── variables.tf         # All configurable variables
+└── outputs.tf           # ALB URL, cluster name</code></pre>
+
+  <h3>Deploy infrastructure</h3>
+  <pre><code># Initialize Terraform
+cd infra
+terraform init
+
+# Preview changes
+terraform plan -var="db_password=YOUR_STRONG_PASSWORD"
+
+# Apply (creates all AWS resources)
+terraform apply -var="db_password=YOUR_STRONG_PASSWORD"
+
+# Save outputs
+terraform output app_url    # → http://dev-ivr-alb-xxxx.us-east-1.elb.amazonaws.com</code></pre>
+
+  <div class="callout callout-warn">
+    <strong>⚠ First-time deploy takes ~10 minutes</strong> — RDS and ElastiCache provisioning are the slowest steps. Subsequent applies are faster.
+  </div>
+
+  <h3>Key Terraform variables</h3>
+  <table>
+    <tr><th>Variable</th><th>Default</th><th>Description</th></tr>
+    <tr><td><code>environment</code></td><td><code>dev</code></td><td>Environment name (dev / prod)</td></tr>
+    <tr><td><code>aws_region</code></td><td><code>us-east-1</code></td><td>AWS region</td></tr>
+    <tr><td><code>db_password</code></td><td><em>required</em></td><td>RDS master password</td></tr>
+    <tr><td><code>llm_provider</code></td><td><code>groq</code></td><td>LLM provider: groq or bedrock</td></tr>
+    <tr><td><code>groq_model</code></td><td><code>qwen/qwen3.8-27b</code></td><td>Groq model for all nodes</td></tr>
+    <tr><td><code>router_model</code></td><td><code>qwen/qwen3.8-27b</code></td><td>Groq model for intent router</td></tr>
+    <tr><td><code>bedrock_model</code></td><td><code>amazon.nova-micro-v1:0</code></td><td>Bedrock model for all nodes</td></tr>
+    <tr><td><code>router_bedrock_model</code></td><td><code>amazon.nova-micro-v1:0</code></td><td>Bedrock model for router</td></tr>
+    <tr><td><code>task_cpu</code></td><td><code>512</code></td><td>ECS task CPU (512 = 0.5 vCPU)</td></tr>
+    <tr><td><code>task_memory</code></td><td><code>1024</code></td><td>ECS task memory (MB)</td></tr>
+    <tr><td><code>app_port</code></td><td><code>8000</code></td><td>Container port</td></tr>
+    <tr><td><code>image_tag</code></td><td><code>latest</code></td><td>Docker image tag to deploy</td></tr>
+  </table>
+
+  <h3>Architecture created</h3>
+  <pre><code>                         Internet
+                            |
+                    +-------v--------+
+                    |      ALB       |   HTTP :80 → target group
+                    +---+------+-----+
+                        |      |
+              +---------v------v-----------+
+              |   ECS Fargate Task         |
+              |   ┌──────────────────────┐ |
+              |   │ dev-ivr (app)   :8000│ |     ┌──────────────┐
+              |   │ FastAPI + LangGraph  │-├────►│ Groq / Bedrock│
+              |   └──────────┬───────────┘ |     └──────────────┘
+              |              │ localhost    |
+              |   ┌──────────v───────────┐ |
+              |   │ mock-api sidecar:8001│ |
+              |   │ (backend simulation) │ |
+              |   └──────────────────────┘ |
+              +------|------------|--------+
+                     |            |
+              +------v---+  +----v-------+
+              |  RDS PG   |  | ElastiCache|
+              |  pgvector  |  | Redis      |
+              +------------+  +------------+</code></pre>
+</div>
+
+<!-- ===== SECTION 3 ===== -->
+<div class="section" id="s3">
+  <h2>3. Docker Build &amp; Push</h2>
+
+  <h3>Two images to build</h3>
+  <table>
+    <tr><th>Image</th><th>Tag</th><th>Dockerfile</th><th>Purpose</th></tr>
+    <tr><td>Main app</td><td><code>latest</code></td><td><code>Dockerfile</code></td><td>FastAPI + LangGraph IVR</td></tr>
+    <tr><td>Mock API</td><td><code>mock-api</code></td><td><code>Dockerfile.mock</code></td><td>Backend API simulator (sidecar)</td></tr>
+  </table>
+
+  <h3>Build &amp; push commands</h3>
+  <pre><code># 1. Login to ECR
+aws ecr get-login-password --region us-east-1 | \
+  docker login --username AWS --password-stdin \
+  348452968516.dkr.ecr.us-east-1.amazonaws.com
+
+# 2. Build & push main app
+docker build -t 348452968516.dkr.ecr.us-east-1.amazonaws.com/ivr-app:latest .
+docker push 348452968516.dkr.ecr.us-east-1.amazonaws.com/ivr-app:latest
+
+# 3. Build & push mock API sidecar
+docker build -f Dockerfile.mock \
+  -t 348452968516.dkr.ecr.us-east-1.amazonaws.com/ivr-app:mock-api .
+docker push 348452968516.dkr.ecr.us-east-1.amazonaws.com/ivr-app:mock-api</code></pre>
+
+  <div class="callout callout-info">
+    <strong>Tip:</strong> The <code>.dockerignore</code> excludes <code>venv/</code>, <code>.git/</code>, <code>infra/</code>, and other large directories to keep the build context small (~12 KB vs ~940 MB).
+  </div>
+
+  <h3>Dockerfile overview</h3>
+  <div class="cols">
+    <div class="col">
+      <h4>Dockerfile (main app)</h4>
+      <pre style="margin:0"><code>FROM python:3.11-slim
+WORKDIR /app
+RUN apt-get update && apt-get install -y \
+    gcc g++ libffi-dev libssl-dev
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY . .
+EXPOSE 8000
+CMD ["uvicorn", "main:app", \
+     "--host", "0.0.0.0", "--port", "8000"]</code></pre>
+    </div>
+    <div class="col">
+      <h4>Dockerfile.mock (sidecar)</h4>
+      <pre style="margin:0"><code>FROM python:3.11-slim
+WORKDIR /app
+RUN pip install --no-cache-dir \
+    fastapi uvicorn[standard] structlog
+COPY mock_cno_api.py .
+EXPOSE 8001
+CMD ["uvicorn", "mock_cno_api:app", \
+     "--host", "0.0.0.0", "--port", "8001"]</code></pre>
+    </div>
+  </div>
+</div>
+
+<!-- ===== SECTION 4 ===== -->
+<div class="section" id="s4">
+  <h2>4. Secrets Manager Setup</h2>
+
+  <p>Terraform creates the secret shell at <code>dev/ivr/app-secrets</code>. You must populate the actual key-value pairs.</p>
+
+  <h3>Required secrets (9 keys)</h3>
+  <table>
+    <tr><th>Secret Key</th><th>Source</th><th>Used For</th></tr>
+    <tr><td><code>OPENAI_API_KEY</code></td><td>OpenAI</td><td>Embeddings (RAG vector search)</td></tr>
+    <tr><td><code>GROQ_API_KEY</code></td><td>Groq</td><td>LLM inference (all nodes)</td></tr>
+    <tr><td><code>DEEPGRAM_API_KEY</code></td><td>Deepgram</td><td>Speech-to-text</td></tr>
+    <tr><td><code>ELEVENLABS_API_KEY</code></td><td>ElevenLabs</td><td>Text-to-speech</td></tr>
+    <tr><td><code>TWILIO_ACCOUNT_SID</code></td><td>Twilio Console</td><td>Twilio REST API auth</td></tr>
+    <tr><td><code>TWILIO_AUTH_TOKEN</code></td><td>Twilio Console</td><td>Twilio REST API auth</td></tr>
+    <tr><td><code>TWILIO_API_KEY</code></td><td>Twilio → API Keys</td><td>Browser softphone token</td></tr>
+    <tr><td><code>TWILIO_API_SECRET</code></td><td>Twilio → API Keys</td><td>Browser softphone token</td></tr>
+    <tr><td><code>TWILIO_TWIML_APP_SID</code></td><td>Twilio → TwiML Apps</td><td>Routes browser calls to IVR</td></tr>
+  </table>
+
+  <h3>Set secrets via CLI</h3>
+  <pre><code># Set all secrets as a JSON object
+aws secretsmanager put-secret-value \
+  --secret-id dev/ivr/app-secrets \
+  --secret-string '{
+    "OPENAI_API_KEY":       "sk-...",
+    "GROQ_API_KEY":         "gsk_...",
+    "DEEPGRAM_API_KEY":     "...",
+    "ELEVENLABS_API_KEY":   "...",
+    "TWILIO_ACCOUNT_SID":   "AC...",
+    "TWILIO_AUTH_TOKEN":    "...",
+    "TWILIO_API_KEY":       "SK...",
+    "TWILIO_API_SECRET":    "...",
+    "TWILIO_TWIML_APP_SID": "AP..."
+  }' \
+  --region us-east-1</code></pre>
+
+  <div class="callout callout-warn">
+    <strong>⚠ Never commit secrets to Git.</strong> The <code>.env</code> file is gitignored. Secrets Manager is the only source of truth for deployed environments.
+  </div>
+</div>
+
+<!-- ===== SECTION 5 ===== -->
+<div class="section" id="s5">
+  <h2>5. ECS Deployment</h2>
+
+  <h3>Task definition (2 containers)</h3>
+  <pre><code>{
+  "family": "dev-ivr",
+  "cpu": "512",                          // 0.5 vCPU
+  "memory": "1024",                      // 1 GB
+  "containerDefinitions": [
+    {
+      "name": "dev-ivr",                 // Main app
+      "image": "ECR/ivr-app:latest",
+      "portMappings": [{"containerPort": 8000}],
+      "environment": [
+        {"name": "LLM_PROVIDER",        "value": "groq"},
+        {"name": "GROQ_MODEL",          "value": "qwen/qwen3.8-27b"},
+        {"name": "BEDROCK_MODEL",       "value": "amazon.nova-micro-v1:0"},
+        {"name": "CNO_API_BASE_URL",    "value": "http://localhost:8001"}
+      ],
+      "secrets": [
+        {"name": "GROQ_API_KEY",        "valueFrom": "secrets-arn:GROQ_API_KEY::"},
+        {"name": "TWILIO_API_KEY",      "valueFrom": "secrets-arn:TWILIO_API_KEY::"},
+        // ... 9 total secrets
+      ]
+    },
+    {
+      "name": "dev-mock-api",            // Sidecar — backend simulator
+      "image": "ECR/ivr-app:mock-api",
+      "portMappings": [{"containerPort": 8001}],
+      "essential": true
+    }
+  ]
+}</code></pre>
+
+  <div class="callout callout-info">
+    <strong>Sidecar pattern:</strong> Both containers share the same network namespace in Fargate. The main app reaches the mock API at <code>http://localhost:8001</code> — no service discovery needed.
+  </div>
+
+  <h3>Deploy / redeploy</h3>
+  <pre><code># Force new deployment (pulls latest image)
+aws ecs update-service \
+  --cluster ivr-cluster \
+  --service dev-ivr-svc \
+  --force-new-deployment \
+  --region us-east-1
+
+# Wait for deployment to stabilize
+aws ecs wait services-stable \
+  --cluster ivr-cluster \
+  --services dev-ivr-svc \
+  --region us-east-1
+
+# Verify
+aws ecs describe-services --cluster ivr-cluster --services dev-ivr-svc \
+  --query "services[0].deployments[*].{status:status,running:runningCount,taskDef:taskDefinition}" \
+  --output table</code></pre>
+
+  <h3>Update environment variables (no Docker rebuild)</h3>
+  <p>To change LLM model, provider, or feature flags without rebuilding the Docker image:</p>
+  <pre><code># 1. Get current task definition
+aws ecs describe-task-definition --task-definition dev-ivr --query taskDefinition > /tmp/taskdef.json
+
+# 2. Edit environment variables in /tmp/taskdef.json
+#    e.g., change LLM_PROVIDER from "groq" to "bedrock"
+
+# 3. Register new revision (strip read-only fields first)
+aws ecs register-task-definition --cli-input-json file:///tmp/taskdef.json
+
+# 4. Deploy new revision
+aws ecs update-service \
+  --cluster ivr-cluster \
+  --service dev-ivr-svc \
+  --task-definition dev-ivr:NEW_REVISION \
+  --force-new-deployment</code></pre>
+</div>
+
+<!-- ===== SECTION 6 ===== -->
+<div class="section" id="s6">
+  <h2>6. LLM Provider Configuration</h2>
+
+  <p>The app supports two LLM providers via the <code>LLM_PROVIDER</code> environment variable. Switch at runtime — no code changes needed.</p>
+
+  <div class="cols">
+    <div class="col">
+      <h4>Groq <span class="badge badge-green">default</span></h4>
+      <ul style="padding-left:1rem;font-size:0.85rem;">
+        <li><strong>Model:</strong> qwen/qwen3.8-27b</li>
+        <li><strong>Latency:</strong> 100–300ms</li>
+        <li><strong>Cost:</strong> ~$0.05–0.20/M tokens</li>
+        <li><strong>Config:</strong> <code>LLM_PROVIDER=groq</code></li>
+      </ul>
+    </div>
+    <div class="col">
+      <h4>Amazon Bedrock <span class="badge badge-orange">alternative</span></h4>
+      <ul style="padding-left:1rem;font-size:0.85rem;">
+        <li><strong>Model:</strong> amazon.nova-micro-v1:0</li>
+        <li><strong>Latency:</strong> 200–400ms</li>
+        <li><strong>Cost:</strong> $0.035/M input tokens</li>
+        <li><strong>Config:</strong> <code>LLM_PROVIDER=bedrock</code></li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>Available Bedrock models (cheapest first)</h3>
+  <table>
+    <tr><th>Model ID</th><th>Input Cost</th><th>Output Cost</th><th>Notes</th></tr>
+    <tr><td><code>amazon.nova-micro-v1:0</code></td><td>$0.035/M</td><td>$0.14/M</td><td>Text-only, fastest Amazon model</td></tr>
+    <tr><td><code>amazon.nova-lite-v1:0</code></td><td>$0.06/M</td><td>$0.24/M</td><td>Multimodal support</td></tr>
+    <tr><td><code>amazon.nova-pro-v1:0</code></td><td>$0.80/M</td><td>$3.20/M</td><td>Most capable Amazon model</td></tr>
+    <tr><td><code>meta.llama3-3-70b-instruct-v1:0</code></td><td>$0.72/M</td><td>$0.72/M</td><td>Strong open-source</td></tr>
+    <tr><td><code>us.anthropic.claude-3-haiku-20240307-v1:0</code></td><td>$0.25/M</td><td>$1.25/M</td><td>Claude via cross-region inference</td></tr>
+  </table>
+
+  <div class="callout callout-warn">
+    <strong>⚠ Bedrock model access must be enabled in the AWS Console.</strong><br>
+    Go to: <strong>AWS Console → Amazon Bedrock → Model access → Manage model access</strong> → enable the models you want. This cannot be done via CLI.
+  </div>
+</div>
+
+<!-- ===== SECTION 7 ===== -->
+<div class="section" id="s7">
+  <h2>7. Twilio Setup</h2>
+
+  <h3>One-time Twilio Console setup</h3>
+
+  <div class="step">
+    <div class="step-num">1</div>
+    <div class="step-content">
+      <div class="label">Create API Key</div>
+      <div class="detail">Twilio Console → Account → API Keys &amp; Tokens → Create API Key (Standard)<br>
+      Save <code>Key SID</code> as <code>TWILIO_API_KEY</code> and <code>Secret</code> as <code>TWILIO_API_SECRET</code></div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-num">2</div>
+    <div class="step-content">
+      <div class="label">Create TwiML App</div>
+      <div class="detail">Twilio Console → Voice → TwiML Apps → Create<br>
+      Set <strong>Voice URL</strong> to: <code>http://YOUR_ALB_URL/webhook/voice</code> (POST)<br>
+      Set <strong>Status Callback</strong> to: <code>http://YOUR_ALB_URL/webhook/status</code> (POST)<br>
+      Save the <code>TwiML App SID</code> as <code>TWILIO_TWIML_APP_SID</code></div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-num">3</div>
+    <div class="step-content">
+      <div class="label">Add secrets to AWS</div>
+      <div class="detail">Add <code>TWILIO_API_KEY</code>, <code>TWILIO_API_SECRET</code>, <code>TWILIO_TWIML_APP_SID</code> to Secrets Manager (see Section 4)</div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-num">4</div>
+    <div class="step-content">
+      <div class="label">Deploy ECS with new secrets</div>
+      <div class="detail">Force new deployment to pick up the secrets from Secrets Manager</div>
+    </div>
+  </div>
+
+  <h3>How browser calls work</h3>
+  <pre><code>Browser (dashboard softphone)
+    │
+    ├─ GET /client/token  →  Twilio Access Token (JWT)
+    │
+    ├─ Twilio.Device(token).connect()  →  Twilio signaling servers
+    │
+    └─ Twilio servers POST /webhook/voice  →  ALB → ECS → TwiML response
+       │
+       └─ &lt;Gather input="speech"&gt; → caller speaks → POST /webhook/gather
+          → LangGraph processes → TwiML response → loop</code></pre>
+</div>
+
+<!-- ===== SECTION 8 ===== -->
+<div class="section" id="s8">
+  <h2>8. Dashboard &amp; Softphone</h2>
+
+  <h3>Accessing the dashboard</h3>
+  <p>Open: <code>http://YOUR_ALB_URL/dashboard</code></p>
+
+  <h3>Dashboard tabs</h3>
+  <table>
+    <tr><th>Tab</th><th>URL</th><th>Description</th></tr>
+    <tr><td>WebChat</td><td><code>/dashboard</code></td><td>Text-based IVR testing (POST /chat/message)</td></tr>
+    <tr><td>Calls</td><td><code>/dashboard</code></td><td>View phone call transcripts + state + events</td></tr>
+    <tr><td>Softphone</td><td><code>/dashboard</code> or <code>/client</code></td><td>Browser-based voice call to IVR</td></tr>
+    <tr><td>Codebase</td><td><code>/dashboard</code></td><td>Architecture walkthrough</td></tr>
+    <tr><td>Graph</td><td><code>/dashboard</code></td><td>LangGraph flow visualization</td></tr>
+    <tr><td>Live Logs</td><td><code>/dashboard</code> or <code>/client/logs</code></td><td>Real-time SSE log stream</td></tr>
+    <tr><td>Config</td><td><code>/dashboard</code></td><td>View/edit runtime configuration</td></tr>
+  </table>
+
+  <div class="callout callout-warn">
+    <strong>⚠ Softphone requires HTTPS or localhost for microphone access.</strong><br>
+    Browsers block <code>getUserMedia()</code> on HTTP origins. Workarounds:<br>
+    &bull; <strong>Chrome flag:</strong> <code>chrome://flags/#unsafely-treat-insecure-origin-as-secure</code> → add ALB URL<br>
+    &bull; <strong>Local testing:</strong> <code>python run.py</code> → open <code>http://localhost:8888/dashboard</code><br>
+    &bull; <strong>Proper fix:</strong> Add HTTPS to ALB via ACM certificate + custom domain
+  </div>
+
+  <h3>Test callers (mock API data)</h3>
+  <table>
+    <tr><th>Name</th><th>Phone</th><th>DOB</th><th>Policy</th><th>Has Loan</th></tr>
+    <tr><td>John Smith</td><td>5551234567</td><td>Jul 15, 1965</td><td>P300123456</td><td>Yes</td></tr>
+    <tr><td>Mary Johnson</td><td>5559876543</td><td>Mar 22, 1950</td><td>P300654321</td><td>No</td></tr>
+    <tr><td>Robert Williams</td><td>5553334444</td><td>Nov 8, 1945</td><td>P300111222</td><td>Yes</td></tr>
+    <tr><td>Test User</td><td>5550000000</td><td>Jan 1, 2000</td><td>P300000001</td><td>Yes</td></tr>
+  </table>
+
+  <h3>E2E test via chat endpoint (curl)</h3>
+  <pre><code>URL="http://YOUR_ALB_URL/chat/message"
+SESSION="test-$(date +%s)"
+
+# Step 1: Intent
+curl -s -X POST "$URL" -H "Content-Type: application/json" \
+  -d "{\"text\": \"I want to check my policy status\", \"session_id\": \"$SESSION\"}"
+
+# Step 2: Phone number
+curl -s -X POST "$URL" -H "Content-Type: application/json" \
+  -d "{\"text\": \"five five five one two three four five six seven\", \"session_id\": \"$SESSION\"}"
+
+# Step 3: Date of birth
+curl -s -X POST "$URL" -H "Content-Type: application/json" \
+  -d "{\"text\": \"July 15 1965\", \"session_id\": \"$SESSION\"}"
+
+# Step 4: Caller name
+curl -s -X POST "$URL" -H "Content-Type: application/json" \
+  -d "{\"text\": \"John Smith\", \"session_id\": \"$SESSION\"}"</code></pre>
+</div>
+
+<!-- ===== SECTION 9 ===== -->
+<div class="section" id="s9">
+  <h2>9. CI/CD Pipeline (GitHub Actions)</h2>
+
+  <p>The project uses two GitHub Actions workflows for continuous integration and deployment.</p>
+
+  <h3>Pipeline overview</h3>
+  <div class="pipeline">
+    <div class="pipeline-stage">
+      <div class="ps-name">Push to master</div>
+      <div class="ps-detail">trigger</div>
+    </div>
+    <div class="pipeline-stage">
+      <div class="ps-name">CI: Unit Tests</div>
+      <div class="ps-detail">no API keys</div>
+    </div>
+    <div class="pipeline-stage">
+      <div class="ps-name">CI: Eval Tests</div>
+      <div class="ps-detail">intent + slot</div>
+    </div>
+    <div class="pipeline-stage">
+      <div class="ps-name">Build &amp; Push</div>
+      <div class="ps-detail">Docker → ECR</div>
+    </div>
+    <div class="pipeline-stage">
+      <div class="ps-name">Deploy Dev</div>
+      <div class="ps-detail">ECS force deploy</div>
+    </div>
+    <div class="pipeline-stage">
+      <div class="ps-name">E2E Test</div>
+      <div class="ps-detail">against dev ALB</div>
+    </div>
+  </div>
+
+  <h3>Workflow 1: CI (<code>.github/workflows/ci.yml</code>)</h3>
+  <p>Runs on every push to <code>master</code>/<code>staging</code> and all pull requests.</p>
+
+  <table>
+    <tr><th>Stage</th><th>Job</th><th>What it does</th><th>Needs API Keys?</th></tr>
+    <tr>
+      <td><span class="badge badge-green">1</span></td>
+      <td>Unit Tests</td>
+      <td>Runs <code>tests/test_utils.py</code> with dummy API keys</td>
+      <td>No (dummy keys)</td>
+    </tr>
+    <tr>
+      <td><span class="badge badge-blue">2</span></td>
+      <td>Eval Tests</td>
+      <td>Runs <code>tests/eval_slots.py</code> (no LLM) + <code>tests/eval_intents.py</code> (Groq LLM)</td>
+      <td>GROQ_API_KEY only</td>
+    </tr>
+    <tr>
+      <td><span class="badge badge-purple">3</span></td>
+      <td>E2E Twilio</td>
+      <td>Runs <code>tests/eval_e2e_twilio.py</code> — master branch only</td>
+      <td>All keys</td>
+    </tr>
+  </table>
+
+  <pre><code># .github/workflows/ci.yml (key sections)
+
+name: CI
+on:
+  push:
+    branches: [master, staging]
+  pull_request:
+    branches: [master]
+
+jobs:
+  unit-tests:                          # Stage 1 — no API keys
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11", cache: pip }
+      - run: pip install -r requirements.txt
+      - run: python tests/test_utils.py
+        env:
+          OPENAI_API_KEY: "sk-dummy"   # dummy — tests don't call APIs
+          GROQ_API_KEY: "gsk-dummy"
+          # ... other dummy keys
+
+  eval-tests:                          # Stage 2 — intent eval needs Groq
+    needs: unit-tests
+    steps:
+      - run: python tests/eval_intents.py
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}  # real key from GitHub Secrets
+
+  e2e-tests:                           # Stage 3 — full E2E (master only)
+    needs: eval-tests
+    if: github.ref == 'refs/heads/master'
+    steps:
+      - run: python tests/eval_e2e_twilio.py
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
+          # ... all real keys</code></pre>
+
+  <h3>Workflow 2: Deploy (<code>.github/workflows/deploy.yml</code>)</h3>
+  <p>Triggers on push to <code>master</code> (auto-deploy to dev) or manual dispatch (dev/prod).</p>
+
+  <table>
+    <tr><th>Stage</th><th>Job</th><th>What it does</th><th>Trigger</th></tr>
+    <tr>
+      <td><span class="badge badge-green">1</span></td>
+      <td>Build &amp; Push</td>
+      <td>Docker build → tag with SHA → push to ECR (<code>:latest</code> + <code>:sha-xxxx</code>)</td>
+      <td>Always</td>
+    </tr>
+    <tr>
+      <td><span class="badge badge-blue">2</span></td>
+      <td>Deploy Dev</td>
+      <td>ECS force-deploy → wait stable → health check (<code>/health</code>)</td>
+      <td>Push to master / manual (dev)</td>
+    </tr>
+    <tr>
+      <td><span class="badge badge-purple">3</span></td>
+      <td>E2E Test Dev</td>
+      <td>Run E2E tests against deployed dev ALB</td>
+      <td>After dev deploy (push only)</td>
+    </tr>
+    <tr>
+      <td><span class="badge badge-red">4</span></td>
+      <td>Deploy Prod</td>
+      <td>ECS force-deploy → wait stable → health check</td>
+      <td>Manual dispatch + approval gate</td>
+    </tr>
+  </table>
+
+  <pre><code># .github/workflows/deploy.yml (key sections)
+
+name: Deploy
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      environment:
+        type: choice
+        options: [dev, prod]
+
+jobs:
+  build:                                # Build Docker image → ECR
+    runs-on: ubuntu-latest
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      - uses: aws-actions/amazon-ecr-login@v2
+      - run: |
+          IMAGE_TAG="sha-$(git rev-parse --short HEAD)"
+          docker build -t "${ECR_REGISTRY}/${ECR_REPO}:${IMAGE_TAG}" .
+          docker tag ... :latest
+          docker push ...
+
+  deploy-dev:                           # Auto-deploy to dev on push
+    needs: build
+    environment: dev
+    steps:
+      - run: |
+          aws ecs update-service \
+            --cluster ivr-cluster \
+            --service dev-ivr-svc \
+            --force-new-deployment
+      - run: |
+          aws ecs wait services-stable \
+            --cluster ivr-cluster --services dev-ivr-svc
+      - run: |                          # Health check with retry
+          for i in $(seq 1 12); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${DEV_URL}/health")
+            [ "$STATUS" = "200" ] && exit 0
+            sleep 5
+          done; exit 1
+
+  deploy-prod:                          # Manual trigger + approval gate
+    needs: build
+    environment: production             # GitHub environment with required reviewers
+    if: github.event.inputs.environment == 'prod'
+    steps:
+      - run: aws ecs update-service --cluster ivr-cluster --service prod-ivr-svc ...</code></pre>
+
+  <h3>Required GitHub Secrets</h3>
+  <table>
+    <tr><th>Secret</th><th>Purpose</th></tr>
+    <tr><td><code>AWS_ACCESS_KEY_ID</code></td><td>IAM user for ECR push + ECS deploy</td></tr>
+    <tr><td><code>AWS_SECRET_ACCESS_KEY</code></td><td>IAM user secret</td></tr>
+    <tr><td><code>DEV_ALB_URL</code></td><td>Dev ALB URL for health checks</td></tr>
+    <tr><td><code>PROD_ALB_URL</code></td><td>Prod ALB URL for health checks</td></tr>
+    <tr><td><code>GROQ_API_KEY</code></td><td>Intent eval tests in CI</td></tr>
+    <tr><td><code>OPENAI_API_KEY</code></td><td>E2E tests (embeddings)</td></tr>
+    <tr><td><code>DEEPGRAM_API_KEY</code></td><td>E2E tests</td></tr>
+    <tr><td><code>ELEVENLABS_API_KEY</code></td><td>E2E tests</td></tr>
+    <tr><td><code>TWILIO_ACCOUNT_SID</code></td><td>E2E Twilio tests</td></tr>
+    <tr><td><code>TWILIO_AUTH_TOKEN</code></td><td>E2E Twilio tests</td></tr>
+    <tr><td><code>TWILIO_PHONE_NUMBER</code></td><td>E2E Twilio tests</td></tr>
+    <tr><td><code>TWILIO_BASE_URL</code></td><td>E2E Twilio tests</td></tr>
+  </table>
+
+  <h3>Deployment flow diagram</h3>
+  <pre><code>  Developer pushes to master
+         │
+         ├──────── CI Workflow ────────────────────────────────┐
+         │    unit-tests → eval-tests → e2e-tests (master)    │
+         │                                                     │
+         ├──────── Deploy Workflow ────────────────────────────┤
+         │    build → push ECR → deploy-dev → health check     │
+         │                          │                          │
+         │                    e2e-test-dev                      │
+         │                                                     │
+         └─── Manual dispatch (prod) ─────────────────────────┤
+              build → push ECR → [approval gate] → deploy-prod │
+                                                               │
+  ┌────────────────────────────────────────────────────────────┘
+  │
+  v
+  ECS pulls new image → rolling replacement → ALB drains old task → done</code></pre>
+</div>
+
+<!-- ===== SECTION 10 ===== -->
+<div class="section" id="s10">
+  <h2>10. Environment Promotion (Dev → Prod)</h2>
+
+  <h3>Using Terraform</h3>
+  <pre><code># Create prod infrastructure (separate VPC, RDS, Redis, ECS service)
+cd infra
+terraform workspace new prod   # or use -var="environment=prod"
+terraform apply \
+  -var="environment=prod" \
+  -var="db_password=PROD_STRONG_PASSWORD" \
+  -var="task_cpu=1024" \
+  -var="task_memory=2048"</code></pre>
+
+  <h3>Using GitHub Actions</h3>
+  <pre><code># Option 1: Manual dispatch via GitHub UI
+# Go to Actions → Deploy → Run workflow → select "prod"
+
+# Option 2: GitHub CLI
+gh workflow run deploy.yml -f environment=prod</code></pre>
+
+  <h3>Dev vs Prod configuration</h3>
+  <table>
+    <tr><th>Setting</th><th>Dev</th><th>Prod</th></tr>
+    <tr><td>CPU / Memory</td><td>512 / 1024 MB</td><td>1024 / 2048 MB</td></tr>
+    <tr><td>Task count</td><td>1</td><td>2+ (auto-scaling)</td></tr>
+    <tr><td>RDS</td><td>db.t3.micro</td><td>db.r6g.large, Multi-AZ</td></tr>
+    <tr><td>Redis</td><td>cache.t3.micro</td><td>cache.r6g.large, replica</td></tr>
+    <tr><td>HTTPS</td><td>HTTP (ALB only)</td><td>ACM certificate + HTTPS listener</td></tr>
+    <tr><td>WAF</td><td>Disabled</td><td>Enabled (DDoS, injection)</td></tr>
+    <tr><td>Dashboard auth</td><td>Disabled</td><td>HTTP Basic (DASHBOARD_PASSWORD)</td></tr>
+    <tr><td>Twilio validation</td><td>Disabled</td><td>VALIDATE_TWILIO_SIGNATURE=true</td></tr>
+    <tr><td>Deployment gate</td><td>Auto on push</td><td>Manual approval required</td></tr>
+  </table>
+</div>
+
+<!-- ===== SECTION 11 ===== -->
+<div class="section" id="s11">
+  <h2>11. Monitoring &amp; Troubleshooting</h2>
+
+  <h3>CloudWatch logs</h3>
+  <pre><code># View recent logs
+aws logs tail /ecs/dev-ivr --follow --since 5m --region us-east-1
+
+# Search for errors
+aws logs filter-log-events \
+  --log-group-name /ecs/dev-ivr \
+  --filter-pattern "ERROR" \
+  --start-time $(date -d '1 hour ago' +%s000) \
+  --region us-east-1</code></pre>
+
+  <h3>ECS service health</h3>
+  <pre><code># Check service status
+aws ecs describe-services --cluster ivr-cluster --services dev-ivr-svc \
+  --query "services[0].{status:status,running:runningCount,desired:desiredCount,deployments:deployments[*].{status:status,running:runningCount,taskDef:taskDefinition}}" \
+  --output table
+
+# Check task health
+aws ecs list-tasks --cluster ivr-cluster --service-name dev-ivr-svc
+aws ecs describe-tasks --cluster ivr-cluster --tasks TASK_ARN \
+  --query "tasks[0].containers[*].{name:name,status:lastStatus,health:healthStatus,exit:exitCode}"</code></pre>
+
+  <h3>Common issues</h3>
+  <table>
+    <tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr>
+    <tr>
+      <td>Task keeps restarting</td>
+      <td>Missing secrets or env vars</td>
+      <td>Check CloudWatch logs for startup errors. Verify all 9 secrets are in Secrets Manager.</td>
+    </tr>
+    <tr>
+      <td>502 Bad Gateway from ALB</td>
+      <td>Task not healthy / still starting</td>
+      <td>Wait 60s for task to register with target group. Check security group allows ALB → ECS on port 8000.</td>
+    </tr>
+    <tr>
+      <td>All intents route to "escalate"</td>
+      <td>LLM API key invalid or model deprecated</td>
+      <td>Check GROQ_API_KEY in Secrets Manager. Verify model name is valid on Groq.</td>
+    </tr>
+    <tr>
+      <td>Softphone "AcquisitionFailedError"</td>
+      <td>Browser blocks mic on HTTP</td>
+      <td>Use HTTPS, localhost, or Chrome insecure origin flag (Section 8)</td>
+    </tr>
+    <tr>
+      <td>Softphone "application error 31480"</td>
+      <td>TwiML App voice URL misconfigured</td>
+      <td>Set TwiML App voice URL to <code>http://ALB_URL/webhook/voice</code></td>
+    </tr>
+    <tr>
+      <td>Bedrock "Operation not allowed"</td>
+      <td>Model access not enabled</td>
+      <td>AWS Console → Bedrock → Model access → enable the model</td>
+    </tr>
+    <tr>
+      <td>Mock API connection refused</td>
+      <td>Sidecar container crashed</td>
+      <td>Check <code>mock-api</code> stream in CloudWatch logs</td>
+    </tr>
+  </table>
+</div>
+
+<!-- ===== SECTION 12 ===== -->
+<div class="section" id="s12">
+  <h2>12. Quick Reference</h2>
+
+  <h3>Current deployment (dev)</h3>
+  <table>
+    <tr><th>Resource</th><th>Value</th></tr>
+    <tr><td>Region</td><td><code>us-east-1</code></td></tr>
+    <tr><td>ECR Repo</td><td><code>348452968516.dkr.ecr.us-east-1.amazonaws.com/ivr-app</code></td></tr>
+    <tr><td>ECS Cluster</td><td><code>ivr-cluster</code></td></tr>
+    <tr><td>ECS Service</td><td><code>dev-ivr-svc</code></td></tr>
+    <tr><td>Task Definition</td><td><code>dev-ivr:5</code> (2 containers)</td></tr>
+    <tr><td>ALB URL</td><td><code>http://dev-ivr-alb-1430751618.us-east-1.elb.amazonaws.com</code></td></tr>
+    <tr><td>RDS</td><td><code>ivr-postgres.c674u6sq4fsd.us-east-1.rds.amazonaws.com:5432</code></td></tr>
+    <tr><td>Redis</td><td><code>ivr-redis.oz7bdy.0001.use1.cache.amazonaws.com:6379</code></td></tr>
+    <tr><td>Secrets</td><td><code>dev/ivr/app-secrets</code> (9 keys)</td></tr>
+    <tr><td>CloudWatch Logs</td><td><code>/ecs/dev-ivr</code></td></tr>
+    <tr><td>LLM Provider</td><td><code>groq</code> (qwen/qwen3.8-27b)</td></tr>
+  </table>
+
+  <h3>Key URLs</h3>
+  <table>
+    <tr><th>Endpoint</th><th>Purpose</th></tr>
+    <tr><td><code>/dashboard</code></td><td>Full dashboard (chat, calls, softphone, logs, config)</td></tr>
+    <tr><td><code>/client</code></td><td>Standalone browser softphone</td></tr>
+    <tr><td><code>/client/logs</code></td><td>Live log viewer (SSE)</td></tr>
+    <tr><td><code>/chat/message</code></td><td>WebChat API (POST)</td></tr>
+    <tr><td><code>/webhook/voice</code></td><td>Twilio inbound call webhook</td></tr>
+    <tr><td><code>/webhook/gather</code></td><td>Twilio speech result webhook</td></tr>
+    <tr><td><code>/health</code></td><td>Health check endpoint</td></tr>
+  </table>
+
+  <h3>Cheat sheet</h3>
+  <pre><code># ── ECR login ──
+aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 348452968516.dkr.ecr.us-east-1.amazonaws.com
+
+# ── Build & deploy (manual) ──
+docker build -t 348452968516.dkr.ecr.us-east-1.amazonaws.com/ivr-app:latest .
+docker push 348452968516.dkr.ecr.us-east-1.amazonaws.com/ivr-app:latest
+aws ecs update-service --cluster ivr-cluster --service dev-ivr-svc --force-new-deployment --region us-east-1
+
+# ── Check service ──
+aws ecs describe-services --cluster ivr-cluster --services dev-ivr-svc --query "services[0].deployments" --output table
+
+# ── View logs ──
+aws logs tail /ecs/dev-ivr --follow --since 5m
+
+# ── Terraform ──
+cd infra && terraform plan -var="db_password=YOUR_PW"
+cd infra && terraform apply -var="db_password=YOUR_PW"
+
+# ── E2E quick test ──
+curl -s -X POST "http://ALB_URL/chat/message" -H "Content-Type: application/json" -d '{"text":"check my policy","session_id":"test-123"}'</code></pre>
+</div>
+
+</div><!-- end container -->
+
+<div style="text-align:center;padding:2rem;color:var(--border);font-size:0.8rem;">
+  UIC IVR Deployment Guide &bull; Generated August 2026
+</div>
+
+</body>
+</html>
