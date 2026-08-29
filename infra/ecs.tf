@@ -26,58 +26,92 @@ resource "aws_ecs_task_definition" "app" {
   execution_role_arn       = aws_iam_role.ecs_execution.arn
   task_role_arn            = aws_iam_role.ecs_task.arn
 
-  container_definitions = jsonencode([{
-    name  = "${var.environment}-${var.project}"
-    image = "${aws_ecr_repository.app.repository_url}:${var.image_tag}"
-    portMappings = [{
-      containerPort = var.app_port
-      protocol      = "tcp"
-    }]
-    environment = [
-      { name = "ENVIRONMENT",   value = var.environment },
-      { name = "LLM_PROVIDER",  value = var.llm_provider },
-      { name = "GROQ_MODEL",    value = var.groq_model },
-      { name = "ROUTER_MODEL",  value = var.router_model },
-      { name = "AWS_REGION",    value = var.aws_region },
-      { name = "REDIS_URL",     value = local.redis_url },
-      { name = "DATABASE_URL",  value = local.db_url },
-      { name = "APP_PORT",      value = tostring(var.app_port) },
-    ]
-    secrets = [
-      {
-        name      = "OPENAI_API_KEY"
-        valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:OPENAI_API_KEY::"
-      },
-      {
-        name      = "DEEPGRAM_API_KEY"
-        valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:DEEPGRAM_API_KEY::"
-      },
-      {
-        name      = "ELEVENLABS_API_KEY"
-        valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:ELEVENLABS_API_KEY::"
-      },
-      {
-        name      = "TWILIO_ACCOUNT_SID"
-        valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:TWILIO_ACCOUNT_SID::"
-      },
-      {
-        name      = "TWILIO_AUTH_TOKEN"
-        valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:TWILIO_AUTH_TOKEN::"
-      },
-      {
-        name      = "GROQ_API_KEY"
-        valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:GROQ_API_KEY::"
-      },
-    ]
-    logConfiguration = {
-      logDriver = "awslogs"
-      options = {
-        "awslogs-group"         = aws_cloudwatch_log_group.app.name
-        "awslogs-region"        = var.aws_region
-        "awslogs-stream-prefix" = "ecs"
+  container_definitions = jsonencode([
+    {
+      name  = "${var.environment}-${var.project}"
+      image = "${aws_ecr_repository.app.repository_url}:${var.image_tag}"
+      portMappings = [{
+        containerPort = var.app_port
+        protocol      = "tcp"
+      }]
+      environment = [
+        { name = "ENVIRONMENT",      value = var.environment },
+        { name = "LLM_PROVIDER",     value = var.llm_provider },
+        { name = "GROQ_MODEL",       value = var.groq_model },
+        { name = "ROUTER_MODEL",     value = var.router_model },
+        { name = "BEDROCK_MODEL",    value = var.bedrock_model },
+        { name = "ROUTER_BEDROCK_MODEL", value = var.router_bedrock_model },
+        { name = "AWS_REGION",       value = var.aws_region },
+        { name = "REDIS_URL",        value = local.redis_url },
+        { name = "DATABASE_URL",     value = local.db_url },
+        { name = "APP_PORT",         value = tostring(var.app_port) },
+        { name = "CNO_API_BASE_URL", value = "http://localhost:8001" },
+      ]
+      secrets = [
+        {
+          name      = "OPENAI_API_KEY"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:OPENAI_API_KEY::"
+        },
+        {
+          name      = "DEEPGRAM_API_KEY"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:DEEPGRAM_API_KEY::"
+        },
+        {
+          name      = "ELEVENLABS_API_KEY"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:ELEVENLABS_API_KEY::"
+        },
+        {
+          name      = "TWILIO_ACCOUNT_SID"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:TWILIO_ACCOUNT_SID::"
+        },
+        {
+          name      = "TWILIO_AUTH_TOKEN"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:TWILIO_AUTH_TOKEN::"
+        },
+        {
+          name      = "GROQ_API_KEY"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:GROQ_API_KEY::"
+        },
+        {
+          name      = "TWILIO_API_KEY"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:TWILIO_API_KEY::"
+        },
+        {
+          name      = "TWILIO_API_SECRET"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:TWILIO_API_SECRET::"
+        },
+        {
+          name      = "TWILIO_TWIML_APP_SID"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:TWILIO_TWIML_APP_SID::"
+        },
+      ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.app.name
+          "awslogs-region"        = var.aws_region
+          "awslogs-stream-prefix" = "ecs"
+        }
       }
-    }
-  }])
+    },
+    {
+      name  = "${var.environment}-mock-api"
+      image = "${aws_ecr_repository.app.repository_url}:mock-api"
+      portMappings = [{
+        containerPort = 8001
+        protocol      = "tcp"
+      }]
+      essential = true
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.app.name
+          "awslogs-region"        = var.aws_region
+          "awslogs-stream-prefix" = "mock-api"
+        }
+      }
+    },
+  ])
 }
 
 # ── ECS Service ──────────────────────────────────────────────────────────────

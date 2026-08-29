@@ -63,6 +63,18 @@ variable "router_model" {
   default     = "qwen/qwen3.8-27b"
 }
 
+variable "bedrock_model" {
+  description = "Bedrock model for service nodes (when llm_provider=bedrock)"
+  type        = string
+  default     = "amazon.nova-micro-v1:0"
+}
+
+variable "router_bedrock_model" {
+  description = "Bedrock model for intent router (when llm_provider=bedrock)"
+  type        = string
+  default     = "amazon.nova-micro-v1:0"
+}
+
 variable "app_port" {
   description = "Container application port"
   type        = number

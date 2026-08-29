@@ -14,8 +14,8 @@ class Settings(BaseSettings):
     # LLM provider toggle: "groq" (default) or "bedrock"
     llm_provider: str = "groq"
     aws_region: str = "us-east-1"
-    bedrock_model: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
-    router_bedrock_model: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
+    bedrock_model: str = "amazon.nova-micro-v1:0"
+    router_bedrock_model: str = "amazon.nova-micro-v1:0"
 
     # Groq (used for all LLM inference nodes)
     groq_api_key: str = ""

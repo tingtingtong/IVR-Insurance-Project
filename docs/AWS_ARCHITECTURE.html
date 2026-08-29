@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CNO IVR - Complete AWS Production Architecture</title>
+<title>UIC IVR - Complete AWS Production Architecture</title>
 <style>
   :root {
     --bg: #0f172a;
@@ -167,7 +167,7 @@
 <body>
 
 <div class="header">
-  <h1>CNO IVR - Complete AWS Production Architecture</h1>
+  <h1>UIC IVR - Complete AWS Production Architecture</h1>
   <p>Hosting, RAG pipeline, guardrails, multi-modal STT/TTS, model evaluation, CI/CD, and cost analysis</p>
 </div>
 
@@ -214,29 +214,27 @@
                         +--------v--------+
                         | ALB (Application|
                         | Load Balancer)  |  TLS termination, path routing
-                        +---+------+------+
-                            |      |
-              +-------------+      +-------------+
-              |                                   |
-    +---------v----------+           +-----------v-----------+
-    | ECS Fargate        |           | ECS Fargate           |
-    | IVR App Service    |           | Document Ingestion    |
-    | (FastAPI+LangGraph)|           | Worker Service        |
-    | Auto-scaling 2-10  |           | (batch processing)    |
-    +----+----+----+-----+           +-----------+-----------+
-         |    |    |                              |
-    +----v--+ | +--v-------+           +----------v----------+
-    |Redis  | | |RDS PG    |           | S3 Bucket           |
-    |Elasti | | |pgvector  |           | (knowledge docs)    |
-    |Cache  | | |Multi-AZ  |           +---------------------+
-    +-------+ | +----------+
-              |
-    +---------v-----------+          +-----------------------+
-    | External APIs       |          | CloudWatch / X-Ray    |
-    | Groq, OpenAI,       |          | Logfire               |
-    | Deepgram, ElevenLabs|          | (Observability)       |
-    | Twilio              |          +-----------------------+
-    +---------------------+</code></pre>
+                        +--------+--------+
+                                 |
+                    +------------v-------------+
+                    | ECS Fargate              |
+                    | IVR App Service          |
+                    | (FastAPI+LangGraph       |
+                    |  + Mock API sidecar)     |
+                    +----+----+----+-----------+
+                         |    |    |
+                    +----v--+ | +--v-------+
+                    |Redis  | | |RDS PG    |
+                    |Elasti | | |pgvector  |
+                    |Cache  | | |Multi-AZ  |
+                    +-------+ | +----------+
+                              |
+                    +---------v-----------+          +-----------------------+
+                    | External APIs       |          | CloudWatch / X-Ray    |
+                    | Groq, OpenAI,       |          | Logfire               |
+                    | Deepgram, ElevenLabs|          | (Observability)       |
+                    | Twilio              |          +-----------------------+
+                    +---------------------+</code></pre>
 
   <h3>AWS services used</h3>
   <table>
@@ -261,7 +259,7 @@
   <h2>2. Network & VPC Design</h2>
 
   <h3>VPC layout</h3>
-  <pre><code>VPC: 10.0.0.0/16  (cno-ivr-vpc)
+  <pre><code>VPC: 10.0.0.0/16  (uic-ivr-vpc)
 |
 +-- Public Subnets (10.0.1.0/24, 10.0.2.0/24) -- 2 AZs
 |   |-- ALB (internet-facing)
@@ -309,21 +307,42 @@
 
   <h3>Task definition</h3>
   <pre><code>{
-  "family": "cno-ivr-app",
-  "cpu": "1024",        // 1 vCPU
-  "memory": "2048",     // 2 GB
-  "containerDefinitions": [{
-    "name": "ivr-app",
-    "image": "ECR_URI:latest",
-    "portMappings": [{"containerPort": 8080}],
-    "secrets": [
-      {"name": "GROQ_API_KEY",   "valueFrom": "arn:aws:secretsmanager:..."},
-      {"name": "OPENAI_API_KEY", "valueFrom": "arn:aws:secretsmanager:..."}
-    ]
-  }]
+  "family": "dev-ivr",
+  "cpu": "512",
+  "memory": "1024",
+  "containerDefinitions": [
+    {
+      "name": "dev-ivr",
+      "image": "348452968516.dkr.ecr.us-east-1.amazonaws.com/ivr-app:latest",
+      "portMappings": [{"containerPort": 8000}],
+      "environment": [
+        {"name": "LLM_PROVIDER", "value": "groq"},
+        {"name": "GROQ_MODEL", "value": "qwen/qwen3.8-27b"},
+        {"name": "ROUTER_MODEL", "value": "qwen/qwen3.8-27b"},
+        {"name": "BEDROCK_MODEL", "value": "amazon.nova-micro-v1:0"},
+        {"name": "ROUTER_BEDROCK_MODEL", "value": "amazon.nova-micro-v1:0"},
+        {"name": "UIC_API_BASE_URL", "value": "http://localhost:8001"}
+      ],
+      "secrets": [
+        {"name": "GROQ_API_KEY", "valueFrom": "arn:aws:secretsmanager:..."},
+        {"name": "OPENAI_API_KEY", "valueFrom": "arn:aws:secretsmanager:..."},
+        {"name": "TWILIO_API_KEY", "valueFrom": "arn:aws:secretsmanager:..."},
+        {"name": "TWILIO_API_SECRET", "valueFrom": "arn:aws:secretsmanager:..."},
+        {"name": "TWILIO_TWIML_APP_SID", "valueFrom": "arn:aws:secretsmanager:..."}
+      ]
+    },
+    {
+      "name": "dev-mock-api",
+      "image": "348452968516.dkr.ecr.us-east-1.amazonaws.com/ivr-app:mock-api",
+      "portMappings": [{"containerPort": 8001}],
+      "essential": true
+    }
+  ]
 }</code></pre>
 
   <h3>Auto-scaling</h3>
+  <pre><code>Dev:  1 task, 0.5 vCPU, 1 GB — no auto-scaling
+Prod: 2-10 tasks, 1 vCPU, 2 GB — CPU target tracking at 60%</code></pre>
   <table>
     <tr><th>Metric</th><th>Target</th><th>Scale Out</th><th>Scale In</th><th>Min/Max</th></tr>
     <tr><td>CPU utilization</td><td>60%</td><td>+1 task when &gt;60% for 2 min</td><td>-1 when &lt;30% for 5 min</td><td>2 / 10</td></tr>
@@ -373,8 +392,8 @@
   <h3>Data stored in Redis</h3>
   <table>
     <tr><th>Key Pattern</th><th>Data</th><th>TTL</th><th>Size</th></tr>
-    <tr><td><code>cno:session:{call_sid}</code></td><td>IVR session state (auth, slots, messages)</td><td>1 hour</td><td>~2 KB</td></tr>
-    <tr><td><code>cno:rag:{hash}</code></td><td>Cached RAG context strings</td><td>1 hour</td><td>~1 KB</td></tr>
+    <tr><td><code>uic:session:{call_sid}</code></td><td>IVR session state (auth, slots, messages)</td><td>1 hour</td><td>~2 KB</td></tr>
+    <tr><td><code>uic:rag:{hash}</code></td><td>Cached RAG context strings</td><td>1 hour</td><td>~1 KB</td></tr>
   </table>
 </div>
 
@@ -422,7 +441,7 @@
     <div class="flow-line"></div>
     <div class="flow-content">
       <div class="label">6. LLM Re-Rank (Groq API)</div>
-      <div class="detail">Llama-3.1-8B scores 9 candidates in parallel &rarr; top 3 ~200ms</div>
+      <div class="detail">qwen/qwen3.8-27b scores 9 candidates in parallel &rarr; top 3 ~200ms</div>
     </div>
   </div>
   <div class="flow-step">
@@ -435,7 +454,7 @@
   <div class="flow-step">
     <div class="flow-line"></div>
     <div class="flow-content">
-      <div class="label">8. LLM Answer (Groq Llama-3.3-70B)</div>
+      <div class="label">8. LLM Answer (Groq qwen/qwen3.8-27b)</div>
       <div class="detail">Grounded 1-2 sentence voice answer &rarr; ElevenLabs TTS &rarr; Twilio &rarr; caller</div>
     </div>
   </div>
@@ -528,29 +547,37 @@ USING gin (cmetadata jsonb_path_ops);</code></pre>
   <h3>Current: External LLM APIs</h3>
   <table>
     <tr><th>Node</th><th>Model</th><th>API</th><th>Purpose</th></tr>
-    <tr><td>Router</td><td>Llama-3.1-8B</td><td><span class="badge badge-ext">Groq</span></td><td>Intent classification (~50ms)</td></tr>
-    <tr><td>FAQ</td><td>Llama-3.3-70B</td><td><span class="badge badge-ext">Groq</span></td><td>Grounded answers (~150ms)</td></tr>
-    <tr><td>Re-ranker</td><td>Llama-3.1-8B</td><td><span class="badge badge-ext">Groq</span></td><td>Relevance scoring (~200ms parallel)</td></tr>
-    <tr><td>Policy/Payment/Loan</td><td>Llama-3.3-70B</td><td><span class="badge badge-ext">Groq</span></td><td>Domain-specific responses</td></tr>
+    <tr><td>Router</td><td>qwen/qwen3.8-27b</td><td><span class="badge badge-ext">Groq</span></td><td>Intent classification (~100ms)</td></tr>
+    <tr><td>FAQ</td><td>qwen/qwen3.8-27b</td><td><span class="badge badge-ext">Groq</span></td><td>Grounded answers (~200ms)</td></tr>
+    <tr><td>Policy/Payment/Loan</td><td>qwen/qwen3.8-27b</td><td><span class="badge badge-ext">Groq</span></td><td>Domain-specific responses</td></tr>
+    <tr><td>All nodes (alt)</td><td>amazon.nova-micro-v1:0</td><td><span class="badge badge-aws">Bedrock</span></td><td>Cheapest Bedrock option ($0.035/1M input)</td></tr>
   </table>
 
   <h3>Why Groq over AWS Bedrock?</h3>
   <table>
     <tr><th>Option</th><th>Models</th><th>Latency</th><th>Cost/M tokens</th></tr>
-    <tr><td>Groq <span class="badge badge-chosen">chosen</span></td><td>Llama 3.x (8B, 70B)</td><td>50-200ms (fastest)</td><td>$0.05-0.27</td></tr>
-    <tr><td>AWS Bedrock</td><td>Claude, Llama, Titan</td><td>200-500ms</td><td>$0.15-3.00</td></tr>
+    <tr><td>Groq <span class="badge badge-chosen">chosen</span></td><td>qwen/qwen3.8-27b</td><td>100-300ms</td><td>~$0.05-0.20</td></tr>
+    <tr><td>AWS Bedrock</td><td>Nova Micro, Nova Lite, Nova Pro, Llama 3.3, Claude</td><td>200-500ms</td><td>$0.035-3.00</td></tr>
     <tr><td>OpenAI</td><td>GPT-4o, GPT-4o-mini</td><td>300-1000ms</td><td>$2.50-10.00</td></tr>
-    <tr><td>SageMaker</td><td>Llama 3 70B</td><td>500-1500ms</td><td>~$4,000/mo fixed</td></tr>
   </table>
 
   <div class="decision">
-    <strong>Decision:</strong> Groq for IVR latency. 50ms router vs 300ms Bedrock is noticeable to callers. Bedrock as fallback for 503/429 errors. Canned response as last resort.
+    <strong>Decision:</strong> Groq for IVR latency. 100ms router vs 300ms Bedrock is noticeable to callers. Bedrock (Nova Micro) as fallback for 503/429 errors. Canned response as last resort.
   </div>
 
   <h3>Resilience pattern</h3>
-  <pre><code>Primary:     Groq API (Llama-3.3-70B)     -- 50-200ms
-Fallback:    AWS Bedrock (Claude Sonnet)   -- 300-500ms  (if Groq 503/429)
-Last resort: Canned response              -- 0ms        (if all APIs fail)</code></pre>
+  <pre><code>Primary:     Groq API (qwen/qwen3.8-27b)       -- 100-300ms
+Fallback:    AWS Bedrock (Nova Micro)            -- 200-400ms  (if Groq 503/429)
+Last resort: Canned response                    -- 0ms        (if all APIs fail)</code></pre>
+
+  <h3>Available Bedrock models</h3>
+  <pre><code>Bedrock Model Options (cheapest first):
+  amazon.nova-micro-v1:0        $0.035/1M input   text-only, fastest
+  amazon.nova-lite-v1:0         $0.06/1M input    multimodal
+  amazon.nova-pro-v1:0          $0.80/1M input    most capable Amazon
+  meta.llama3-3-70b-instruct    on-demand         strong open-source
+  us.anthropic.claude-3-haiku   cross-region      Claude via inference profile
+Note: All Bedrock models require access approval in AWS Console → Bedrock → Model access</code></pre>
 </div>
 
 <!-- ===== SECTION 10 ===== -->
@@ -657,7 +684,7 @@ Last resort: Canned response              -- 0ms        (if all APIs fail)</code
   <h3>MLflow on AWS</h3>
   <pre><code>MLflow Tracking Server:
   Backend:        RDS PostgreSQL (separate database: mlflow_db)
-  Artifact store: S3 (s3://cno-ivr-mlflow-artifacts/)
+  Artifact store: S3 (s3://uic-ivr-mlflow-artifacts/)
   Hosting:        ECS Fargate (internal ALB)
 
 Tracked experiments:
@@ -688,7 +715,7 @@ Tracked experiments:
 
   <h3>Flow</h3>
   <ol>
-    <li><strong>Upload:</strong> PDF/text/CSV uploaded to <code>s3://cno-ivr-knowledge/incoming/</code></li>
+    <li><strong>Upload:</strong> PDF/text/CSV uploaded to <code>s3://uic-ivr-knowledge/incoming/</code></li>
     <li><strong>Trigger:</strong> S3 event fires Lambda function</li>
     <li><strong>Validate:</strong> Lambda checks file type, size (&lt;50MB), optional virus scan</li>
     <li><strong>Queue:</strong> Lambda puts message on SQS with S3 key + metadata</li>
@@ -772,15 +799,19 @@ Tracked experiments:
   <h3>IAM roles</h3>
   <table>
     <tr><th>Role</th><th>Permissions</th><th>Applied To</th></tr>
-    <tr><td><code>cno-ivr-task-role</code></td><td>secretsmanager:GetSecretValue, s3:GetObject, cloudwatch:PutMetricData, xray:PutTraceSegments</td><td>ECS IVR app</td></tr>
-    <tr><td><code>cno-ivr-ingestion-role</code></td><td>s3:GetObject, sqs:ReceiveMessage, secretsmanager:GetSecretValue</td><td>ECS ingestion worker</td></tr>
-    <tr><td><code>cno-ivr-lambda-role</code></td><td>s3:GetObject, sqs:SendMessage, logs:PutLogEvents</td><td>Ingestion Lambda</td></tr>
+    <tr><td><code>uic-ivr-task-role</code></td><td>secretsmanager:GetSecretValue, s3:GetObject, cloudwatch:PutMetricData, xray:PutTraceSegments</td><td>ECS IVR app</td></tr>
+    <tr><td><code>uic-ivr-ingestion-role</code></td><td>s3:GetObject, sqs:ReceiveMessage, secretsmanager:GetSecretValue</td><td>ECS ingestion worker</td></tr>
+    <tr><td><code>uic-ivr-lambda-role</code></td><td>s3:GetObject, sqs:SendMessage, logs:PutLogEvents</td><td>Ingestion Lambda</td></tr>
   </table>
 </div>
 
 <!-- ===== SECTION 16 ===== -->
 <div class="section" id="s16">
   <h2>16. CI/CD Pipeline</h2>
+
+  <div class="decision">
+    <strong>Current setup:</strong> CI/CD uses GitHub Actions (<code>.github/workflows/deploy.yml</code>) pushing to ECR + ECS force-deploy, not CodePipeline. The CodePipeline stages below represent the target production pipeline.
+  </div>
 
   <div class="flow-step">
     <div class="flow-line"></div>
@@ -892,7 +923,7 @@ Tracked experiments:
     <tr><td><span class="badge badge-aws">ElastiCache</span></td><td>cache.r6g.large, 1 replica</td><td>~$200</td></tr>
     <tr><td><span class="badge badge-aws">S3</span></td><td>10 GB + requests</td><td>~$2</td></tr>
     <tr><td><span class="badge badge-aws">CloudWatch</span></td><td>Logs 10GB, metrics, alarms</td><td>~$30</td></tr>
-    <tr><td><span class="badge badge-aws">Secrets Manager</span></td><td>6 secrets</td><td>~$3</td></tr>
+    <tr><td><span class="badge badge-aws">Secrets Manager</span></td><td>9 secrets</td><td>~$4</td></tr>
     <tr><td><span class="badge badge-aws">NAT Gateway</span></td><td>1 NAT, ~50GB data</td><td>~$40</td></tr>
     <tr><td><span class="badge badge-aws">WAF</span></td><td>Basic rules</td><td>~$10</td></tr>
     <tr><td><span class="badge badge-aws">ECR</span></td><td>5 GB images</td><td>~$1</td></tr>
