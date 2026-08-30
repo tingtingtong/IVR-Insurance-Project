@@ -54,5 +54,12 @@ twilio.min.js
 # ── PDFs ─────────────────────────────────────────────────────────────────────
 *.pdf
 
+# ── Terraform ──────────────────────────────────────────────────────────────
+infra/.terraform/
+infra/.terraform.lock.hcl
+infra/terraform.tfstate
+infra/terraform.tfstate.backup
+*.tfplan
+
 # ── Claude Code config ──────────────────────────────────────────────────────
 .claude/

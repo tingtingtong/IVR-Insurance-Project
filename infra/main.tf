@@ -6,6 +6,15 @@ terraform {
       version = "~> 5.0"
     }
   }
+
+  backend "s3" {
+    bucket         = "ivr-terraform-state-348452968516"
+    key            = "ivr/terraform.tfstate"
+    region         = "us-east-1"
+    dynamodb_table = "ivr-terraform-locks"
+    encrypt        = true
+    use_lockfile   = true
+  }
 }
 
 provider "aws" {
