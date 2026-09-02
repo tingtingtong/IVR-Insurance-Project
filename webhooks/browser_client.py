@@ -189,6 +189,15 @@ function stopTimer() {
 }
 
 async function init() {
+  // Warn if served over HTTP — browsers block getUserMedia on insecure origins
+  if (location.protocol === "http:" && location.hostname !== "localhost" && location.hostname !== "127.0.0.1") {
+    const banner = document.createElement("div");
+    banner.style.cssText = "background:#7c2d12;color:#fed7aa;padding:10px 14px;border-radius:8px;font-size:12px;margin-bottom:16px;line-height:1.5;";
+    banner.innerHTML = "<strong>⚠ HTTP detected</strong> — Microphone access requires HTTPS or a localhost origin.<br>"
+      + "Launch Chrome with: <code style='background:#431407;padding:2px 6px;border-radius:4px;font-size:11px;'>"
+      + 'chrome --unsafely-treat-insecure-origin-as-secure="' + location.origin + '" --user-data-dir=C:\\\\temp\\\\chrome-dev</code>';
+    document.querySelector(".card").insertBefore(banner, document.querySelector(".status-bar"));
+  }
   try {
     log("Fetching access token...");
     const res = await fetch("/client/token");
