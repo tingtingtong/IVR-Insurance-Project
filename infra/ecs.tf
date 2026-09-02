@@ -29,7 +29,7 @@ resource "aws_ecs_task_definition" "app" {
   container_definitions = jsonencode([
     {
       name  = "${var.environment}-${var.project}"
-      image = "${aws_ecr_repository.app.repository_url}:${var.image_tag}"
+      image = "${var.ecr_repo_url}:${var.image_tag}"
       portMappings = [{
         containerPort = var.app_port
         protocol      = "tcp"
@@ -96,7 +96,7 @@ resource "aws_ecs_task_definition" "app" {
     },
     {
       name  = "${var.environment}-mock-api"
-      image = "${aws_ecr_repository.app.repository_url}:mock-api"
+      image = "${var.ecr_repo_url}:mock-api"
       portMappings = [{
         containerPort = 8001
         protocol      = "tcp"
