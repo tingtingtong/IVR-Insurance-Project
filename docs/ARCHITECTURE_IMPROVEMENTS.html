@@ -250,40 +250,40 @@
     <h3>HTTPS &amp; TLS</h3>
     <span class="subtitle">From HTTP-only to fully encrypted traffic</span>
 
-    <p><span class="label label-current">Current State (Partially Addressed)</span></p>
+    <p><span class="label label-current">Current State</span></p>
     <ul>
-      <li><strong style="color:var(--green);">DONE:</strong> CloudFront distribution added in front of ALB — provides HTTPS via <code>*.cloudfront.net</code> domain</li>
-      <li><strong style="color:var(--green);">DONE:</strong> ALB SG updated to allow inbound port 443</li>
-      <li><strong style="color:var(--green);">DONE:</strong> Browser softphone works via <code>https://&lt;id&gt;.cloudfront.net/client</code></li>
-      <li>ALB still HTTP-only (CloudFront terminates TLS, forwards HTTP to ALB origin)</li>
-      <li>No custom domain or Route 53 yet — uses CloudFront default domain</li>
+      <li>ALB listener on <strong>port 80 (HTTP only)</strong> — no HTTPS listener</li>
+      <li>ALB SG only allows inbound port 80</li>
+      <li>No ACM certificate, no custom domain, no Route 53</li>
+      <li>Twilio webhooks use <code>http://</code> — browser mic access blocked (requires HTTPS)</li>
+      <li>WebSocket connections use <code>ws://</code> instead of <code>wss://</code></li>
     </ul>
 
-    <p><span class="label label-improve">Further Improvement (Custom Domain)</span></p>
+    <p><span class="label label-improve">Improvement</span></p>
     <ul>
-      <li>Register custom domain (e.g., <code>ivr.uic-insurance.com</code>) via Route 53</li>
-      <li>Request <strong>ACM certificate</strong> for custom domain</li>
-      <li>Add CNAME/alias to CloudFront distribution or add <strong>HTTPS listener (443)</strong> directly on ALB</li>
-      <li>Update Twilio webhook URLs to <code>https://ivr.uic-insurance.com</code></li>
+      <li>Request <strong>ACM certificate</strong> for custom domain (e.g., <code>ivr.uic-insurance.com</code>)</li>
+      <li>Add <strong>HTTPS listener (443)</strong> on ALB with ACM cert</li>
+      <li>Redirect HTTP (80) to HTTPS (443) automatically</li>
+      <li>Configure <strong>Route 53</strong> hosted zone with A record alias to ALB</li>
+      <li>Update Twilio webhook URLs to <code>https://</code> and WebSocket to <code>wss://</code></li>
     </ul>
 
     <p><span class="label label-why">Why It Matters</span></p>
     <ul>
-      <li>Browser microphone access requires HTTPS — <strong style="color:var(--green);">resolved via CloudFront</strong></li>
+      <li>Browser microphone access requires HTTPS — the softphone web UI is broken without it</li>
       <li>Twilio strongly recommends HTTPS for all webhook endpoints</li>
-      <li>PII (phone numbers, DOB, policy numbers) should be encrypted in transit</li>
-      <li>Custom domain provides a stable, branded URL across infra destroy/apply cycles</li>
+      <li>PII (phone numbers, DOB, policy numbers) transmitted in plaintext over HTTP</li>
     </ul>
 
-    <p><span class="label label-how">How to Implement (Remaining)</span></p>
+    <p><span class="label label-how">How to Implement</span></p>
     <ul>
-      <li>Add <code>aws_route53_zone</code> and register domain (~$12/yr)</li>
-      <li>Add <code>aws_acm_certificate</code> + DNS validation (free)</li>
-      <li>Add alternate domain name to CloudFront distribution with ACM cert</li>
-      <li>Create Route 53 A record (alias) pointing to CloudFront</li>
+      <li>Add <code>aws_acm_certificate</code> + DNS validation via Route 53</li>
+      <li>Add <code>aws_lb_listener.https</code> (443) with certificate, modify HTTP listener to redirect</li>
+      <li>Update ALB SG to allow inbound 443</li>
+      <li>Add <code>aws_route53_zone</code> and <code>aws_route53_record</code> (A alias)</li>
     </ul>
 
-    <p><span class="label label-effort">Effort</span> ~0.5 day (CloudFront already done) | ACM certs are free | Route 53: $0.50/mo + $12/yr domain</p>
+    <p><span class="label label-effort">Effort</span> ~1 day | ACM certs are free | Route 53: $0.50/mo per hosted zone + $12/yr domain</p>
   </div>
 
   <!-- ================================================================ -->

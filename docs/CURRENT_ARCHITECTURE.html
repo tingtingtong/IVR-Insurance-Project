@@ -957,7 +957,6 @@
   <tr><td>Task Definition</td><td><code>aws_ecs_task_definition.app</code></td><td>Fargate, 2 containers (app + mock-api), awsvpc networking</td></tr>
   <tr><td>ECS Service</td><td><code>aws_ecs_service.app</code></td><td>desired_count=1, public IP (no NAT Gateway), ALB target group</td></tr>
   <tr><td>ALB</td><td><code>aws_lb.app</code></td><td>Internet-facing, HTTP listener on port 80, forwards to app port</td></tr>
-  <tr><td>CloudFront</td><td><code>aws_cloudfront_distribution.app</code></td><td>HTTPS termination via *.cloudfront.net; forwards to ALB (HTTP origin); enables browser mic access</td></tr>
   <tr><td>Target Group</td><td><code>aws_lb_target_group.app</code></td><td>IP target type, /health check (200, interval 15s, 2 healthy / 3 unhealthy)</td></tr>
   <tr><td>RDS</td><td><code>aws_db_instance.main</code></td><td>PostgreSQL 16.4, gp3 20GB, NOT publicly accessible</td></tr>
   <tr><td>ElastiCache</td><td><code>aws_elasticache_cluster.main</code></td><td>Redis 7.1, single node, dev=DB0 / prod=DB1</td></tr>
