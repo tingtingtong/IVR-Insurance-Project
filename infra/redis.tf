@@ -8,7 +8,7 @@ resource "aws_elasticache_cluster" "main" {
   cluster_id           = "${var.project}-redis"
   engine               = "redis"
   engine_version       = "7.1"
-  node_type            = "cache.t4g.micro"
+  node_type            = var.redis_node_type
   num_cache_nodes      = 1
   parameter_group_name = "default.redis7"
   port                 = 6379

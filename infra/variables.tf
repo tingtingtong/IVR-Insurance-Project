@@ -92,3 +92,41 @@ variable "task_memory" {
   type        = number
   default     = 1024
 }
+
+# ── Auto-scaling ──────────────────────────────────────────────────────────────
+variable "min_tasks" {
+  description = "Minimum number of ECS tasks"
+  type        = number
+  default     = 1
+}
+
+variable "max_tasks" {
+  description = "Maximum number of ECS tasks"
+  type        = number
+  default     = 8
+}
+
+variable "cpu_scale_target" {
+  description = "Target CPU utilization (%) for auto-scaling"
+  type        = number
+  default     = 60
+}
+
+variable "memory_scale_target" {
+  description = "Target memory utilization (%) for auto-scaling"
+  type        = number
+  default     = 70
+}
+
+# ── Instance sizes (configurable per environment) ─────────────────────────────
+variable "db_instance_class" {
+  description = "RDS instance class (db.t4g.micro for dev, db.t4g.small+ for prod)"
+  type        = string
+  default     = "db.t4g.micro"
+}
+
+variable "redis_node_type" {
+  description = "ElastiCache node type (cache.t4g.micro for dev, cache.t4g.small+ for prod)"
+  type        = string
+  default     = "cache.t4g.micro"
+}

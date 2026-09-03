@@ -46,9 +46,18 @@ jobs:
       - name: Terraform Init
         run: terraform init
 
+      - name: Set scaling profile
+        id: profile
+        run: |
+          if [ "${{ inputs.environment }}" = "prod" ]; then
+            echo "vars=-var=task_cpu=1024 -var=task_memory=2048 -var=min_tasks=2 -var=max_tasks=8 -var=db_instance_class=db.t4g.small -var=redis_node_type=cache.t4g.small" >> "$GITHUB_OUTPUT"
+          else
+            echo "vars=" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Terraform Plan
         if: inputs.action == 'plan' || inputs.action == 'apply'
-        run: terraform plan -var="environment=${{ inputs.environment }}" -out=tfplan
+        run: terraform plan -var="environment=${{ inputs.environment }}" ${{ steps.profile.outputs.vars }} -out=tfplan
 
       - name: Terraform Apply
         if: inputs.action == 'apply'
@@ -56,7 +65,7 @@ jobs:
 
       - name: Terraform Destroy
         if: inputs.action == 'destroy'
-        run: terraform destroy -auto-approve -var="environment=${{ inputs.environment }}"
+        run: terraform destroy -auto-approve -var="environment=${{ inputs.environment }}" ${{ steps.profile.outputs.vars }}
 
       - name: Show Outputs
         if: inputs.action == 'apply'

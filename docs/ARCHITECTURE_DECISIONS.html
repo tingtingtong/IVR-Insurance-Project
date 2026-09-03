@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UIC IVR — Architecture Decisions & Interview Guide</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --surface: #1e293b;
+    --surface2: #334155;
+    --border: #475569;
+    --text: #e2e8f0;
+    --text-dim: #94a3b8;
+    --accent: #f97316;
+    --accent2: #38bdf8;
+    --green: #4ade80;
+    --red: #f87171;
+    --yellow: #fbbf24;
+    --purple: #a78bfa;
+    --pink: #f472b6;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg); color: var(--text); line-height:1.7; padding:0;
+  }
+  .header {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    border-bottom: 2px solid var(--accent);
+    padding: 3rem 2rem; text-align: center;
+  }
+  .header h1 {
+    font-size:2.2rem; font-weight:700;
+    background: linear-gradient(135deg, var(--accent), var(--yellow));
+    -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+    background-clip:text;
+    margin-bottom:0.5rem;
+  }
+  .header p { color:var(--text-dim); font-size:1.1rem; }
+  .container { max-width:1100px; margin:0 auto; padding:2rem; }
+
+  /* TOC */
+  .toc {
+    background:var(--surface); border:1px solid var(--border);
+    border-radius:12px; padding:1.5rem 2rem; margin-bottom:2.5rem;
+  }
+  .toc h2 { font-size:1.2rem; color:var(--accent); margin-bottom:1rem; }
+  .toc ol { padding-left:1.5rem; }
+  .toc li { margin-bottom:0.35rem; }
+  .toc a { color:var(--accent2); text-decoration:none; }
+  .toc a:hover { text-decoration:underline; }
+
+  /* Section headings */
+  .section-title {
+    font-size:1.6rem; color:var(--accent); font-weight:700;
+    border-bottom:2px solid var(--border); padding-bottom:0.5rem;
+    margin: 2.5rem 0 1.5rem 0;
+  }
+
+  /* Decision Cards */
+  .card {
+    background:var(--surface); border:1px solid var(--border);
+    border-radius:12px; padding:2rem; margin-bottom:1.5rem;
+    position: relative;
+    transition: border-color 0.2s ease;
+  }
+  .card:hover {
+    border-color: var(--accent);
+  }
+  .card-badge {
+    position:absolute; top:-0.75rem; left:1.5rem;
+    background: linear-gradient(135deg, var(--accent), var(--yellow));
+    color:#0f172a; font-weight:800; font-size:0.85rem;
+    padding:0.2rem 0.75rem; border-radius:20px;
+    letter-spacing:0.5px;
+  }
+  .card h3 {
+    font-size:1.2rem; color:var(--accent2); margin:0.5rem 0 0.25rem 0;
+  }
+  .card .subtitle {
+    color:var(--text-dim); font-size:0.95rem; font-style:italic;
+    margin-bottom:1rem; display:block;
+  }
+  .card p, .card li { margin-bottom:0.6rem; }
+  .card ul { padding-left:1.5rem; margin-top:0.5rem; }
+  .card .label-decision {
+    display:inline-block; background:var(--surface2); color:var(--green);
+    font-size:0.78rem; font-weight:600; text-transform:uppercase;
+    padding:0.15rem 0.6rem; border-radius:4px; margin-right:0.5rem;
+    letter-spacing:0.5px;
+  }
+  .card .label-why {
+    display:inline-block; background:var(--surface2); color:var(--yellow);
+    font-size:0.78rem; font-weight:600; text-transform:uppercase;
+    padding:0.15rem 0.6rem; border-radius:4px; margin-right:0.5rem;
+    letter-spacing:0.5px;
+  }
+
+  /* Diagram Section */
+  .diagram-section {
+    background:var(--surface); border:1px solid var(--border);
+    border-radius:12px; padding:2rem; margin-bottom:2rem;
+  }
+  .diagram-section h2 {
+    font-size:1.45rem; color:var(--accent);
+    border-bottom:2px solid var(--border); padding-bottom:0.5rem; margin-bottom:1.5rem;
+  }
+  .diagram-box {
+    background:#0d1117; border:1px solid var(--border); border-radius:8px;
+    padding:1.5rem 1rem; overflow-x:auto;
+    font-family:'Cascadia Code','Fira Code','Consolas',monospace;
+    font-size:0.82rem; line-height:1.5; color:#c9d1d9;
+    text-align:center;
+  }
+  .diagram-box .flow-accent { color:var(--accent); font-weight:600; }
+  .diagram-box .flow-blue { color:var(--accent2); font-weight:600; }
+  .diagram-box .flow-green { color:var(--green); font-weight:600; }
+  .diagram-box .flow-purple { color:var(--purple); font-weight:600; }
+  .diagram-box .flow-yellow { color:var(--yellow); font-weight:600; }
+  .diagram-box .flow-pink { color:var(--pink); font-weight:600; }
+
+  /* Tables */
+  table {
+    width:100%; border-collapse:collapse; margin-bottom:1.2rem;
+    font-size:0.92rem;
+  }
+  th {
+    text-align:left; padding:0.75rem 1rem;
+    background:var(--surface2); color:var(--accent); font-weight:600;
+    border-bottom:2px solid var(--accent);
+  }
+  td {
+    padding:0.75rem 1rem; border-bottom:1px solid var(--border);
+    vertical-align:top;
+  }
+  tr:hover td { background:rgba(248,113,113,0.04); }
+  td:first-child { color:var(--accent2); font-weight:500; white-space:normal; }
+
+  /* FAQ Table Section */
+  .table-section {
+    background:var(--surface); border:1px solid var(--border);
+    border-radius:12px; padding:2rem; margin-bottom:2rem;
+  }
+  .table-section h2 {
+    font-size:1.45rem; color:var(--accent);
+    border-bottom:2px solid var(--border); padding-bottom:0.5rem; margin-bottom:1.5rem;
+  }
+
+  /* Code */
+  code {
+    font-family:'Cascadia Code','Fira Code','Consolas',monospace;
+    background:var(--surface2); padding:0.15rem 0.4rem; border-radius:4px;
+    font-size:0.85rem; color:var(--yellow);
+  }
+
+  /* Responsive */
+  @media (max-width:768px) {
+    .container { padding:1rem; }
+    .header { padding:2rem 1rem; }
+    .header h1 { font-size:1.5rem; }
+    .card { padding:1.5rem 1rem; }
+    table { font-size:0.82rem; }
+    th, td { padding:0.5rem 0.6rem; }
+    .diagram-box { font-size:0.7rem; padding:1rem 0.5rem; }
+  }
+
+  /* Footer */
+  .footer {
+    text-align:center; padding:2rem; color:var(--text-dim);
+    font-size:0.85rem; border-top:1px solid var(--border);
+    margin-top:2rem;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>UIC IVR — Architecture Decisions & Interview Guide</h1>
+  <p>US Insurance Company (UIC) Conversational IVR Platform — Why we built it this way</p>
+</div>
+
+<div class="container">
+
+  <!-- Table of Contents -->
+  <div class="toc">
+    <h2>Table of Contents</h2>
+    <ol>
+      <li><a href="#arch-decisions">Architecture Decisions (14 decisions)</a></li>
+      <li><a href="#diagram">Architecture Diagram</a></li>
+      <li><a href="#interview">Common Interview Questions</a></li>
+    </ol>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- ARCHITECTURE DECISIONS                                        -->
+  <!-- ============================================================ -->
+  <h2 class="section-title" id="arch-decisions">Architecture Decisions</h2>
+
+  <!-- Decision 1 -->
+  <div class="card">
+    <span class="card-badge">#1</span>
+    <h3>LangGraph for Orchestration (not LangChain)</h3>
+    <span class="subtitle">Stateful graph with nodes/edges instead of a simple chain</span>
+    <p><span class="label-decision">Decision</span> Use LangGraph's stateful directed graph to orchestrate the entire call flow.</p>
+    <p><span class="label-why">Why</span> IVR calls are multi-turn, multi-step workflows: authentication, intent routing, service fulfillment, and back again. A graph models this naturally — nodes are intent handlers, edges are transitions between conversational states.</p>
+    <ul>
+      <li>LangChain's sequential chains cannot handle branching, loops, or state persistence across turns.</li>
+      <li>LangGraph provides built-in checkpointing, conditional edges, and a clear visual model of every possible call path.</li>
+      <li>Each node is independently testable. Adding a new intent means adding a node and edges — no refactoring of the chain.</li>
+      <li>The graph state object travels with the call, accumulating context (auth status, caller info, current intent) at every step.</li>
+    </ul>
+  </div>
+
+  <!-- Decision 2 -->
+  <div class="card">
+    <span class="card-badge">#2</span>
+    <h3>Dual LLM Strategy (Router vs Service Nodes)</h3>
+    <span class="subtitle">Lightweight model for intent routing, larger model for service nodes</span>
+    <p><span class="label-decision">Decision</span> Run two different LLM tiers: a fast, inexpensive model for intent classification and a more capable model for generating service responses.</p>
+    <p><span class="label-why">Why</span> The router runs on every single caller utterance — it needs to be fast and cheap. Service nodes (billing lookup, claims status, policy changes) need deeper reasoning and more nuanced language generation.</p>
+    <ul>
+      <li>Router model (e.g., Groq/Llama or Bedrock Nova Micro): sub-200ms latency, handles intent classification and slot extraction.</li>
+      <li>Service model (e.g., larger Llama variant or Claude): handles complex responses, multi-step reasoning, and policy-specific language.</li>
+      <li>This separation gives sub-second routing with high-quality responses where it actually matters to the caller experience.</li>
+      <li>Cost savings are significant: routing is ~90% of LLM calls but uses the cheapest tier.</li>
+    </ul>
+  </div>
+
+  <!-- Decision 3 -->
+  <div class="card">
+    <span class="card-badge">#3</span>
+    <h3>Streaming Pipeline (WebSocket, not REST)</h3>
+    <span class="subtitle">End-to-end streaming from caller voice to IVR response</span>
+    <p><span class="label-decision">Decision</span> Build the entire audio pipeline on WebSockets: Twilio Media Streams to Deepgram STT (streaming) to LangGraph to ElevenLabs TTS (streaming) back to Twilio.</p>
+    <p><span class="label-why">Why</span> Latency is the single most critical metric in voice. REST-based approaches require waiting for the full utterance to finish, then full transcription, then full LLM response, then full TTS audio. Each "wait for full" adds hundreds of milliseconds.</p>
+    <ul>
+      <li>Streaming STT provides words as they are spoken — the system can start processing before the caller finishes.</li>
+      <li>Streaming TTS sends audio chunks as they are generated — the caller hears the response begin in under a second.</li>
+      <li>Target response time: &lt;1 second from end of caller speech to beginning of IVR response.</li>
+      <li>WebSocket connections are persistent for the call duration, eliminating per-request connection overhead.</li>
+    </ul>
+  </div>
+
+  <!-- Decision 4 -->
+  <div class="card">
+    <span class="card-badge">#4</span>
+    <h3>Sidecar Pattern for Mock API</h3>
+    <span class="subtitle">Mock backend API runs as a sidecar container in the same ECS task</span>
+    <p><span class="label-decision">Decision</span> Deploy a lightweight mock API container alongside the main IVR container within the same ECS task definition.</p>
+    <p><span class="label-why">Why</span> The IVR application calls a backend API for policy lookup, payment processing, claims status, and other operations. In development and demo environments, a mock sidecar running on <code>localhost:8001</code> avoids any dependency on the real backend systems.</p>
+    <ul>
+      <li>Zero network latency — sidecar shares the same network namespace (localhost communication).</li>
+      <li>Same task definition for both containers, deployed and scaled together.</li>
+      <li>In production, the IVR simply points to the real backend API endpoint — no code changes, just an environment variable.</li>
+      <li>The mock API returns realistic test data, enabling full end-to-end demos without touching production systems.</li>
+    </ul>
+  </div>
+
+  <!-- Decision 5 -->
+  <div class="card">
+    <span class="card-badge">#5</span>
+    <h3>PostgreSQL for Both State and Vectors (not separate vector DB)</h3>
+    <span class="subtitle">pgvector extension on the same RDS instance for RAG</span>
+    <p><span class="label-decision">Decision</span> Use PostgreSQL with the pgvector extension for both relational data and vector similarity search, rather than running a separate vector database.</p>
+    <p><span class="label-why">Why</span> The FAQ knowledge base is relatively small — hundreds of documents, not millions. At this scale, pgvector performs comparably to dedicated vector databases like Pinecone or Weaviate.</p>
+    <ul>
+      <li>One fewer service to provision, monitor, and pay for.</li>
+      <li>One fewer network connection to maintain and one fewer point of failure.</li>
+      <li>Relational queries and vector similarity search can be combined in a single query (e.g., filter by category, then rank by embedding similarity).</li>
+      <li>If the knowledge base grows to millions of documents, migration to a dedicated vector DB is straightforward — the embedding format is standard.</li>
+    </ul>
+  </div>
+
+  <!-- Decision 6 -->
+  <div class="card">
+    <span class="card-badge">#6</span>
+    <h3>Redis for Session State, Postgres for Checkpointing</h3>
+    <span class="subtitle">Split state across two stores based on durability requirements</span>
+    <p><span class="label-decision">Decision</span> Use Redis for ephemeral session data and PostgreSQL for durable LangGraph checkpoints.</p>
+    <p><span class="label-why">Why</span> Not all state has the same durability requirements. Active call session data (current node, turn count, TTS queue) is short-lived and accessed frequently. LangGraph checkpoints (full graph state snapshots) need to survive crashes and support call history analysis.</p>
+    <ul>
+      <li>Redis: sub-millisecond reads, TTL-based automatic expiry for abandoned calls, perfect for hot session data.</li>
+      <li>PostgreSQL: ACID-compliant persistence, the LangGraph checkpointer saves state after each node transition for crash recovery.</li>
+      <li>If Redis goes down, the system falls back to an in-memory session store — calls in progress continue, just without cross-instance session sharing.</li>
+      <li>Call history in Postgres enables analytics: average call duration, most common intents, auth failure rates.</li>
+    </ul>
+  </div>
+
+  <!-- Decision 7 -->
+  <div class="card">
+    <span class="card-badge">#7</span>
+    <h3>ECS Fargate (not Lambda, not EC2)</h3>
+    <span class="subtitle">Managed containers without server management</span>
+    <p><span class="label-decision">Decision</span> Deploy on AWS ECS Fargate — not Lambda (serverless functions) and not EC2 (self-managed servers).</p>
+    <p><span class="label-why">Why</span> WebSocket connections are long-lived — they persist for the entire duration of a phone call (minutes to tens of minutes). This rules out Lambda, which has a 15-minute timeout and does not support WebSocket connections natively.</p>
+    <ul>
+      <li>Lambda: 15-minute max execution, no WebSocket support, cold starts add latency — disqualified for voice.</li>
+      <li>EC2: full control but requires managing OS patches, scaling policies, instance types — overkill for a demo/MVP.</li>
+      <li>Fargate: container flexibility (run any runtime, any dependencies) without managing the underlying hosts.</li>
+      <li>Pay only for the vCPU and memory used while tasks are running. Scales to zero when no calls are active.</li>
+    </ul>
+  </div>
+
+  <!-- Decision 8 -->
+  <div class="card">
+    <span class="card-badge">#8</span>
+    <h3>ALB (not API Gateway)</h3>
+    <span class="subtitle">Application Load Balancer for WebSocket support</span>
+    <p><span class="label-decision">Decision</span> Use an Application Load Balancer in front of ECS tasks, not AWS API Gateway.</p>
+    <p><span class="label-why">Why</span> ALB natively supports the HTTP Upgrade mechanism required for WebSocket connections. API Gateway's WebSocket API uses a different routing model (route keys, $connect/$disconnect stages) that adds complexity and per-message billing.</p>
+    <ul>
+      <li>ALB handles WebSocket upgrade transparently — no special configuration beyond enabling stickiness.</li>
+      <li>API Gateway WebSocket charges per message (send and receive), which adds up fast with streaming audio packets.</li>
+      <li>ALB integrates directly with ECS service discovery and health checks.</li>
+      <li>Simpler architecture: one ALB handles both the REST webhook endpoint (for Twilio call initiation) and the WebSocket endpoint (for media streaming).</li>
+    </ul>
+  </div>
+
+  <!-- Decision 9 -->
+  <div class="card">
+    <span class="card-badge">#9</span>
+    <h3>Barge-in with VAD</h3>
+    <span class="subtitle">Voice Activity Detection for caller interruption</span>
+    <p><span class="label-decision">Decision</span> Implement barge-in (caller interruption) using Voice Activity Detection on the incoming audio stream.</p>
+    <p><span class="label-why">Why</span> Callers should not have to wait for the IVR to finish speaking before they can respond. This is especially important for experienced callers who already know what they want — forcing them to listen to full prompts creates frustration.</p>
+    <ul>
+      <li>VAD detects when the caller starts speaking during TTS playback.</li>
+      <li>Upon detection: TTS audio is immediately stopped, the partial utterance is captured, and the system processes the new input.</li>
+      <li>This is critical for a natural conversation feel — without it, the IVR feels like a traditional "press 1 for..." system.</li>
+      <li>Deepgram's streaming STT includes built-in endpointing and VAD, reducing implementation complexity.</li>
+    </ul>
+  </div>
+
+  <!-- Decision 10 -->
+  <div class="card">
+    <span class="card-badge">#10</span>
+    <h3>Auth Guard Pattern</h3>
+    <span class="subtitle">Centralized auth gate in the graph, not per-node checks</span>
+    <p><span class="label-decision">Decision</span> Implement a single <code>auth_guard</code> conditional edge in the LangGraph that runs before any service node, rather than duplicating auth checks inside every node.</p>
+    <p><span class="label-why">Why</span> Every service intent (billing, claims, policy changes) requires the caller to be authenticated. Scattering <code>if not authenticated</code> checks across a dozen nodes is error-prone — one missed check means an unauthenticated caller can access account data.</p>
+    <ul>
+      <li>Single point of enforcement: the auth guard edge checks <code>state.is_authenticated</code> before routing to any protected node.</li>
+      <li>If not authenticated, the caller is redirected to the authentication flow, then returned to their original intent after success.</li>
+      <li>Adding new service nodes is safe by default — they are behind the auth guard automatically.</li>
+      <li>Auth requires 2 PII matches (phone + DOB, phone + name, policy + DOB, or policy + name). ANI (caller's phone number) is checked first.</li>
+    </ul>
+  </div>
+
+  <!-- Decision 11 -->
+  <div class="card">
+    <span class="card-badge">#11</span>
+    <h3>Terraform State in S3 (not local)</h3>
+    <span class="subtitle">Remote state with S3 + DynamoDB locking</span>
+    <p><span class="label-decision">Decision</span> Store Terraform state in an S3 bucket with DynamoDB-based state locking, rather than keeping <code>terraform.tfstate</code> on a local machine.</p>
+    <p><span class="label-why">Why</span> Remote state is required for CI/CD — GitHub Actions workflows need to run <code>terraform apply</code> and <code>terraform destroy</code> without access to a developer's local filesystem.</p>
+    <ul>
+      <li>Local state ties infrastructure management to a single machine — loses the state file, lose track of all resources.</li>
+      <li>DynamoDB locking prevents concurrent <code>terraform apply</code> runs from corrupting state (e.g., two developers or two CI runs).</li>
+      <li>S3 versioning provides automatic backup of every state change — easy to roll back if an apply goes wrong.</li>
+      <li>Enables the full CI/CD pipeline: push to main triggers build, push image, terraform apply, ECS redeploy.</li>
+    </ul>
+  </div>
+
+  <!-- Decision 12 -->
+  <div class="card">
+    <span class="card-badge">#12</span>
+    <h3>ECR Outside Terraform</h3>
+    <span class="subtitle">Container registry persists across infra destroy/apply cycles</span>
+    <p><span class="label-decision">Decision</span> Create and manage the ECR (Elastic Container Registry) repository outside of the Terraform configuration, so it is not destroyed when running <code>terraform destroy</code>.</p>
+    <p><span class="label-why">Why</span> Docker images are expensive to build — the IVR image is approximately 1.13 GB and takes around 10 minutes to build. Destroying and recreating ECR on every infra cycle would require a full rebuild every time.</p>
+    <ul>
+      <li>With ECR persisted: redeploy = <code>terraform apply</code> + ECS task restart, approximately 5 minutes total.</li>
+      <li>Without ECR persisted: redeploy = Docker build (10 min) + push (2 min) + <code>terraform apply</code> (5 min) = 17+ minutes.</li>
+      <li>ECR lifecycle policies handle cleanup of old/untagged images automatically.</li>
+      <li>The ECR repository is a one-time setup (<code>aws ecr create-repository</code>) that outlives all other infrastructure.</li>
+    </ul>
+  </div>
+
+  <!-- Decision 13 -->
+  <div class="card">
+    <span class="card-badge">#13</span>
+    <h3>Auto-Scaling at Every Layer</h3>
+    <span class="subtitle">ECS tasks, RDS, and Redis scale independently based on load</span>
+    <p><span class="label-decision">Decision</span> Implement auto-scaling at the compute layer (ECS) with three independent scaling policies, and make database/cache instance sizes configurable per environment.</p>
+    <p><span class="label-why">Why</span> A voice IVR has highly variable load — peak hours (9am-5pm) see 5-10x the traffic of off-peak. Fixed capacity either wastes money during quiet periods or drops calls during spikes.</p>
+    <ul>
+      <li><strong>ECS CPU scaling</strong>: Adds tasks when average CPU exceeds 60%. Audio processing (resampling, encoding) and LLM API serialization are CPU-bound.</li>
+      <li><strong>ECS Memory scaling</strong>: Adds tasks when average memory exceeds 70%. Each concurrent call holds WebSocket buffers, audio queues, and graph state in memory.</li>
+      <li><strong>ALB Request Count scaling</strong>: Adds tasks when active requests per target exceed 10. This directly tracks concurrent call count — the most meaningful metric for a voice system.</li>
+      <li><strong>Scale-out cooldown: 60s</strong> — react quickly to traffic spikes. <strong>Scale-in cooldown: 120s</strong> — avoid flapping during natural call volume fluctuations.</li>
+      <li><strong>RDS/Redis</strong>: Instance sizes are Terraform variables. Dev uses <code>db.t4g.micro</code> / <code>cache.t4g.micro</code> (~$15/month). Prod uses <code>db.t4g.small</code> / <code>cache.t4g.small</code> (~$30/month). Upgrade is a single variable change.</li>
+      <li><strong>Capacity planning for 3,000 calls/day</strong>: ~375 calls/hour peak → ~24 concurrent calls → 5-8 ECS tasks (1 vCPU, 2GB each). Auto-scaler handles this automatically.</li>
+    </ul>
+  </div>
+
+  <!-- Decision 14 -->
+  <div class="card">
+    <span class="card-badge">#14</span>
+    <h3>Hybrid STT: Deepgram + OpenAI Realtime API</h3>
+    <span class="subtitle">Switch STT engines mid-call based on data sensitivity and accuracy requirements</span>
+    <p><span class="label-decision">Decision</span> Use Deepgram for general conversation and OpenAI Realtime API for sensitive PII collection (authentication, credit card numbers). The system dynamically switches between the two mid-call.</p>
+    <p><span class="label-why">Why</span> Deepgram excels at streaming conversational speech (fast, cheap, great endpointing), but structured data like phone numbers, dates of birth, policy numbers, and credit card numbers require higher accuracy. OpenAI Realtime API hears raw audio directly — no intermediate STT errors — and uses function calling to extract structured fields with high precision.</p>
+    <ul>
+      <li><strong>Normal flow</strong>: Twilio audio → Deepgram STT (streaming) → LangGraph → ElevenLabs TTS → Twilio. Fast, low-cost, great for open conversation.</li>
+      <li><strong>PII collection flow</strong>: Twilio audio → OpenAI Realtime API (STT + LLM combined) → structured extraction → back to normal flow. Higher accuracy for digits and names.</li>
+      <li>Controlled via <code>AUTH_MODE=realtime</code> setting. When active, the WebSocket handler routes audio to OpenAI Realtime during authentication, then seamlessly switches back to Deepgram + LangGraph after auth completes.</li>
+      <li>OpenAI Realtime handles its own VAD, clarifications, and corrections in-context — the model can ask "Did you say 4-5-7 or 4-5-9?" without round-tripping through a separate LLM.</li>
+      <li><strong>Cost trade-off</strong>: OpenAI Realtime is ~6x more expensive than Deepgram (~$0.06/min vs ~$0.01/min), but it's only active for ~30-60 seconds per call during PII collection. Total cost impact: negligible.</li>
+      <li><strong>Extensible pattern</strong>: The same switching mechanism can be applied to any node that needs high-accuracy structured input — credit card numbers in the payment node, addresses in the contact update node, etc.</li>
+      <li><strong>Security benefit</strong>: PII audio goes through a separate pipeline, making it easier to isolate, audit, and apply compliance controls (e.g., PCI DSS for payment card data).</li>
+    </ul>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- ARCHITECTURE DIAGRAM                                          -->
+  <!-- ============================================================ -->
+  <div class="diagram-section" id="diagram">
+    <h2>Architecture Diagram</h2>
+    <div class="diagram-box">
+<pre style="background:none;border:none;margin:0;padding:0;color:inherit;text-align:left;display:inline-block;">
+<span class="flow-accent">                          UIC IVR — Streaming Voice Pipeline</span>
+<span class="flow-accent">                          (Hybrid STT: Deepgram + OpenAI Realtime)</span>
+
+<span class="flow-yellow">  Caller</span>                                                                      <span class="flow-yellow">Caller</span>
+    |                                                                            ^
+    |  PSTN Call                                                      Audio Out  |
+    v                                                                            |
+<span class="flow-blue">+--------+</span>      WebSocket         <span class="flow-green">+--------------+</span>      Streaming      <span class="flow-blue">+--------+</span>
+<span class="flow-blue">| Twilio |</span> ----(Media Stream)---&gt; <span class="flow-green">| Deepgram STT |</span> -----(text)------&gt; |        |
+<span class="flow-blue">|  SIP   |</span>         |              <span class="flow-green">| (streaming)  |</span>                    |        |
+<span class="flow-blue">+--------+</span>         |              <span class="flow-green">+--------------+</span>                    |        |
+    ^              |                                                   |        |
+    |              |  <span class="flow-yellow">AUTH_MODE=realtime</span>                                |  Lang  |
+    |              |  <span class="flow-yellow">(PII collection)</span>                                  | <span class="flow-purple"> Graph </span>|
+    |              |                                                   |        |
+    |              |              <span class="flow-yellow">+------------------+</span>                |        |
+    |              +-----------&gt; <span class="flow-yellow">| OpenAI Realtime   |</span> --(struct)---&gt; |        |
+    |                            <span class="flow-yellow">| API (STT+LLM)    |</span>                |        |
+    |                            <span class="flow-yellow">| Phone, DOB, Name |</span>                |        |
+    |                            <span class="flow-yellow">| CC#, Policy#     |</span>                |        |
+    |              &lt;----------- <span class="flow-yellow">| + built-in TTS   |</span>                |        |
+    |              audio out     <span class="flow-yellow">+------------------+</span>                |        |
+    |                                                                  |        |
+<span class="flow-blue">+--------+</span>                        <span class="flow-pink">+--------------+</span>                    |        |
+<span class="flow-blue">| Twilio |</span> &lt;--(streaming audio)--- <span class="flow-pink">| ElevenLabs   |</span> &lt;----(text)------- |        |
+<span class="flow-blue">|  SIP   |</span>                        <span class="flow-pink">| TTS (stream) |</span>                    |        |
+<span class="flow-blue">+--------+</span>                        <span class="flow-pink">+--------------+</span>                    +--------+
+                                                                       |      |
+                                                          +------------+      +------------+
+                                                          |                                |
+                                                          v                                v
+                                                   <span class="flow-green">+-----------+</span>                   <span class="flow-accent">+------------+</span>
+                                                   <span class="flow-green">|   Redis   |</span>                   <span class="flow-accent">| PostgreSQL |</span>
+                                                   <span class="flow-green">|  Session  |</span>                   <span class="flow-accent">| Checkpoint |</span>
+                                                   <span class="flow-green">|  State    |</span>                   <span class="flow-accent">| + pgvector |</span>
+                                                   <span class="flow-green">+-----------+</span>                   <span class="flow-accent">+------------+</span>
+
+<span class="flow-yellow">    Call Flow:</span>
+      <span class="flow-green">Conversation:</span>  Twilio → <span class="flow-green">Deepgram STT</span> → LangGraph → <span class="flow-pink">ElevenLabs TTS</span> → Twilio
+      <span class="flow-yellow">PII Collection:</span> Twilio → <span class="flow-yellow">OpenAI Realtime</span> (STT+LLM+TTS in one) → LangGraph → resume
+
+<span class="flow-yellow">    LangGraph Nodes:</span>   [Router] --&gt; [Auth Guard] --&gt; [Service Node] --&gt; [Response]
+<span class="flow-blue">    LLM Tiers:</span>         <span class="flow-green">Fast/Cheap (Groq)</span>              <span class="flow-purple">Capable (Bedrock/Claude)</span>
+</pre>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- INTERVIEW QUESTIONS                                           -->
+  <!-- ============================================================ -->
+  <div class="table-section" id="interview">
+    <h2>Common Interview Questions</h2>
+    <table>
+      <thead>
+        <tr>
+          <th style="width:35%;">Question</th>
+          <th>Key Point</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>"Why not use Amazon Connect?"</td>
+          <td>Amazon Connect is a full CCaaS (Contact Center as a Service) — it provides less control over LLM integration, makes it harder to customize authentication flows, and creates vendor lock-in. Building on open components (Twilio + LangGraph + Deepgram) gives full control over every layer of the stack.</td>
+        </tr>
+        <tr>
+          <td>"How do you handle cold starts?"</td>
+          <td>Fargate has no cold start problem like Lambda. ECS tasks are always running and ready to accept connections. STT and TTS WebSocket connections are established at call start, not at container start, so the first call is just as fast as the hundredth.</td>
+        </tr>
+        <tr>
+          <td>"How do you scale?"</td>
+          <td>ECS auto-scaling based on CPU utilization and active connection count. The application is stateless (all state lives in Redis and PostgreSQL), so horizontal scaling works — add more tasks behind the ALB. Each task handles multiple concurrent calls.</td>
+        </tr>
+        <tr>
+          <td>"What about reliability?"</td>
+          <td>Graceful fallbacks at every layer: PostgreSQL checkpointer falls back to in-memory if the database is unreachable. RAG retrieval falls back to canned FAQ responses. Groq (primary LLM) falls back to Bedrock as a backup provider. No single failure takes down the system.</td>
+        </tr>
+        <tr>
+          <td>"Security?"</td>
+          <td>Twilio request signature validation on all webhooks. AWS Secrets Manager for all API keys (never in environment variables or code). VPC security groups restrict access — RDS and Redis have no public endpoints. All traffic is encrypted in transit (TLS/WSS).</td>
+        </tr>
+        <tr>
+          <td>"Why Groq over OpenAI for LLM?"</td>
+          <td>Groq offers sub-200ms inference on Llama models — critical for voice latency where every millisecond counts. OpenAI's GPT models have higher latency (400-800ms typical). OpenAI is used only for generating embeddings (where latency is less critical, and quality matters more).</td>
+        </tr>
+        <tr>
+          <td>"Why ElevenLabs over Amazon Polly?"</td>
+          <td>ElevenLabs provides significantly more natural-sounding voices with lower latency streaming. The voice quality difference is immediately noticeable to callers. Polly is cheaper per character but sounds more robotic, which undermines the "conversational AI" experience the IVR is designed to deliver.</td>
+        </tr>
+        <tr>
+          <td>"Why use two different STT engines?"</td>
+          <td>Deepgram is optimized for fast, streaming conversational speech at low cost. But for structured data (phone numbers, DOB, credit card numbers), accuracy matters more than speed. OpenAI Realtime API processes raw audio with an LLM that can use function calling to extract exact digits — no intermediate transcription errors. The system switches dynamically mid-call: Deepgram for conversation, Realtime for PII collection, then back. Cost impact is minimal since Realtime is only active for ~30-60 seconds per call.</td>
+        </tr>
+        <tr>
+          <td>"How do you handle call failures mid-conversation?"</td>
+          <td>The LangGraph checkpointer saves the full graph state after each node transition. On reconnect or retry, the graph can resume from the last successful checkpoint — the caller does not have to re-authenticate or repeat information. Redis session TTL (configurable, typically 30 minutes) handles automatic cleanup of abandoned calls.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+</div><!-- end container -->
+
+<div class="footer">
+  US Insurance Company (UIC) &mdash; IVR Architecture Decisions &amp; Interview Guide
+</div>
+
+</body>
+</html>

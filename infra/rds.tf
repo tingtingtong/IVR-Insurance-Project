@@ -9,7 +9,7 @@ resource "aws_db_instance" "main" {
   identifier     = "${var.project}-postgres"
   engine         = "postgres"
   engine_version = "16.4"
-  instance_class = "db.t4g.micro"
+  instance_class = var.db_instance_class
 
   allocated_storage = 20
   storage_type      = "gp3"
