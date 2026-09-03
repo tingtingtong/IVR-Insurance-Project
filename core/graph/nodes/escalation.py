@@ -14,6 +14,8 @@ async def escalation_node(state: CNOState) -> dict:
     call_sid  = state.get("call_sid", "unknown")
     auth_step = state.get("auth_step", "")
 
+    log_event(call_sid, "node_enter", node="escalation", auth_step=auth_step)
+
     if auth_step == "failed":
         tts = PROMPTS["escalation"]["max_attempts"]
     else:

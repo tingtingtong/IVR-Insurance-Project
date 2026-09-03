@@ -14,6 +14,7 @@ Return semantics of ensure_authenticated():
 """
 from core.graph.state import CNOState
 from core.graph.nodes.auth import auth_node
+from utils.call_logger import log_event
 
 
 async def ensure_authenticated(
@@ -31,10 +32,16 @@ async def ensure_authenticated(
     """
     authenticated  = state.get("authenticated", False)
     caller_persona = state.get("caller_persona", "")
+    call_sid       = state.get("call_sid", "unknown")
 
     # Fully authenticated with persona — green light for the service node
     if authenticated and caller_persona:
+        log_event(call_sid, "auth_guard", node=node_name, result="already_authenticated",
+                  persona=caller_persona)
         return (True, None)
+
+    log_event(call_sid, "auth_guard", node=node_name, result="auth_needed",
+              auth_step=state.get("auth_step", "collecting_phone"))
 
     # Auth needed — run auth node to advance the state machine one step
     auth_result = await auth_node(state)
@@ -47,13 +54,18 @@ async def ensure_authenticated(
         # already generated the appropriate "I can connect you with a rep" TTS.
         if auth_result.get("caller_persona") == "other":
             auth_result["active_flow"] = ""
+            log_event(call_sid, "auth_guard", node=node_name, result="persona_other_blocked")
             return (False, auth_result)
         # Normal completion — service node may proceed immediately (same turn)
+        log_event(call_sid, "auth_guard", node=node_name, result="auth_just_completed",
+                  persona=auth_result.get("caller_persona", ""))
         return (True, auth_result)
 
     # Auth still in progress — keep active_flow pointing here so the router
     # routes the next PII utterance back to this service node.
     auth_result["active_flow"] = node_name
+    log_event(call_sid, "auth_guard", node=node_name, result="auth_in_progress",
+              auth_step=auth_result.get("auth_step", ""))
     return (False, auth_result)
 
 

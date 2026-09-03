@@ -115,6 +115,9 @@ async def gather_speech(request: Request):
 
     log.info("speech_received", call_sid=call_sid,
              transcript=transcript, confidence=confidence)
+    log_event(call_sid, "stt_result", transcript=transcript[:80],
+              confidence=float(confidence) if confidence else 0.0,
+              chars=len(transcript))
 
     if not transcript:
         return Response(
@@ -125,6 +128,9 @@ async def gather_speech(request: Request):
     add_call_turn(call_sid, "human", transcript)
 
     try:
+        import time as _time
+        t_graph = _time.time()
+
         # Build graph input — always include the new message.
         graph_input = {"messages": [HumanMessage(content=transcript)], "call_sid": call_sid}
 
@@ -147,6 +153,7 @@ async def gather_speech(request: Request):
             config={"configurable": {"thread_id": call_sid}},
         )
 
+        graph_latency = int((_time.time() - t_graph) * 1000)
         tts_text     = result.get("tts_text", "")
         transfer_to  = result.get("transfer_to", "")
         current_node = result.get("current_node", "")
@@ -155,6 +162,9 @@ async def gather_speech(request: Request):
 
         log_event(call_sid, "graph_result", node=current_node, intent=intent,
                   auth_step=auth_step, authenticated=result.get("authenticated", False),
+                  caller_persona=result.get("caller_persona", ""),
+                  active_flow=result.get("active_flow", ""),
+                  graph_latency_ms=graph_latency,
                   tts_preview=tts_text[:80] if tts_text else "")
 
         update_call_metadata(call_sid, result)

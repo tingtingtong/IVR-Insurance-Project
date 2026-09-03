@@ -44,6 +44,9 @@ async def privacy_node(state: CNOState) -> dict:
     last_human = _last_human(messages)
     step = otp_data.get("privacy_step", "read_script")
 
+    log_event(call_sid, "node_enter", node="privacy", step=step,
+              input=last_human[:40] if last_human else "")
+
     # ── Step 1: Read privacy disclosure + GLBA opt-out script ───────────────
     # ISSUE-3-002 fix: prepend the brief general disclosure before the GLBA script
     # so callers who ask "how do you use my information" receive an actual answer

@@ -25,7 +25,11 @@ async def loan_node(state: CNOState) -> dict:
     call_sid      = state.get("call_sid", "unknown")
     policy_number = customer.get("policyNumber", "")
 
+    log_event(call_sid, "node_enter", node="loan")
+
     result = await loan_inquiry(policy_number, access_token)
+    log_event(call_sid, "api_call", node="loan", api="loan_inquiry",
+              success=result["success"])
     if not result["success"]:
         return merge_auth_state(auth_state, {"tts_text": PROMPTS["escalation"]["error"], "current_node": "loan", "active_flow": ""})
 
@@ -35,12 +39,15 @@ async def loan_node(state: CNOState) -> dict:
     payoff   = data.get("PayoffAmount", "0")
     context  = f"Loan balance: ${balance}. Accrued interest: ${interest}. Payoff amount: ${payoff}."
 
+    t_llm = time.time()
     response = await _llm.ainvoke([
         SystemMessage(content=CNO_SYSTEM_PROMPT),
         *messages[-4:],
         HumanMessage(content=f"Loan data: {context}\nGenerate a concise voice response."),
     ])
     tts = response.content.strip()
+    log_event(call_sid, "llm_response", node="loan",
+              latency_ms=int((time.time() - t_llm) * 1000), chars=len(tts))
     log_event(call_sid, "node_exit", node="loan",
               latency_ms=int((time.time() - t0) * 1000), chars=len(tts))
     return merge_auth_state(auth_state, {"tts_text": tts, "current_node": "loan", "active_flow": "", "messages": [AIMessage(content=tts)]})

@@ -239,7 +239,9 @@ async def router_node(state: CNOState) -> dict:
 
     # ── LLM intent classification (with retry for transient Groq errors) ──────
     # ISSUE-3-001 fix: added _invoke_llm_with_retry wrapper — see docstring above.
+    import time as _time
     prompt = ROUTER_PROMPT.format(utterance=last_human)
+    t_llm = _time.time()
 
     try:
         response = await _invoke_llm_with_retry([
@@ -257,6 +259,9 @@ async def router_node(state: CNOState) -> dict:
         intent = classified[0]
         # Queue remaining intents for later processing
         pending = classified[1:] if len(classified) > 1 else []
+        log_event(call_sid, "llm_response", node="router",
+                  latency_ms=int((_time.time() - t_llm) * 1000),
+                  raw=raw[:60], classified=classified)
     except Exception:
         # All retry attempts exhausted — fall back to active flow or escalate
         # so the caller is handled gracefully rather than getting a 500 error.

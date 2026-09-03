@@ -39,6 +39,9 @@ async def otp_node(state: CNOState) -> dict:
     policy_number = customer.get("policyNumber", "")
     last_human = _last_human(messages)
 
+    log_event(call_sid, "node_enter", node="otp", step=otp_step,
+              input=last_human[:40] if last_human else "")
+
     # ── Step: Start — ask payment type ───────────────────────────────────────
     if otp_step == "start":
         return merge_auth_state(auth_state, {

@@ -40,6 +40,9 @@ async def document_node(state: CNOState) -> dict:
     last_human = _last_human(messages)
     step = otp_data.get("doc_step", "ask_doc_type")
 
+    log_event(call_sid, "node_enter", node="document", step=step,
+              input=last_human[:40] if last_human else "")
+
     # ── Ask document type ─────────────────────────────────────────────────────
     if step == "ask_doc_type":
         types = ", ".join(DOCUMENT_TYPES.values())

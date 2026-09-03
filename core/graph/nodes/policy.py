@@ -26,6 +26,8 @@ async def policy_node(state: CNOState) -> dict:
     messages     = state.get("messages", [])
     call_sid     = state.get("call_sid", "unknown")
 
+    log_event(call_sid, "node_enter", node="policy")
+
     policy_number = customer.get("policyNumber", "")
     if not policy_number:
         return merge_auth_state(auth_state, {
@@ -35,6 +37,8 @@ async def policy_node(state: CNOState) -> dict:
         })
 
     result = await holding_inquiry(policy_number, access_token)
+    log_event(call_sid, "api_call", node="policy", api="holding_inquiry",
+              success=result["success"], error=result.get("error", "")[:60] if not result["success"] else "")
 
     if not result["success"]:
         return merge_auth_state(auth_state, {
@@ -46,6 +50,7 @@ async def policy_node(state: CNOState) -> dict:
     context = _format_policy_context(data, customer)
 
     # Use LLM to generate a natural voice response from the API data
+    t_llm = time.time()
     response = await _llm.ainvoke([
         SystemMessage(content=CNO_SYSTEM_PROMPT),
         *messages[-4:],  # last 2 turns for context
@@ -53,6 +58,8 @@ async def policy_node(state: CNOState) -> dict:
     ])
 
     tts = response.content.strip()
+    log_event(call_sid, "llm_response", node="policy",
+              latency_ms=int((time.time() - t_llm) * 1000), chars=len(tts))
     log_event(call_sid, "node_exit", node="policy",
               latency_ms=int((time.time() - t0) * 1000), chars=len(tts))
     return merge_auth_state(auth_state, {

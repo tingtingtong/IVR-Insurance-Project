@@ -26,6 +26,8 @@ async def payment_node(state: CNOState) -> dict:
     messages     = state.get("messages", [])
     call_sid     = state.get("call_sid", "unknown")
 
+    log_event(call_sid, "node_enter", node="payment")
+
     policy_number = customer.get("policyNumber", "")
     if not policy_number:
         return merge_auth_state(auth_state, {
@@ -34,6 +36,8 @@ async def payment_node(state: CNOState) -> dict:
         })
 
     result = await payment_history(policy_number, access_token)
+    log_event(call_sid, "api_call", node="payment", api="payment_history",
+              success=result["success"], txn_count=len(result.get("transactions", [])))
 
     if not result["success"]:
         return merge_auth_state(auth_state, {
@@ -44,6 +48,7 @@ async def payment_node(state: CNOState) -> dict:
     transactions = result["transactions"]
     context = _format_transactions(transactions)
 
+    t_llm = time.time()
     response = await _llm.ainvoke([
         SystemMessage(content=CNO_SYSTEM_PROMPT),
         *messages[-4:],
@@ -51,6 +56,8 @@ async def payment_node(state: CNOState) -> dict:
     ])
 
     tts = response.content.strip()
+    log_event(call_sid, "llm_response", node="payment",
+              latency_ms=int((time.time() - t_llm) * 1000), chars=len(tts))
     # Append mandatory payment posting disclosure (GROUP G4)
     tts += f" {PROMPTS['payment_disclosure']}"
 

@@ -33,6 +33,9 @@ async def contact_node(state: CNOState) -> dict:
     last_human = _last_human(messages)
     step = otp_data.get("contact_step", "ask_what_to_change")
 
+    log_event(call_sid, "node_enter", node="contact", step=step,
+              input=last_human[:40] if last_human else "")
+
     # ── Cancel / exit detected at any step except confirming ─────────────────
     # At "confirming" step a bare "no" means correction, not cancellation
     if step != "ask_what_to_change" and step != "confirming" and _is_cancel(last_human):
@@ -165,6 +168,8 @@ async def contact_node(state: CNOState) -> dict:
 
 
 async def _submit_contact_change(customer: dict, data: dict, access_token: str) -> bool:
+    import structlog
+    _clog = structlog.get_logger()
     url = f"{settings.cno_api_base_url}/contact/update"
     headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
     payload = {
@@ -176,8 +181,11 @@ async def _submit_contact_change(customer: dict, data: dict, access_token: str) 
         async with aiohttp.ClientSession() as session:
             async with session.post(url, json=payload, headers=headers,
                                     timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                return resp.status in (200, 201)
-    except Exception:
+                success = resp.status in (200, 201)
+                _clog.info("api_contact_update", status=resp.status, success=success)
+                return success
+    except Exception as exc:
+        _clog.error("api_contact_update_error", error=str(exc)[:100])
         return False
 
 

@@ -32,6 +32,107 @@ async def get_call_events(call_sid: str):
     return JSONResponse({"call_sid": call_sid, "events": call.get("events", [])})
 
 
+@router.get("/analytics")
+async def api_analytics():
+    """Aggregate analytics across all calls — auto-detect issues."""
+    from services.conversation_store import get_calls
+    calls = get_calls()
+    total = len(calls)
+    active = sum(1 for c in calls if c.get("status") == "active")
+    ended = total - active
+
+    # Issue detection
+    issues = []
+    auth_failures = 0
+    escalations = 0
+    stt_low_confidence = 0
+    avg_turns = 0
+    intent_counts: dict[str, int] = {}
+    node_counts: dict[str, int] = {}
+    auth_step_failures: dict[str, int] = {}
+    total_graph_latency = 0
+    graph_latency_count = 0
+
+    for c in calls:
+        events = c.get("events", [])
+        turns = c.get("turns", [])
+        avg_turns += len(turns)
+        call_sid = c.get("call_sid", "")
+
+        # Track intents
+        for h in c.get("intent_history", []):
+            intent_counts[h] = intent_counts.get(h, 0) + 1
+
+        for ev in events:
+            et = ev.get("event_type", "")
+
+            # Auth failures
+            if et == "auth_failed":
+                auth_failures += 1
+                step = ev.get("auth_step", "unknown")
+                auth_step_failures[step] = auth_step_failures.get(step, 0) + 1
+                issues.append({"call_sid": call_sid, "type": "auth_failure",
+                    "detail": f"Auth failed at step: {step}, attempts: {ev.get('attempts', '?')}"})
+
+            # Escalations
+            if et == "node_enter" and ev.get("node") == "escalation":
+                escalations += 1
+
+            # STT low confidence
+            if et == "stt_result":
+                conf = ev.get("confidence", 1.0)
+                if isinstance(conf, (int, float)) and conf < 0.7:
+                    stt_low_confidence += 1
+                    issues.append({"call_sid": call_sid, "type": "stt_low_confidence",
+                        "detail": f"STT confidence {conf:.2f}: '{ev.get('transcript', '')[:50]}'"})
+
+            # Graph latency spikes
+            if et == "graph_result":
+                lat = ev.get("graph_latency_ms", 0)
+                if lat:
+                    total_graph_latency += lat
+                    graph_latency_count += 1
+                if lat > 5000:
+                    issues.append({"call_sid": call_sid, "type": "slow_graph",
+                        "detail": f"Graph took {lat}ms (node={ev.get('node', '')})"})
+
+            # API errors
+            if et == "api_call" and not ev.get("success"):
+                issues.append({"call_sid": call_sid, "type": "api_error",
+                    "detail": f"API {ev.get('api', '?')} failed in {ev.get('node', '?')}: {ev.get('error', '')[:50]}"})
+
+            # DOB mismatch
+            if et == "auth_detail" and ev.get("action") == "dob_mismatch":
+                issues.append({"call_sid": call_sid, "type": "dob_mismatch",
+                    "detail": f"DOB mismatch attempt {ev.get('attempt', '?')}"})
+
+            # Track nodes
+            if et == "node_enter":
+                n = ev.get("node", "")
+                if n:
+                    node_counts[n] = node_counts.get(n, 0) + 1
+
+    avg_latency = int(total_graph_latency / graph_latency_count) if graph_latency_count else 0
+    avg_turns_per_call = round(avg_turns / total, 1) if total else 0
+
+    return JSONResponse({
+        "summary": {
+            "total_calls": total,
+            "active_calls": active,
+            "ended_calls": ended,
+            "auth_failures": auth_failures,
+            "escalations": escalations,
+            "stt_low_confidence": stt_low_confidence,
+            "avg_graph_latency_ms": avg_latency,
+            "avg_turns_per_call": avg_turns_per_call,
+        },
+        "intent_distribution": intent_counts,
+        "node_usage": node_counts,
+        "auth_step_failures": auth_step_failures,
+        "issues": issues[-50:],  # last 50 issues
+    })
+
+
 @router.get("/config")
 async def api_config():
     from config import settings
@@ -497,6 +598,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;backgrou
   <div class="tab" data-pane="code">Codebase</div>
   <div class="tab" data-pane="graph">Graph</div>
   <div class="tab" data-pane="logs">Live Logs</div>
+  <div class="tab" data-pane="analytics">Analytics</div>
   <div class="tab" data-pane="cfg">⚙️ Config</div>
 </div>
 
@@ -852,6 +954,46 @@ collecting_name → LLM extract_name() → check_auth_success(phone + name)
       <button class="lbtn" onclick="document.getElementById('logbox').innerHTML='';lc=0;updateLc()">Clear</button>
     </div>
     <div id="logbox"></div>
+  </div>
+</div>
+
+<!-- ANALYTICS -->
+<div class="pane" id="pane-analytics">
+  <div style="padding:24px">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px">
+      <h2 style="margin:0;color:#e2e8f0">Call Analytics & Issue Detection</h2>
+      <button onclick="loadAnalytics()" style="background:#334155;color:#e2e8f0;border:none;border-radius:6px;padding:5px 14px;font-size:12px;cursor:pointer">Refresh</button>
+    </div>
+
+    <!-- Summary cards -->
+    <div id="analytics-summary" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:24px"></div>
+
+    <!-- Two-column layout for distributions -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px">
+      <div>
+        <h3 style="color:#94a3b8;margin:0 0 12px;font-size:13px;text-transform:uppercase;letter-spacing:1px">Intent Distribution</h3>
+        <div id="analytics-intents" style="background:#1e293b;border-radius:8px;padding:16px"></div>
+      </div>
+      <div>
+        <h3 style="color:#94a3b8;margin:0 0 12px;font-size:13px;text-transform:uppercase;letter-spacing:1px">Node Usage</h3>
+        <div id="analytics-nodes" style="background:#1e293b;border-radius:8px;padding:16px"></div>
+      </div>
+    </div>
+
+    <!-- Issues table -->
+    <h3 style="color:#94a3b8;margin:0 0 12px;font-size:13px;text-transform:uppercase;letter-spacing:1px">Detected Issues</h3>
+    <div id="analytics-issues" style="background:#1e293b;border-radius:8px;overflow:hidden">
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead>
+          <tr style="background:#334155;color:#94a3b8;text-align:left">
+            <th style="padding:8px 12px">Type</th>
+            <th style="padding:8px 12px">Call SID</th>
+            <th style="padding:8px 12px">Detail</th>
+          </tr>
+        </thead>
+        <tbody id="analytics-issues-body"></tbody>
+      </table>
+    </div>
   </div>
 </div>
 
@@ -1588,6 +1730,83 @@ async function loadConfig() {
 // Load config when tab clicked; allow refresh via button
 document.querySelectorAll('.tab').forEach(t => {
   if (t.dataset.pane === 'cfg') t.addEventListener('click', loadConfig);
+});
+
+// ── Analytics ─────────────────────────────────────────────────
+async function loadAnalytics() {
+  try {
+    const r = await fetch('/dashboard/analytics');
+    const d = await r.json();
+
+    // Summary cards
+    const s = d.summary;
+    const cards = [
+      {label:'Total Calls', value:s.total_calls, color:'#3b82f6'},
+      {label:'Active', value:s.active_calls, color:'#22c55e'},
+      {label:'Auth Failures', value:s.auth_failures, color:s.auth_failures>0?'#ef4444':'#64748b'},
+      {label:'Escalations', value:s.escalations, color:s.escalations>0?'#f59e0b':'#64748b'},
+      {label:'Low STT Conf.', value:s.stt_low_confidence, color:s.stt_low_confidence>0?'#f97316':'#64748b'},
+      {label:'Avg Latency', value:s.avg_graph_latency_ms+'ms', color:s.avg_graph_latency_ms>3000?'#ef4444':'#64748b'},
+      {label:'Avg Turns/Call', value:s.avg_turns_per_call, color:'#64748b'},
+    ];
+    document.getElementById('analytics-summary').innerHTML = cards.map(c =>
+      `<div style="background:#1e293b;border-radius:8px;padding:16px;border-left:3px solid ${c.color}">
+        <div style="color:#94a3b8;font-size:11px;text-transform:uppercase;letter-spacing:1px">${c.label}</div>
+        <div style="color:#e2e8f0;font-size:28px;font-weight:700;margin-top:4px">${c.value}</div>
+      </div>`
+    ).join('');
+
+    // Intent distribution bars
+    const maxI = Math.max(...Object.values(d.intent_distribution||{}), 1);
+    document.getElementById('analytics-intents').innerHTML =
+      Object.entries(d.intent_distribution||{}).sort((a,b)=>b[1]-a[1]).map(([k,v]) =>
+        `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+          <span style="width:100px;color:#94a3b8;font-size:11px;text-align:right">${esc(k)}</span>
+          <div style="flex:1;background:#0f172a;border-radius:4px;height:18px;overflow:hidden">
+            <div style="width:${(v/maxI*100).toFixed(1)}%;background:#3b82f6;height:100%;border-radius:4px;transition:width 0.3s"></div>
+          </div>
+          <span style="color:#e2e8f0;font-size:11px;width:30px">${v}</span>
+        </div>`
+      ).join('') || '<div style="color:#64748b;padding:12px">No data</div>';
+
+    // Node usage bars
+    const maxN = Math.max(...Object.values(d.node_usage||{}), 1);
+    document.getElementById('analytics-nodes').innerHTML =
+      Object.entries(d.node_usage||{}).sort((a,b)=>b[1]-a[1]).map(([k,v]) =>
+        `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+          <span style="width:100px;color:#94a3b8;font-size:11px;text-align:right">${esc(k)}</span>
+          <div style="flex:1;background:#0f172a;border-radius:4px;height:18px;overflow:hidden">
+            <div style="width:${(v/maxN*100).toFixed(1)}%;background:#22c55e;height:100%;border-radius:4px;transition:width 0.3s"></div>
+          </div>
+          <span style="color:#e2e8f0;font-size:11px;width:30px">${v}</span>
+        </div>`
+      ).join('') || '<div style="color:#64748b;padding:12px">No data</div>';
+
+    // Issues table
+    const typeColors = {
+      auth_failure:'#ef4444', stt_low_confidence:'#f97316', slow_graph:'#f59e0b',
+      api_error:'#ef4444', dob_mismatch:'#a855f7'
+    };
+    const issues = d.issues || [];
+    document.getElementById('analytics-issues-body').innerHTML = issues.length ?
+      issues.map(i => {
+        const col = typeColors[i.type]||'#64748b';
+        return `<tr style="border-bottom:1px solid #1e293b">
+          <td style="padding:8px 12px"><span style="background:${col}22;color:${col};padding:2px 8px;border-radius:4px;font-size:11px">${esc(i.type)}</span></td>
+          <td style="padding:8px 12px;font-family:monospace;font-size:11px;color:#38bdf8;cursor:pointer" onclick="document.querySelector('[data-pane=calls]').click();selCallFn('${esc(i.call_sid)}')">${esc((i.call_sid||'').slice(-8))}</td>
+          <td style="padding:8px 12px;color:#94a3b8;font-size:11px">${esc(i.detail)}</td>
+        </tr>`;
+      }).join('') :
+      '<tr><td colspan="3" style="padding:20px;text-align:center;color:#64748b">No issues detected</td></tr>';
+
+  } catch(e) {
+    document.getElementById('analytics-summary').innerHTML =
+      '<div style="color:#ef4444;padding:20px">Failed to load analytics: '+esc(e.message)+'</div>';
+  }
+}
+
+document.querySelectorAll('.tab').forEach(t => {
+  if (t.dataset.pane === 'analytics') t.addEventListener('click', loadAnalytics);
 });
 
 // ── Init ──────────────────────────────────────────────────────

@@ -31,6 +31,8 @@ async def beneficiary_node(state: CNOState) -> dict:
     call_sid      = state.get("call_sid", "unknown")
     policy_number = customer.get("policyNumber", "")
 
+    log_event(call_sid, "node_enter", node="beneficiary")
+
     url = f"{settings.cno_api_base_url}/beneficiary/inquiry"
     headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
 
@@ -41,18 +43,25 @@ async def beneficiary_node(state: CNOState) -> dict:
                 body = await resp.json()
                 if resp.status != 200:
                     return merge_auth_state(auth_state, {"tts_text": PROMPTS["escalation"]["error"], "current_node": "beneficiary", "active_flow": ""})
-    except Exception:
+    except Exception as exc:
+        log_event(call_sid, "api_call", node="beneficiary", api="beneficiary_inquiry",
+                  success=False, error=str(exc)[:60])
         return merge_auth_state(auth_state, {"tts_text": PROMPTS["escalation"]["error"], "current_node": "beneficiary", "active_flow": ""})
 
+    log_event(call_sid, "api_call", node="beneficiary", api="beneficiary_inquiry",
+              success=True, count=len(body.get("Beneficiaries", [])))
     beneficiaries = body.get("Beneficiaries", [])
     context = _format_beneficiaries(beneficiaries)
 
+    t_llm = time.time()
     response = await _llm.ainvoke([
         SystemMessage(content=CNO_SYSTEM_PROMPT),
         *messages[-4:],
         HumanMessage(content=f"Beneficiary data:\n{context}\nGenerate a concise voice response. Append the relationship restriction notice."),
     ])
     tts = response.content.strip() + f" {RELATIONSHIP_RESTRICTION}"
+    log_event(call_sid, "llm_response", node="beneficiary",
+              latency_ms=int((time.time() - t_llm) * 1000), chars=len(tts))
     log_event(call_sid, "node_exit", node="beneficiary",
               latency_ms=int((time.time() - t0) * 1000), chars=len(tts))
     return merge_auth_state(auth_state, {"tts_text": tts, "current_node": "beneficiary", "active_flow": "", "messages": [AIMessage(content=tts)]})
