@@ -1,0 +1,1159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UIC IVR — Current Architecture Deep Dive</title>
+<style>
+  /* ── Reset & Base ─────────────────────────────────────────────── */
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    background:#0f172a;color:#e2e8f0;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    line-height:1.7;font-size:15px;
+  }
+
+  /* ── Layout ───────────────────────────────────────────────────── */
+  .container{max-width:1120px;margin:0 auto;padding:0 24px 80px}
+  header{
+    background:linear-gradient(135deg,#0f172a 0%,#1e293b 100%);
+    border-bottom:2px solid #f97316;padding:48px 24px 36px;text-align:center;
+  }
+  header h1{font-size:32px;font-weight:700;color:#f8fafc;letter-spacing:-0.5px}
+  header h1 span{color:#f97316}
+  header .subtitle{color:#94a3b8;font-size:14px;margin-top:6px}
+  header .meta{color:#64748b;font-size:12px;margin-top:12px}
+
+  /* ── Navigation ───────────────────────────────────────────────── */
+  nav{
+    background:#1e293b;border-bottom:1px solid #334155;
+    position:sticky;top:0;z-index:100;overflow-x:auto;white-space:nowrap;
+  }
+  nav .inner{max-width:1120px;margin:0 auto;padding:0 24px;display:flex;gap:0}
+  nav a{
+    display:inline-block;padding:12px 14px;font-size:12px;font-weight:500;
+    color:#94a3b8;text-decoration:none;border-bottom:2px solid transparent;
+    transition:all .2s;flex-shrink:0;
+  }
+  nav a:hover{color:#f8fafc;border-bottom-color:#f97316}
+
+  /* ── Section / Card ───────────────────────────────────────────── */
+  section{margin-top:48px}
+  section > h2{
+    font-size:22px;font-weight:700;color:#f97316;
+    border-bottom:1px solid #334155;padding-bottom:8px;margin-bottom:20px;
+    display:flex;align-items:center;gap:10px;
+  }
+  section > h2 .num{
+    background:#f97316;color:#0f172a;font-size:12px;font-weight:700;
+    width:28px;height:28px;border-radius:50%;display:inline-flex;
+    align-items:center;justify-content:center;flex-shrink:0;
+  }
+  .card{
+    background:#1e293b;border:1px solid #334155;border-radius:12px;
+    padding:24px 28px;margin-bottom:20px;
+  }
+  .card h3{font-size:16px;font-weight:600;color:#38bdf8;margin-bottom:10px}
+  .card h4{font-size:14px;font-weight:600;color:#f97316;margin:16px 0 8px}
+  .card p,.card li{color:#cbd5e1;font-size:14px;line-height:1.75}
+  .card ul,.card ol{padding-left:22px;margin:8px 0}
+  .card li{margin-bottom:4px}
+
+  /* ── Tables ───────────────────────────────────────────────────── */
+  table{width:100%;border-collapse:collapse;margin:12px 0;font-size:13px}
+  th{
+    background:#334155;color:#f97316;text-align:left;padding:10px 14px;
+    font-weight:600;border:1px solid #475569;white-space:nowrap;
+  }
+  td{padding:10px 14px;border:1px solid #334155;color:#cbd5e1;vertical-align:top}
+  tr:nth-child(even) td{background:#1a2536}
+  tr:hover td{background:#263348}
+
+  /* ── Code / Diagrams ──────────────────────────────────────────── */
+  pre{
+    background:#0f172a;border:1px solid #334155;border-radius:8px;
+    padding:18px 20px;overflow-x:auto;font-size:12.5px;line-height:1.65;
+    color:#94a3b8;font-family:"Cascadia Code","Fira Code",monospace;
+    margin:12px 0;
+  }
+  code{
+    font-family:"Cascadia Code","Fira Code",monospace;font-size:13px;
+    background:#334155;padding:2px 6px;border-radius:4px;color:#38bdf8;
+  }
+  pre code{background:none;padding:0;color:inherit}
+  .hl-orange{color:#f97316} .hl-blue{color:#38bdf8} .hl-green{color:#22c55e}
+  .hl-yellow{color:#fbbf24} .hl-purple{color:#a78bfa} .hl-red{color:#ef4444}
+  .hl-dim{color:#64748b}
+
+  /* ── Callout boxes ────────────────────────────────────────────── */
+  .callout{
+    border-left:4px solid #f97316;background:#1a2536;
+    padding:14px 18px;border-radius:0 8px 8px 0;margin:14px 0;
+  }
+  .callout.blue{border-left-color:#38bdf8}
+  .callout.green{border-left-color:#22c55e}
+  .callout.red{border-left-color:#ef4444}
+  .callout strong{color:#f8fafc}
+  .callout p{font-size:13px;color:#94a3b8;margin-top:4px}
+
+  /* ── Responsive ───────────────────────────────────────────────── */
+  @media(max-width:768px){
+    header h1{font-size:22px}
+    .card{padding:16px 18px}
+    pre{font-size:11px;padding:12px}
+    nav a{padding:10px 10px;font-size:11px}
+  }
+</style>
+</head>
+<body>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<!--  HEADER                                                        -->
+<!-- ════════════════════════════════════════════════════════════════ -->
+<header>
+  <h1>UIC IVR — <span>Current Architecture Deep Dive</span></h1>
+  <div class="subtitle">US Insurance Company (UIC) &middot; AI-Powered Conversational IVR for Policy Servicing</div>
+  <div class="meta">Comprehensive technical reference &middot; All 16 subsystems documented &middot; September 2026</div>
+</header>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<!--  NAVIGATION                                                    -->
+<!-- ════════════════════════════════════════════════════════════════ -->
+<nav>
+  <div class="inner">
+    <a href="#s1">1. Overview</a>
+    <a href="#s2">2. Voice Pipeline</a>
+    <a href="#s3">3. Hybrid STT</a>
+    <a href="#s4">4. LangGraph</a>
+    <a href="#s5">5. Intent Router</a>
+    <a href="#s6">6. Auth Flow</a>
+    <a href="#s7">7. Data Layer</a>
+    <a href="#s8">8. RAG Pipeline</a>
+    <a href="#s9">9. External API</a>
+    <a href="#s10">10. Telephony</a>
+    <a href="#s11">11. TTS</a>
+    <a href="#s12">12. AWS Infra</a>
+    <a href="#s13">13. Auto-Scaling</a>
+    <a href="#s14">14. CI/CD</a>
+    <a href="#s15">15. Security</a>
+    <a href="#s16">16. Observability</a>
+  </div>
+</nav>
+
+<div class="container">
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<!--  SECTION 1 — SYSTEM OVERVIEW                                  -->
+<!-- ════════════════════════════════════════════════════════════════ -->
+<section id="s1">
+<h2><span class="num">1</span> System Overview</h2>
+
+<div class="card">
+<h3>What This System Is</h3>
+<p>The UIC IVR is an AI-powered conversational Interactive Voice Response system that replaces traditional menu-tree IVRs with a natural-language, streaming voice interface. Callers speak naturally rather than pressing "1 for policy information, 2 for payments." An LLM classifies intent in real time, a multi-turn authentication state machine verifies identity, and domain-specific service nodes handle each use case (policy lookup, payment, loan inquiry, beneficiary info, document requests, etc.).</p>
+
+<h4>What Makes It Different From Traditional IVR</h4>
+<ul>
+  <li><strong>No menu trees</strong> &mdash; callers state their intent in natural language at any point; the router node classifies it via LLM</li>
+  <li><strong>Real-time streaming audio</strong> &mdash; bidirectional WebSocket audio between Twilio and the server; STT and TTS happen in parallel with sub-second latency</li>
+  <li><strong>Barge-in support</strong> &mdash; WebRTC VAD detects when a caller starts speaking during a TTS response and immediately cancels playback</li>
+  <li><strong>Hybrid STT strategy</strong> &mdash; Deepgram Nova-2 for general conversation; OpenAI Realtime API for authentication PII collection (higher accuracy on digits, dates, names)</li>
+  <li><strong>Graph-based orchestration</strong> &mdash; LangGraph state machine with checkpointing, conditional routing, and auth guards rather than a monolithic conversation loop</li>
+  <li><strong>RAG-grounded FAQ</strong> &mdash; insurance knowledge base in pgvector; answers are grounded in retrieved context, not hallucinated</li>
+</ul>
+</div>
+
+<div class="card">
+<h3>Tech Stack Summary</h3>
+<table>
+  <tr><th>Component</th><th>Technology</th><th>Role</th><th>Why Chosen</th></tr>
+  <tr><td>Framework</td><td>FastAPI + Uvicorn</td><td>HTTP/WebSocket server</td><td>Async-native, WebSocket support, auto-docs</td></tr>
+  <tr><td>Orchestration</td><td>LangGraph</td><td>Conversation state machine</td><td>Built-in checkpointing, conditional edges, typed state</td></tr>
+  <tr><td>LLM (Service)</td><td>Groq (Qwen 27B) or Bedrock (Nova Micro)</td><td>Response generation in service nodes</td><td>Dual-provider: Groq for speed/cost, Bedrock for AWS-native</td></tr>
+  <tr><td>LLM (Router)</td><td>Same, temp=0, max_tokens=20</td><td>Single-word intent classification</td><td>Fast, deterministic classification</td></tr>
+  <tr><td>STT (General)</td><td>Deepgram Nova-2</td><td>Streaming speech-to-text</td><td>Low latency (~200ms), mulaw native, keyword boost</td></tr>
+  <tr><td>STT (Auth PII)</td><td>OpenAI Realtime API</td><td>Audio-native PII extraction</td><td>Function calling on raw audio; no intermediate STT errors</td></tr>
+  <tr><td>TTS</td><td>OpenAI TTS (tts-1 / nova)</td><td>Streaming text-to-speech</td><td>High quality, streaming PCM output, sub-200ms TTFB</td></tr>
+  <tr><td>Telephony</td><td>Twilio Media Streams</td><td>PSTN &harr; WebSocket bridge</td><td>Bidirectional audio streaming, DTMF, call control</td></tr>
+  <tr><td>Session Store</td><td>Redis</td><td>Ephemeral per-call state</td><td>TTL-based expiry, sub-ms reads, graceful fallback to in-memory</td></tr>
+  <tr><td>Database</td><td>PostgreSQL 16.4</td><td>Checkpointer tables, call history, pgvector</td><td>Single DB for all durable data; pgvector avoids a separate vector DB</td></tr>
+  <tr><td>Embeddings</td><td>OpenAI text-embedding-3-small</td><td>FAQ document vectorization</td><td>1536-dim, good quality/cost ratio</td></tr>
+  <tr><td>VAD</td><td>WebRTC VAD (py-webrtcvad)</td><td>Barge-in detection</td><td>Battle-tested, works with 8kHz mulaw after PCM conversion</td></tr>
+  <tr><td>Infrastructure</td><td>AWS (ECS Fargate, RDS, ElastiCache, ALB)</td><td>Production hosting</td><td>Serverless containers, managed Postgres/Redis, auto-scaling</td></tr>
+  <tr><td>IaC</td><td>Terraform</td><td>Infrastructure provisioning</td><td>Declarative, state-locked, environment-parameterized</td></tr>
+  <tr><td>CI/CD</td><td>GitHub Actions</td><td>Test, build, deploy pipeline</td><td>Native GitHub integration, environment secrets</td></tr>
+</table>
+</div>
+
+<div class="card">
+<h3>End-to-End Call Flow Narrative</h3>
+<pre><code><span class="hl-dim">1.</span> <span class="hl-orange">Caller dials</span> UIC phone number (Twilio PSTN)
+<span class="hl-dim">2.</span> Twilio hits <span class="hl-blue">POST /webhook/voice</span> &rarr; TwiML starts Media Stream to <span class="hl-blue">wss://server/stream</span>
+<span class="hl-dim">3.</span> <span class="hl-green">CallHandler._on_start()</span> initializes Redis session, starts Deepgram STT connection
+<span class="hl-dim">4.</span> Greeting TTS plays: "Thank you for calling. How can I help you today?"
+<span class="hl-dim">5.</span> <span class="hl-orange">Caller speaks</span> &rarr; mulaw audio streams through WebSocket &rarr; Deepgram transcribes
+<span class="hl-dim">6.</span> Final transcript fires <span class="hl-green">_on_transcript()</span> &rarr; <span class="hl-green">_process_turn()</span>
+<span class="hl-dim">7.</span> LangGraph <span class="hl-blue">graph.ainvoke()</span>:
+     <span class="hl-dim">a.</span> <span class="hl-purple">Router node</span> classifies intent (e.g. "policy_info")
+     <span class="hl-dim">b.</span> Conditional edge routes to <span class="hl-purple">policy node</span>
+     <span class="hl-dim">c.</span> <span class="hl-yellow">Auth guard</span> checks authentication &mdash; not authenticated yet
+     <span class="hl-dim">d.</span> <span class="hl-yellow">Auth node</span> runs: asks for phone number
+     <span class="hl-dim">e.</span> Returns tts_text + active_flow="policy"
+<span class="hl-dim">8.</span> TTS streams auth prompt to caller via ElevenLabs/OpenAI &rarr; mulaw &rarr; Twilio
+<span class="hl-dim">9.</span> <span class="hl-orange">Multi-turn auth loop</span>: phone &rarr; party_search &rarr; DOB &rarr; name &rarr; 2-PII match
+<span class="hl-dim">10.</span> Auth complete &rarr; token acquired &rarr; caller persona identified
+<span class="hl-dim">11.</span> <span class="hl-green">Service node executes</span>: calls holding_inquiry API &rarr; LLM generates response
+<span class="hl-dim">12.</span> TTS speaks policy info: "Your policy is active. Premium is $45.00 monthly..."
+<span class="hl-dim">13.</span> "Is there anything else?" &rarr; caller says "no" &rarr; <span class="hl-purple">goodbye node</span> &rarr; hangup</code></pre>
+</div>
+
+<!-- Full System Architecture Diagram -->
+<div class="card">
+<h3>Full System Architecture Diagram</h3>
+<pre><code>
+<span class="hl-orange">                    UIC IVR &mdash; Full System Architecture</span>
+
+<span class="hl-yellow">  CALLER (PSTN / Browser Softphone)</span>
+       |
+       v
+<span class="hl-blue">+------------------+</span>          <span class="hl-blue">+-------------------+</span>
+<span class="hl-blue">|   Twilio PSTN    |</span>  &lt;----&gt; <span class="hl-blue">| Twilio Media      |</span>
+<span class="hl-blue">|   Gateway        |</span>          <span class="hl-blue">| Streams (WSS)     |</span>
+<span class="hl-blue">+------------------+</span>          <span class="hl-blue">+--------+----------+</span>
+                                        |
+                          mulaw 8kHz bidirectional audio
+                                        |
+                                        v
+<span class="hl-green">+===================================================================+</span>
+<span class="hl-green">|                    FastAPI Application (port 8000)                 |</span>
+<span class="hl-green">|                                                                   |</span>
+<span class="hl-green">|  +------------------+    +------------------+    +--------------+ |</span>
+<span class="hl-green">|  | /webhook/voice   |    | /stream (WS)     |    | /client      | |</span>
+<span class="hl-green">|  | TwiML + Gather   |    | CallHandler      |    | Softphone    | |</span>
+<span class="hl-green">|  +------------------+    +--------+---------+    +--------------+ |</span>
+<span class="hl-green">|                                   |                               |</span>
+<span class="hl-green">|          +------------------------+------------------------+      |</span>
+<span class="hl-green">|          |                        |                        |      |</span>
+<span class="hl-green">|  +-------v--------+    +----------v---------+    +--------v---+ |</span>
+<span class="hl-green">|  | <span class="hl-blue">Deepgram STT</span>    |    | <span class="hl-purple">LangGraph Engine</span>   |    | <span class="hl-yellow">TTS Service</span>| |</span>
+<span class="hl-green">|  | Nova-2 Stream   |    | StateGraph +       |    | OpenAI/11L | |</span>
+<span class="hl-green">|  | mulaw native    |    | Checkpointer       |    | PCM &rarr; mulaw| |</span>
+<span class="hl-green">|  +-----------------+    +----+----+----+-----+    +------------+ |</span>
+<span class="hl-green">|                              |    |    |                          |</span>
+<span class="hl-green">|          +-------------------+    |    +-------------------+      |</span>
+<span class="hl-green">|          |                        |                        |      |</span>
+<span class="hl-green">|  +-------v--------+    +----------v---------+    +--------v---+ |</span>
+<span class="hl-green">|  | <span class="hl-orange">Router Node</span>     |    | <span class="hl-orange">Auth Node</span>          |    | <span class="hl-orange">Service</span>    | |</span>
+<span class="hl-green">|  | LLM classifier  |    | PII state machine  |    | <span class="hl-orange">Nodes</span>      | |</span>
+<span class="hl-green">|  | (temp=0, 20tok) |    | 2-factor verify    |    | policy,pay | |</span>
+<span class="hl-green">|  +-----------------+    +--------------------+    | loan,faq.. | |</span>
+<span class="hl-green">|                                                   +------+-----+ |</span>
+<span class="hl-green">|          +--------------------+                         |        |</span>
+<span class="hl-green">|          | <span class="hl-purple">OpenAI Realtime</span>    |    +----------------------+        |</span>
+<span class="hl-green">|          | Auth (optional)    |    |                              |</span>
+<span class="hl-green">|          | pcm16 24kHz &harr; WS  |    v                              |</span>
+<span class="hl-green">|          +--------------------+  <span class="hl-blue">Mock API Sidecar :8001</span>          |</span>
+<span class="hl-green">|                                  party_search, auth_token        |</span>
+<span class="hl-green">|  +-------------+   +----------+  holding_inquiry, payment        |</span>
+<span class="hl-green">|  | <span class="hl-yellow">VAD Service</span>  |   | <span class="hl-yellow">Session</span>  |  beneficiary, loan              |</span>
+<span class="hl-green">|  | WebRTC barge |   | <span class="hl-yellow">Service</span>  |                                  |</span>
+<span class="hl-green">|  | -in detect   |   | Redis IO |                                  |</span>
+<span class="hl-green">|  +-------------+   +-----+----+                                  |</span>
+<span class="hl-green">+===========================|==========================================+</span>
+                            |
+          +-----------------+------------------+
+          |                                    |
+  <span class="hl-red">+-------v--------+              +----------v---------+</span>
+  <span class="hl-red">|   Redis 7.1    |</span>              <span class="hl-red">|   PostgreSQL 16.4  |</span>
+  <span class="hl-red">| Session state  |</span>              <span class="hl-red">| Checkpointer       |</span>
+  <span class="hl-red">| TTL=3600s      |</span>              <span class="hl-red">| Call history (JSONB)|</span>
+  <span class="hl-red">| DB 0=dev, 1=prod|</span>             <span class="hl-red">| pgvector (FAQ RAG) |</span>
+  <span class="hl-red">+----------------+</span>              <span class="hl-red">+--------------------+</span>
+</code></pre>
+</div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<!--  SECTION 2 — VOICE PIPELINE                                   -->
+<!-- ════════════════════════════════════════════════════════════════ -->
+<section id="s2">
+<h2><span class="num">2</span> Voice Pipeline Architecture</h2>
+
+<div class="card">
+<h3>Full Streaming Pipeline</h3>
+<pre><code><span class="hl-orange">Caller speaks</span>
+    |
+    v  (G.711 mulaw, 8kHz, mono)
+<span class="hl-blue">Twilio Media Streams</span> ──WebSocket──&gt; <span class="hl-green">FastAPI /stream</span>
+    |                                      |
+    |  base64-decode payload               |
+    v                                      v
+<span class="hl-yellow">Deepgram STT</span>                         <span class="hl-purple">VAD Service</span>
+ Nova-2 live connection                WebRTC VAD (aggressiveness=3)
+ mulaw native encoding                mulaw &rarr; PCM16 &rarr; 20ms frames
+ endpointing=300ms                    3 consecutive speech frames = barge-in
+ interim + final transcripts                |
+    |                                       v
+    |  on_transcript(text, is_final)   <span class="hl-red">Cancel TTS + clear Twilio buffer</span>
+    v
+<span class="hl-green">LangGraph ainvoke()</span>
+ Router &rarr; Service Node &rarr; tts_text
+    |
+    v
+<span class="hl-yellow">TTS Service</span> (OpenAI tts-1)
+ text &rarr; PCM16 24kHz stream
+ audioop.ratecv 24kHz &rarr; 8kHz
+ audioop.lin2ulaw PCM &rarr; mulaw
+    |
+    v  (base64-encode mulaw chunks)
+<span class="hl-blue">Twilio Media Streams</span> ──WebSocket──&gt; <span class="hl-orange">Caller hears response</span></code></pre>
+
+<h4>Audio Format Conversions</h4>
+<table>
+  <tr><th>Stage</th><th>Format</th><th>Sample Rate</th><th>Encoding</th><th>Why</th></tr>
+  <tr><td>Twilio inbound</td><td>G.711 mulaw</td><td>8 kHz</td><td>8-bit mulaw</td><td>PSTN standard; Twilio's native format</td></tr>
+  <tr><td>Deepgram input</td><td>mulaw</td><td>8 kHz</td><td>mulaw</td><td>Direct pass-through &mdash; no conversion needed</td></tr>
+  <tr><td>VAD processing</td><td>PCM16</td><td>8 kHz</td><td>16-bit signed LE</td><td>WebRTC VAD requires linear PCM</td></tr>
+  <tr><td>OpenAI Realtime input</td><td>PCM16</td><td>24 kHz</td><td>16-bit signed LE</td><td>Realtime API requires 24kHz; upsample 8k&rarr;24k via ratecv</td></tr>
+  <tr><td>OpenAI Realtime output</td><td>PCM16</td><td>24 kHz</td><td>16-bit signed LE</td><td>Downsample 24k&rarr;8k then lin2ulaw for Twilio</td></tr>
+  <tr><td>TTS output (OpenAI)</td><td>PCM16</td><td>24 kHz</td><td>16-bit signed LE</td><td>Response format="pcm"; resample to 8kHz mulaw</td></tr>
+  <tr><td>Twilio outbound</td><td>G.711 mulaw</td><td>8 kHz</td><td>base64-encoded</td><td>Sent as JSON media events over WebSocket</td></tr>
+</table>
+
+<h4>Why WebSocket Over REST for Voice</h4>
+<p>REST-based STT requires buffering the entire utterance, sending it, waiting for a response, then synthesizing TTS &mdash; adding 2-4 seconds of latency per turn. WebSocket streaming enables:</p>
+<ul>
+  <li><strong>Continuous audio flow</strong> &mdash; no buffering delay; Deepgram processes audio as it arrives</li>
+  <li><strong>Interim transcripts</strong> &mdash; partial results enable early processing (though currently only final transcripts trigger graph invocation)</li>
+  <li><strong>Barge-in</strong> &mdash; impossible with REST since the server doesn't receive audio during TTS playback</li>
+  <li><strong>Streaming TTS</strong> &mdash; first audio chunk reaches the caller ~200ms after TTS generation starts</li>
+</ul>
+
+<h4>Latency Budget</h4>
+<table>
+  <tr><th>Component</th><th>Target</th><th>Notes</th></tr>
+  <tr><td>Deepgram STT (endpointing)</td><td>~300ms</td><td>300ms silence endpointing + network; interim results at ~100ms</td></tr>
+  <tr><td>LLM (Router)</td><td>~100-200ms</td><td>Single-word classification; temp=0, max_tokens=20</td></tr>
+  <tr><td>LLM (Service)</td><td>~300-500ms</td><td>1-3 sentence response; temp=0.3, max_tokens=200</td></tr>
+  <tr><td>TTS first byte</td><td>~200ms</td><td>Streaming; first chunk arrives before full synthesis completes</td></tr>
+  <tr><td>Total target</td><td>&lt; 1 second</td><td>End-of-speech to first audio response</td></tr>
+</table>
+
+<h4>Barge-In / VAD Implementation</h4>
+<p>The <code>VADService</code> uses <code>webrtcvad</code> at aggressiveness level 3 (most aggressive, best for noisy phone lines). It processes audio only while TTS is playing (<code>self._speaking = True</code>):</p>
+<ol>
+  <li>Incoming mulaw bytes are converted to 16-bit PCM via <code>audioop.ulaw2lin()</code></li>
+  <li>PCM is buffered and split into 20ms frames (320 bytes at 8kHz 16-bit)</li>
+  <li>Each frame is checked with <code>vad.is_speech(frame, 8000)</code></li>
+  <li>A counter tracks consecutive speech frames; 3 consecutive frames (60ms) triggers barge-in</li>
+  <li>On barge-in: TTS task is cancelled, a <code>"clear"</code> event is sent to Twilio to flush its audio buffer</li>
+  <li>VAD state resets when TTS finishes or barge-in fires</li>
+</ol>
+</div>
+
+<div class="card">
+<h3>Deepgram Configuration</h3>
+<table>
+  <tr><th>Parameter</th><th>Value</th><th>Purpose</th></tr>
+  <tr><td>model</td><td><code>nova-2</code></td><td>Latest Deepgram model; best accuracy for conversational speech</td></tr>
+  <tr><td>language</td><td><code>en-US</code></td><td>English (US)</td></tr>
+  <tr><td>encoding</td><td><code>mulaw</code></td><td>Match Twilio's native format &mdash; no conversion needed</td></tr>
+  <tr><td>sample_rate</td><td><code>8000</code></td><td>PSTN standard</td></tr>
+  <tr><td>endpointing</td><td><code>300</code> ms</td><td>Silence duration to finalize utterance; 300ms balances responsiveness vs. premature cuts</td></tr>
+  <tr><td>utterance_end_ms</td><td><code>1000</code> ms</td><td>Finalize after 1s with no new words (catches long pauses)</td></tr>
+  <tr><td>smart_format</td><td><code>true</code></td><td>Auto-formats dates, numbers, currencies in transcripts</td></tr>
+  <tr><td>interim_results</td><td><code>true</code></td><td>Stream partial transcripts (used for future optimization)</td></tr>
+  <tr><td>no_delay</td><td><code>true</code></td><td>Minimize transcript delivery latency</td></tr>
+  <tr><td>keywords</td><td>insuranceCompany, policy number, beneficiary, premium, paid-to-date, autopay</td><td>Boost recognition of insurance-specific terms</td></tr>
+</table>
+</div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<!--  SECTION 3 — HYBRID STT STRATEGY                              -->
+<!-- ════════════════════════════════════════════════════════════════ -->
+<section id="s3">
+<h2><span class="num">3</span> Hybrid STT Strategy</h2>
+
+<div class="card">
+<h3>When Each STT Engine Is Used</h3>
+<table>
+  <tr><th>Phase</th><th>STT Engine</th><th>Why</th></tr>
+  <tr><td>General conversation (post-auth)</td><td>Deepgram Nova-2</td><td>Low latency, mulaw-native, keyword boosting, cost-effective streaming</td></tr>
+  <tr><td>Authentication PII collection</td><td>OpenAI Realtime API</td><td>Audio-native function calling; no intermediate STT errors on digits/dates/names</td></tr>
+</table>
+
+<h4>Why Not Use Deepgram For Everything?</h4>
+<p>Deepgram excels at general conversational transcription but introduces errors on the exact data points that matter most during authentication:</p>
+<ul>
+  <li><strong>Phone numbers</strong>: "5-5-5-1-2-3-4-5-6-7" may transcribe as "555 1234567" or "5,551,234,567" &mdash; requires post-processing normalization that can fail</li>
+  <li><strong>Dates of birth</strong>: "March 15th, 1982" may become "March 15 1982" or "3/15/82" &mdash; inconsistent formats need regex parsing</li>
+  <li><strong>Names</strong>: Uncommon surnames are frequently misheard</li>
+  <li><strong>Policy numbers</strong>: Alphanumeric codes like "P300123456" are unreliable in general STT</li>
+</ul>
+<p>The OpenAI Realtime API solves this by processing raw audio directly with function calling, extracting structured data without an intermediate text representation.</p>
+
+<h4>AUTH_MODE Toggle</h4>
+<p>The <code>AUTH_MODE</code> environment variable controls which path is used (<code>settings.auth_mode</code>):</p>
+<ul>
+  <li><code>standard</code> (default): Deepgram STT + LangGraph auth node for all phases. PII is parsed from text transcripts using validators in <code>utils/pii_validator.py</code>.</li>
+  <li><code>realtime</code>: OpenAI Realtime API handles the entire auth conversation (STT + NLU + TTS + barge-in). Once auth completes, the system switches to Deepgram + LangGraph for post-auth intents.</li>
+</ul>
+</div>
+
+<div class="card">
+<h3>Realtime API Audio Pipeline</h3>
+<pre><code><span class="hl-dim">Twilio inbound (mulaw 8kHz)</span>
+    |
+    v  <span class="hl-yellow">mulaw8k_to_pcm16_24k()</span>
+<span class="hl-blue">audioop.ulaw2lin(data, 2)</span>       &rarr; linear PCM16 8kHz
+<span class="hl-blue">audioop.ratecv(pcm, 2, 1, 8000, 24000, state)</span> &rarr; PCM16 24kHz
+    |
+    v  base64-encode, send as <span class="hl-green">input_audio_buffer.append</span>
+<span class="hl-purple">OpenAI Realtime API WebSocket</span>
+    |
+    |  response.output_audio.delta events (PCM16 24kHz)
+    v
+<span class="hl-yellow">pcm16_24k_to_mulaw8k()</span>
+<span class="hl-blue">audioop.ratecv(data, 2, 1, 24000, 8000, state)</span> &rarr; PCM16 8kHz
+<span class="hl-blue">audioop.lin2ulaw(downsampled, 2)</span> &rarr; mulaw 8kHz
+    |
+    v  base64-encode, send as Twilio media event
+<span class="hl-dim">Twilio outbound (mulaw 8kHz) &rarr; Caller hears response</span></code></pre>
+
+<h4>How The Switch Happens Mid-Call</h4>
+<p>In <code>webhooks/twilio_stream.py</code>, the <code>CallHandler</code> class manages the switch:</p>
+<ol>
+  <li>On <code>_on_start()</code>, if <code>AUTH_MODE=realtime</code>: a <code>RealtimeAuthSession</code> is created and <code>self._auth_active = True</code></li>
+  <li>All <code>_on_media()</code> audio is routed to <code>self._realtime_auth.send_audio()</code> instead of Deepgram</li>
+  <li>The Realtime API handles greeting, PII collection, and TTS natively</li>
+  <li>When auth completes, <code>_on_realtime_auth_done()</code> fires:
+    <ul>
+      <li>Sets <code>self._auth_active = False</code></li>
+      <li>Closes the Realtime WebSocket</li>
+      <li>Persists auth result to Redis session</li>
+      <li>Acquires the access token for downstream API calls</li>
+      <li>Creates a new <code>STTService</code> (Deepgram) for post-auth conversation</li>
+    </ul>
+  </li>
+  <li>From this point, all audio flows through Deepgram + LangGraph</li>
+</ol>
+
+<h4>Function Calling for Structured PII Extraction</h4>
+<p>The Realtime API session is configured with five function tools:</p>
+<table>
+  <tr><th>Function</th><th>Parameters</th><th>Trigger</th></tr>
+  <tr><td><code>collect_phone</code></td><td><code>digits: string</code> (10 digits only)</td><td>Caller provides phone number</td></tr>
+  <tr><td><code>collect_dob</code></td><td><code>date: string</code> (YYYY-MM-DD)</td><td>Caller provides date of birth</td></tr>
+  <tr><td><code>collect_policy</code></td><td><code>number: string</code></td><td>Caller provides policy number</td></tr>
+  <tr><td><code>collect_name</code></td><td><code>first: string, last: string</code></td><td>Caller provides their name</td></tr>
+  <tr><td><code>select_policy</code></td><td><code>last_four: string</code></td><td>Multi-policy selection</td></tr>
+</table>
+<p>Each function call returns an <code>instruction</code> string that tells the model what to say next (e.g., "Phone matched. Ask for the insured's date of birth."). The model never sees PII data from the backend &mdash; it only receives instructions about what to ask next.</p>
+</div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<!--  SECTION 4 — LANGGRAPH ORCHESTRATION                          -->
+<!-- ════════════════════════════════════════════════════════════════ -->
+<section id="s4">
+<h2><span class="num">4</span> LangGraph Orchestration</h2>
+
+<div class="card">
+<h3>Graph Structure</h3>
+<p>The conversation is modeled as a <code>StateGraph(CNOState)</code> with a single entry point (<code>START &rarr; router</code>), 12 nodes, and conditional edges from the router to each service node. All service nodes terminate at <code>END</code>, returning the response to the WebSocket handler which speaks it via TTS.</p>
+
+<pre><code><span class="hl-orange">              LangGraph Node / Edge Diagram</span>
+
+                     <span class="hl-blue">START</span>
+                       |
+                       v
+                 <span class="hl-orange">+-----------+</span>
+                 <span class="hl-orange">|  ROUTER   |</span>  LLM intent classification (temp=0)
+                 <span class="hl-orange">+-----+-----+</span>
+                       |
+            <span class="hl-yellow">conditional edges</span> (_route_after_router)
+                       |
+       +-------+-------+-------+-------+-------+-------+
+       |       |       |       |       |       |       |
+       v       v       v       v       v       v       v
+   <span class="hl-green">+------+ +------+ +----+ +----+ +------+ +------+ +-----+</span>
+   <span class="hl-green">|policy| |payment| |otp | |loan| |benef.| |contact| |doc  |</span>
+   <span class="hl-green">+--+---+ +--+----+ +-+--+ +-+--+ +--+---+ +--+----+ +-+---+</span>
+      |       |       |      |       |       |       |
+      |  +----+  +----+  +---+  +----+  +----+  +---+
+      |  |       |       |      |       |       |
+      v  v       v       v      v       v       v
+   <span class="hl-green">+-------+ +-------+ +-------+ +-------+ +-------+</span>
+   <span class="hl-green">|privacy| |  faq  | |escal. | |goodbye| |  END  |</span>
+   <span class="hl-green">+---+---+ +---+---+ +---+---+ +---+---+ +-------+</span>
+       |       |       |       |       ^
+       +-------+-------+-------+-------+
+                                       |
+                  <span class="hl-dim">All service nodes &rarr; END</span>
+
+<span class="hl-dim">   Auth is NOT a graph node &mdash; it runs as a guard inside each service node.</span>
+<span class="hl-dim">   The auth_guard pattern: ensure_authenticated() called at node entry.</span></code></pre>
+
+<h4>Key Architectural Decision: Auth as Guard, Not Node</h4>
+<p>Authentication is <em>not</em> a separate node in the graph. Instead, each restricted service node calls <code>ensure_authenticated(state, node_name)</code> at its entry point. This design has two benefits:</p>
+<ul>
+  <li><strong>Active flow preservation</strong> &mdash; while auth is in progress, <code>active_flow</code> is set to the requesting service node (e.g., "policy"). This means the router routes all PII utterances back to that same service node, which re-enters the auth guard, which advances the auth state machine. When auth completes, the service node executes immediately on the same turn.</li>
+  <li><strong>No dead-end state</strong> &mdash; a separate auth node would require the user to re-state their intent after authentication. With the guard pattern, the original intent is preserved.</li>
+</ul>
+</div>
+
+<div class="card">
+<h3>State Object (CNOState TypedDict)</h3>
+<p>Every graph invocation receives and returns a typed state dictionary. The state accumulates across turns via LangGraph's message reducer and field merging.</p>
+<table>
+  <tr><th>Field Group</th><th>Fields</th><th>Purpose</th></tr>
+  <tr><td>Conversation</td><td><code>messages</code> (Annotated[list, add_messages]), <code>call_sid</code>, <code>stream_sid</code></td><td>Full turn history with LangChain message objects; call identifiers for logging</td></tr>
+  <tr><td>Authentication</td><td><code>authenticated</code>, <code>auth_step</code>, <code>auth_attempts</code></td><td>Auth state machine position and retry counter (max 3)</td></tr>
+  <tr><td>Caller Persona</td><td><code>caller_name</code>, <code>caller_persona</code></td><td>Post-auth: who the caller is relative to the policy (payor/insured/owner/other)</td></tr>
+  <tr><td>Customer</td><td><code>customer</code> (dict), <code>access_token</code>, <code>finalized_party</code></td><td>Authenticated caller's data, API bearer token, raw party record</td></tr>
+  <tr><td>PII Collection</td><td><code>pii_collected</code>, <code>candidate_party</code></td><td>PII fields gathered so far; party returned by search before full auth</td></tr>
+  <tr><td>Flow Control</td><td><code>current_intent</code>, <code>current_node</code>, <code>active_flow</code></td><td>Last classified intent, last executing node, which flow "owns" the conversation</td></tr>
+  <tr><td>Retry Tracking</td><td><code>slot_attempts</code> (dict of dicts)</td><td>Per-slot counters: <code>{"phone": {"invalid": 0, "blank": 1, "asked": 1}}</code></td></tr>
+  <tr><td>Response</td><td><code>tts_text</code>, <code>transfer_to</code></td><td>Text for TTS output; phone number for call transfer (escalation)</td></tr>
+  <tr><td>OTP/PCI</td><td><code>otp_step</code>, <code>otp_data</code></td><td>One-time payment state machine and collected DTMF data</td></tr>
+  <tr><td>Metrics</td><td><code>metric_data</code></td><td>Intent list, API calls list, PII success/failure tracking</td></tr>
+</table>
+
+<h4>Checkpointing</h4>
+<p>LangGraph's checkpointer saves state after each node transition. The system initializes PostgreSQL checkpoint tables via <code>PostgresSaver.setup()</code> at startup, then uses <code>MemorySaver</code> for the actual graph execution (the async-compatible checkpointer). The <code>thread_id</code> is the Twilio <code>call_sid</code>, enabling:</p>
+<ul>
+  <li><strong>Crash recovery</strong> &mdash; if the server restarts mid-call, the checkpoint table preserves the last graph state</li>
+  <li><strong>Multi-turn continuity</strong> &mdash; each <code>ainvoke()</code> loads the last checkpoint for that thread_id</li>
+  <li><strong>Graceful fallback</strong> &mdash; if PostgreSQL is unreachable, falls back to in-memory checkpointing with a logged warning</li>
+</ul>
+</div>
+
+<div class="card">
+<h3>Node Inventory</h3>
+<table>
+  <tr><th>Node</th><th>File</th><th>Auth Required</th><th>Description</th></tr>
+  <tr><td><code>router</code></td><td>nodes/router.py</td><td>No</td><td>LLM intent classification + context switch enforcement</td></tr>
+  <tr><td><code>policy</code></td><td>nodes/policy.py</td><td>Yes</td><td>Policy status, premium, paid-to-date via holding_inquiry API</td></tr>
+  <tr><td><code>payment</code></td><td>nodes/payment.py</td><td>Yes</td><td>Payment history (last 3 transactions) via payment_history API</td></tr>
+  <tr><td><code>otp</code></td><td>nodes/otp.py</td><td>Yes</td><td>One-time payment (card/ACH) with DTMF collection + PCI compliance</td></tr>
+  <tr><td><code>loan</code></td><td>nodes/loan.py</td><td>Yes</td><td>Loan balance, accrued interest, payoff amount</td></tr>
+  <tr><td><code>beneficiary</code></td><td>nodes/beneficiary.py</td><td>Yes</td><td>Beneficiary list + relationship restriction verbiage</td></tr>
+  <tr><td><code>contact</code></td><td>nodes/contact.py</td><td>Yes</td><td>Address/phone change request flow</td></tr>
+  <tr><td><code>document</code></td><td>nodes/document.py</td><td>Yes</td><td>Document mailing request (no email per compliance)</td></tr>
+  <tr><td><code>privacy</code></td><td>nodes/privacy.py</td><td>Yes</td><td>GLBA privacy opt-out (affiliated/non-affiliated/both)</td></tr>
+  <tr><td><code>faq</code></td><td>nodes/faq.py</td><td>No</td><td>RAG-grounded FAQ from pgvector knowledge base</td></tr>
+  <tr><td><code>escalation</code></td><td>nodes/escalation.py</td><td>No</td><td>Transfer to live agent with appropriate script</td></tr>
+  <tr><td><code>goodbye</code></td><td>nodes/goodbye.py</td><td>No</td><td>End-of-call farewell + hangup signal</td></tr>
+</table>
+</div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<!--  SECTION 5 — INTENT ROUTER                                    -->
+<!-- ════════════════════════════════════════════════════════════════ -->
+<section id="s5">
+<h2><span class="num">5</span> Intent Router</h2>
+
+<div class="card">
+<h3>LLM-Based Intent Classification</h3>
+<p>The router does <strong>not</strong> use keyword matching for primary intent detection (though it does use keyword pre-checks for escalation, goodbye, and privacy to save LLM calls). The core classification sends the caller's utterance to the LLM with a tightly constrained prompt:</p>
+<pre><code><span class="hl-dim">System:</span> "You are a call intent classifier. Reply with ONE word only."
+<span class="hl-dim">Human:</span>  ROUTER_PROMPT.format(utterance=last_human)
+<span class="hl-dim">LLM config:</span> temperature=0, max_tokens=20</code></pre>
+<p>The prompt lists all 12 valid intents with descriptions and examples. The response is lowercased, underscored, and validated against <code>VALID_INTENTS</code>. Unrecognized outputs default to <code>"faq"</code>.</p>
+
+<h4>Dual Model Strategy</h4>
+<table>
+  <tr><th>Use</th><th>LLM</th><th>Config</th><th>Why</th></tr>
+  <tr><td>Intent Router</td><td><code>get_router_llm()</code></td><td>temp=0, max_tokens=20</td><td>Fast, deterministic single-word output; ~100ms response time</td></tr>
+  <tr><td>Service Nodes</td><td><code>get_llm()</code></td><td>temp=0.3, max_tokens=200</td><td>Natural conversational responses; slightly creative but controlled</td></tr>
+</table>
+<p>Both can run on either Groq (Qwen 27B, default) or Bedrock (Nova Micro), toggled by <code>LLM_PROVIDER</code> env var. This dual-provider design means the system can run entirely on AWS (Bedrock) without any external API dependencies, or use Groq for faster/cheaper inference during development.</p>
+
+<h4>Context Switch Enforcement</h4>
+<p>When a caller is inside a multi-step flow (e.g., payment), the router enforces context switch rules <em>before</em> LLM classification to prevent accidental pivots:</p>
+<table>
+  <tr><th>Mode</th><th>Behavior</th><th>Flows</th></tr>
+  <tr><td><code>locked</code></td><td>No intent change allowed (except escalation). LLM not even called.</td><td>OTP (DTMF payment entry)</td></tr>
+  <tr><td><code>escalate_only</code></td><td>LLM classifies, but non-escalation intents are suppressed &rarr; stay in flow.</td><td>policy, payment, loan, beneficiary, contact, document, privacy</td></tr>
+  <tr><td><code>open</code></td><td>Full LLM classification; caller can freely pivot.</td><td>faq, escalation</td></tr>
+</table>
+
+<h4>Pre-LLM Keyword Checks (Ordered)</h4>
+<ol>
+  <li><strong>Goodbye keywords</strong> &mdash; bypass auth wall (callers who dialed by mistake must be able to leave)</li>
+  <li><strong>Caller-name collection step</strong> &mdash; all input goes to auth node (prevents names like "Agent" from triggering escalation)</li>
+  <li><strong>Privacy phrases</strong> &mdash; pre-check before escalation (LLM tends to misclassify "how do you use my data" as escalation)</li>
+  <li><strong>Escalation keywords</strong> &mdash; always honoured regardless of flow lock</li>
+  <li><strong>Auth in progress</strong> &mdash; route back to active service node without LLM call</li>
+  <li><strong>Confirmation negation</strong> &mdash; "no, that is wrong" in escalate_only flows stays in flow (prevents LLM misclassification)</li>
+</ol>
+
+<h4>Retry Logic</h4>
+<p>LLM invocation uses exponential backoff retry for transient errors (Groq 503/429, Bedrock throttling): 3 attempts with delays of 1s and 2s. If all retries fail, the router falls back to the active flow's intent or escalation.</p>
+</div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<!--  SECTION 6 — AUTHENTICATION FLOW                              -->
+<!-- ════════════════════════════════════════════════════════════════ -->
+<section id="s6">
+<h2><span class="num">6</span> Authentication Flow</h2>
+
+<div class="card">
+<h3>Auth State Machine</h3>
+<pre><code><span class="hl-orange">              Authentication State Machine</span>
+
+<span class="hl-blue">collecting_phone</span> ──phone parsed──&gt; <span class="hl-green">party_search(phone)</span>
+    |                                  |            |
+    | (IDK / no phone)           found |      not found
+    v                                  v            v
+<span class="hl-blue">collecting_policy</span>             <span class="hl-blue">collecting_dob</span>   <span class="hl-yellow">confirming_phone</span>
+    |                              |                |
+    | policy parsed                | DOB parsed     | yes &rarr; collecting_policy
+    v                              v                | no  &rarr; collecting_phone
+<span class="hl-green">party_search(policy)</span>        <span class="hl-green">check_auth_success</span>
+    |                              |            |
+    | found                   match |      no match
+    v                              v            v
+<span class="hl-blue">collecting_dob</span>           <span class="hl-purple">(multi-policy?)</span>   <span class="hl-blue">collecting_name</span>
+                              |    |               |
+                         yes  |    | no        name parsed
+                              v    v               v
+                    <span class="hl-blue">collecting_policy</span>    <span class="hl-green">check_auth_success</span>
+                    <span class="hl-blue">_selection</span>                |          |
+                              |           match |    no match
+                              v               v          v
+                    <span class="hl-green">_auth_complete</span>     <span class="hl-green">_auth_complete</span>   <span class="hl-red">ESCALATE</span>
+                              |               |
+                              v               v
+                    <span class="hl-purple">collecting_caller_name</span>  (post-auth persona ID)
+                              |
+                    +---------+---------+
+                    |                   |
+               match persona       no match
+                    |                   |
+                    v                   v
+              <span class="hl-green">COMPLETE</span>        <span class="hl-yellow">"other" persona</span>
+        (payor/insured/owner)   (restricted access)</code></pre>
+
+<h4>2-PII Match Requirement</h4>
+<p>Authentication requires matching exactly 2 pieces of PII against the backend party record. Valid combinations:</p>
+<table>
+  <tr><th>Factor 1</th><th>Factor 2</th><th>Match Method</th></tr>
+  <tr><td>Phone number</td><td>Date of birth</td><td>Exact match</td></tr>
+  <tr><td>Phone number</td><td>Insured name</td><td>Fuzzy match (SequenceMatcher &ge; 0.80)</td></tr>
+  <tr><td>Policy number</td><td>Date of birth</td><td>Exact match</td></tr>
+  <tr><td>Policy number</td><td>Insured name</td><td>Fuzzy match (SequenceMatcher &ge; 0.80)</td></tr>
+</table>
+<p>Name matching uses <code>difflib.SequenceMatcher</code> with a 0.80 threshold on both first and last name independently, allowing for minor STT transcription errors.</p>
+
+<h4>ANI Check</h4>
+<p>While the architecture supports ANI (Automatic Number Identification) &mdash; the caller's phone number is captured in the webhook's <code>From</code> field and stored in session &mdash; the current implementation always starts by <em>asking</em> for the phone number rather than auto-matching ANI. This is a deliberate choice: many callers call from numbers not on their policy (spouse's phone, work phone, etc.).</p>
+
+<h4>Retry Logic and Escalation</h4>
+<ul>
+  <li><code>max_auth_attempts</code> = 3 (configurable via env var)</li>
+  <li>Per-slot retry: each PII field tracks <code>blank</code> (no input), <code>invalid</code> (wrong format), and <code>asked</code> (initial prompt) counts</li>
+  <li>2 blank responses on any single slot &rarr; escalate to agent</li>
+  <li>If caller says "I don't know" to phone &rarr; skip to policy number. IDK to DOB &rarr; skip to name. IDK to name or policy &rarr; escalate.</li>
+  <li>If both DOB and name verification fail after successful party search &rarr; escalate</li>
+</ul>
+
+<h4>Post-Auth: Caller Persona Identification</h4>
+<p>After 2-PII match succeeds, the system asks "May I ask your name please?" and matches the response against the policy's persona list (from <code>finalized_party["Personas"]</code>). This determines access level:</p>
+<ul>
+  <li><strong>payor / insured / owner</strong> &rarr; full access to policy data and service flows</li>
+  <li><strong>other</strong> &rarr; restricted: cannot access policy, payment, loan, beneficiary, etc. Offered transfer to a representative.</li>
+</ul>
+<p>Persona matching uses partial word matching: "John" matches "John Smith". Conversational prefixes ("My name is", "It's", "I am") are stripped before matching.</p>
+</div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<!--  SECTION 7 — DATA LAYER                                       -->
+<!-- ════════════════════════════════════════════════════════════════ -->
+<section id="s7">
+<h2><span class="num">7</span> Data Layer</h2>
+
+<div class="card">
+<h3>Dual-Store Architecture</h3>
+<table>
+  <tr><th>Store</th><th>Technology</th><th>Data</th><th>TTL</th><th>Why</th></tr>
+  <tr><td>Session State</td><td>Redis 7.1</td><td>Per-call state (auth_step, pii_collected, messages, etc.)</td><td>3600s (1 hour)</td><td>Sub-ms reads; automatic expiry; ephemeral by nature</td></tr>
+  <tr><td>Durable State</td><td>PostgreSQL 16.4</td><td>LangGraph checkpoints, call history (JSONB), pgvector embeddings</td><td>Permanent</td><td>ACID durability; survives restarts; vector search</td></tr>
+</table>
+
+<h4>Why Split Across Two Stores</h4>
+<p>The split is a deliberate <strong>durability vs. speed</strong> trade-off:</p>
+<ul>
+  <li><strong>Redis</strong>: Call sessions are inherently ephemeral &mdash; a call lasts minutes, not days. Redis provides sub-millisecond reads/writes with automatic TTL cleanup. No schema needed; state is JSON-serialized.</li>
+  <li><strong>PostgreSQL</strong>: Call history must survive server restarts for the dashboard. LangGraph checkpoint tables require SQL. pgvector needs PostgreSQL. One database handles all three concerns.</li>
+</ul>
+
+<h4>Graceful Fallbacks</h4>
+<table>
+  <tr><th>Component</th><th>Primary</th><th>Fallback</th><th>Impact</th></tr>
+  <tr><td>Checkpointer</td><td>PostgresSaver tables + MemorySaver runtime</td><td>MemorySaver only</td><td>No crash recovery; call history lost on restart</td></tr>
+  <tr><td>Session</td><td>Redis (aioredis)</td><td>fakeredis (in-memory)</td><td>Sessions lost on restart; no multi-instance sharing</td></tr>
+  <tr><td>Call History DB</td><td>psycopg2 connection</td><td>In-memory dict only</td><td>Dashboard shows only calls since last restart</td></tr>
+  <tr><td>RAG (pgvector)</td><td>PGVector store</td><td>Empty string (no context)</td><td>FAQ falls back to canned response or LLM-only</td></tr>
+</table>
+<p>Every fallback logs a warning but never crashes the IVR. The design philosophy is: <strong>a call must never fail because a backing store is down.</strong></p>
+
+<h4>Redis Session Schema</h4>
+<p>Key pattern: <code>cno:session:{call_sid}</code>. Value: JSON-serialized <code>CNOState</code> dict. Messages are serialized via LangChain's <code>model_dump()</code>. TTL is refreshed on every <code>save_state()</code> call (1-hour sliding window).</p>
+
+<h4>PostgreSQL Call Records</h4>
+<p>Table: <code>ivr_call_records(call_sid TEXT PK, data JSONB, started_at TIMESTAMPTZ, updated_at TIMESTAMPTZ)</code>. The full call dict (turns, events, metadata) is stored as JSONB, so no schema migration is needed when new fields are added. Write-through: every <code>add_call_turn()</code> and <code>update_call_metadata()</code> call writes to both in-memory cache and PostgreSQL. On startup, <code>init_from_db()</code> loads the last 100 records to populate the dashboard.</p>
+</div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<!--  SECTION 8 — RAG PIPELINE                                     -->
+<!-- ════════════════════════════════════════════════════════════════ -->
+<section id="s8">
+<h2><span class="num">8</span> RAG Pipeline (FAQ)</h2>
+
+<div class="card">
+<h3>Architecture</h3>
+<pre><code><span class="hl-dim">Caller asks general question (e.g., "What is whole life insurance?")</span>
+    |
+    v
+<span class="hl-blue">faq_node</span> receives utterance from router
+    |
+    v  <span class="hl-yellow">search_knowledge(query, k=3)</span>
+<span class="hl-green">OpenAI Embeddings</span> (text-embedding-3-small)
+    | embed the query
+    v
+<span class="hl-green">PGVector</span> similarity_search(query, k=3)
+    | cosine similarity against stored document vectors
+    v
+<span class="hl-purple">Top-3 chunks</span> concatenated as context
+    |
+    v
+<span class="hl-orange">LLM</span> (Groq/Bedrock, temp=0.4, max_tokens=200)
+    | System: CNO_SYSTEM_PROMPT + AUTH_OVERRIDE + grounding instruction
+    | Human: "Answer this caller question in 1-2 sentences for voice: {question}"
+    v
+<span class="hl-dim">Grounded voice response &rarr; TTS &rarr; caller</span></code></pre>
+
+<h4>Knowledge Base</h4>
+<p>The knowledge base is populated by <code>seed_knowledge.py</code>, which contains ~50+ insurance FAQ chunks covering:</p>
+<ul>
+  <li>Policy types (whole life, term life, universal life)</li>
+  <li>Premium payments and billing</li>
+  <li>Loan provisions and interest</li>
+  <li>Beneficiary rules and changes</li>
+  <li>Document delivery policies</li>
+  <li>Privacy / GLBA opt-out</li>
+  <li>Claims and surrender procedures</li>
+</ul>
+<p>Each chunk includes metadata: <code>category</code>, <code>subcategory</code>, and <code>keywords</code> for filtering (though currently similarity search doesn't filter by metadata).</p>
+
+<h4>Why pgvector Over Pinecone/Weaviate</h4>
+<ul>
+  <li><strong>Operational simplicity</strong> &mdash; no additional service to deploy/manage; piggybacks on the existing PostgreSQL instance</li>
+  <li><strong>Scale</strong> &mdash; the FAQ knowledge base is small (~50-100 documents); pgvector handles this trivially</li>
+  <li><strong>Cost</strong> &mdash; zero additional cost; included in the RDS instance already provisioned</li>
+  <li><strong>Latency</strong> &mdash; same-VPC query to PostgreSQL is sub-10ms for small collections</li>
+</ul>
+
+<h4>Feature Flags</h4>
+<table>
+  <tr><th>Flag</th><th>Default</th><th>Effect</th></tr>
+  <tr><td><code>ENABLE_RAG</code></td><td><code>true</code></td><td>When false, skips pgvector entirely; FAQ uses canned fallback</td></tr>
+  <tr><td><code>FAQ_FALLBACK_TO_ESCALATE</code></td><td><code>false</code></td><td>When true and no RAG match, routes to agent instead of canned message</td></tr>
+</table>
+</div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<!--  SECTION 9 — EXTERNAL API INTEGRATION                         -->
+<!-- ════════════════════════════════════════════════════════════════ -->
+<section id="s9">
+<h2><span class="num">9</span> External API Integration</h2>
+
+<div class="card">
+<h3>Mock API Sidecar Pattern</h3>
+<p>The IVR communicates with backend APIs (party search, auth token, policy inquiry, etc.) through a configurable base URL (<code>CNO_API_BASE_URL</code>). In the current deployment, this points to <code>http://localhost:8001</code> &mdash; a mock API sidecar that runs in the same ECS task definition as the main application.</p>
+
+<div class="callout">
+  <strong>Production path:</strong> To connect to real backend APIs, change <code>CNO_API_BASE_URL</code> to the production endpoint. No code changes required &mdash; the API contract is identical.
+</div>
+
+<h4>API Operations</h4>
+<table>
+  <tr><th>Endpoint</th><th>Method</th><th>Module</th><th>Used By</th></tr>
+  <tr><td><code>/party/search</code></td><td>POST</td><td>core/tools/party_search.py</td><td>Auth node &mdash; find party by phone or policy number</td></tr>
+  <tr><td><code>/auth/token</code></td><td>POST</td><td>core/tools/auth_token.py</td><td>Auth node &mdash; exchange partyKey + companyCode for session token</td></tr>
+  <tr><td><code>/holding/inquiry</code></td><td>POST</td><td>core/tools/holding_inquiry.py</td><td>Policy node &mdash; status, premium, paid-to-date</td></tr>
+  <tr><td><code>/payment/history</code></td><td>POST</td><td>core/tools/holding_inquiry.py</td><td>Payment node &mdash; last 3 transactions</td></tr>
+  <tr><td><code>/loan/inquiry</code></td><td>POST</td><td>core/tools/holding_inquiry.py</td><td>Loan node &mdash; balance, interest, payoff</td></tr>
+  <tr><td><code>/beneficiary/inquiry</code></td><td>POST</td><td>core/graph/nodes/beneficiary.py</td><td>Beneficiary node &mdash; beneficiary list</td></tr>
+  <tr><td><code>/payment/card</code></td><td>POST</td><td>core/tools/payment_api.py</td><td>OTP node &mdash; card payment (JWT-authenticated)</td></tr>
+  <tr><td><code>/payment/ach</code></td><td>POST</td><td>core/tools/payment_api.py</td><td>OTP node &mdash; ACH payment (JWT-authenticated)</td></tr>
+</table>
+
+<h4>Authentication for API Calls</h4>
+<p>All API calls use two layers of auth:</p>
+<ol>
+  <li><strong>System API key</strong> (<code>CNO_API_KEY</code>) &mdash; <code>Authorization: Bearer</code> header on party_search and auth_token</li>
+  <li><strong>Session access token</strong> &mdash; acquired via <code>/auth/token</code> after 2-PII match; used as Bearer token on all subsequent policy/payment/loan calls</li>
+  <li><strong>Payment JWT</strong> &mdash; card and ACH payment calls include an additional <code>X-Payment-JWT</code> header containing a short-lived (5-minute) JWT with policy number and amount, signed with <code>CNO_JWT_SECRET</code></li>
+</ol>
+
+<h4>Sidecar Deployment</h4>
+<p>The mock API runs as a second container in the same ECS task definition (<code>Dockerfile.mock</code>). It exposes port 8001 and is accessible from the app container at <code>http://localhost:8001</code> because ECS Fargate containers in the same task share a network namespace. The mock API is a FastAPI app (<code>mock_cno_api.py</code>) that returns realistic test data.</p>
+</div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<!--  SECTION 10 — TELEPHONY LAYER                                 -->
+<!-- ════════════════════════════════════════════════════════════════ -->
+<section id="s10">
+<h2><span class="num">10</span> Telephony Layer (Twilio)</h2>
+
+<div class="card">
+<h3>Twilio Media Streams</h3>
+<p>The primary voice path uses Twilio Media Streams for bidirectional WebSocket audio. When a call arrives:</p>
+<ol>
+  <li><code>POST /webhook/voice</code> returns TwiML that starts a <code>&lt;Stream&gt;</code> to <code>wss://server/stream</code></li>
+  <li>Twilio opens a WebSocket connection and begins streaming mulaw audio events</li>
+  <li>Events: <code>connected</code>, <code>start</code> (with callSid, streamSid, customParameters), <code>media</code> (audio payload), <code>dtmf</code> (keypad digit), <code>stop</code></li>
+  <li>The server sends <code>media</code> events back to play TTS audio, and <code>clear</code> events to flush buffered audio on barge-in</li>
+</ol>
+
+<h4>Webhook Path (Alternative)</h4>
+<p>A REST-based webhook path also exists via <code>/webhook/voice</code> + <code>/webhook/gather</code> using Twilio's <code>&lt;Gather&gt;</code> for STT and <code>&lt;Say&gt;</code> with Polly.Joanna for TTS. This is simpler but higher-latency and doesn't support barge-in or streaming TTS. It uses the LangGraph checkpointer for multi-turn state (only <code>messages</code> and <code>call_sid</code> are sent per invocation; all other state is preserved in the checkpoint).</p>
+
+<h4>Browser Softphone</h4>
+<p>The <code>/client</code> endpoint serves a browser-based softphone using the Twilio Voice JS SDK:</p>
+<ol>
+  <li><code>GET /client/token</code> generates a Twilio Access Token with a <code>VoiceGrant</code> tied to the TwiML App SID</li>
+  <li>The TwiML App's Voice URL points to <code>/webhook/voice</code></li>
+  <li>Browser calls <code>device.connect()</code> &rarr; Twilio initiates a call &rarr; hits the voice webhook &rarr; starts Media Stream</li>
+</ol>
+
+<h4>DTMF Handling</h4>
+<p>DTMF digits arrive as separate events on the WebSocket alongside audio. The <code>DTMFCollector</code> class accumulates digits for payment collection:</p>
+<ul>
+  <li>Card flow: card_number (16 digits, terminated by #) &rarr; expiry (4 digits MMYY #) &rarr; CVV (3-4 digits #) &rarr; amount (# to submit)</li>
+  <li>Bank flow: routing_number (9 digits #) &rarr; account_number (#) &rarr; amount (#)</li>
+  <li><code>*</code> acts as backspace within a field</li>
+  <li>During DTMF collection, <code>_dtmf_mode = True</code> suppresses STT transcript processing</li>
+</ul>
+
+<h4>Call Transfer</h4>
+<p>When a service node sets <code>transfer_to</code> (escalation), the WebSocket handler calls the Twilio REST API to update the call with redirect TwiML: <code>&lt;Response&gt;&lt;Dial&gt;{phone}&lt;/Dial&gt;&lt;/Response&gt;</code>.</p>
+</div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<!--  SECTION 11 — TEXT-TO-SPEECH                                   -->
+<!-- ════════════════════════════════════════════════════════════════ -->
+<section id="s11">
+<h2><span class="num">11</span> Text-to-Speech</h2>
+
+<div class="card">
+<h3>OpenAI TTS Streaming</h3>
+<p>The current TTS implementation uses OpenAI's streaming TTS API (<code>tts-1</code> model, <code>nova</code> voice) via the <code>TTSService</code> class. The settings also support ElevenLabs (keys are configured) but the active implementation streams from OpenAI.</p>
+
+<h4>Audio Pipeline</h4>
+<pre><code><span class="hl-dim">tts_text (from graph)</span>
+    |
+    v  <span class="hl-yellow">normalize_tts_text()</span> &mdash; clean for voice output
+    |
+    v  <span class="hl-blue">OpenAI audio.speech.with_streaming_response.create()</span>
+    |  model="tts-1", voice="nova", response_format="pcm"
+    |  &rarr; raw PCM16 24kHz stream
+    |
+    v  <span class="hl-green">chunk_size=4096 bytes per iteration</span>
+    |
+    v  <span class="hl-yellow">audioop.ratecv(chunk, 2, 1, 24000, 8000, state)</span>
+    |  Resample 24kHz &rarr; 8kHz (factor 1/3)
+    |  State maintained across chunks for seamless audio
+    |
+    v  <span class="hl-yellow">audioop.lin2ulaw(resampled, 2)</span>
+    |  Convert 16-bit PCM &rarr; G.711 mulaw
+    |
+    v  base64-encode &rarr; Twilio media event &rarr; <span class="hl-orange">caller hears audio</span></code></pre>
+
+<h4>Configuration</h4>
+<table>
+  <tr><th>Setting</th><th>Value</th><th>Purpose</th></tr>
+  <tr><td>Model</td><td><code>tts-1</code></td><td>Optimized for speed (vs tts-1-hd which is higher quality but slower)</td></tr>
+  <tr><td>Voice</td><td><code>nova</code></td><td>Female voice; clear and professional for IVR</td></tr>
+  <tr><td>Output format</td><td><code>pcm</code></td><td>Raw PCM enables direct resampling without intermediate codec</td></tr>
+  <tr><td>Chunk size</td><td>4096 bytes</td><td>Balance between network overhead and time-to-first-byte</td></tr>
+</table>
+
+<h4>ElevenLabs (Configured but Alternative)</h4>
+<p>Settings include ElevenLabs configuration (API key, voice ID "Rachel", stability/similarity parameters, latency optimization level 3). ElevenLabs offers superior voice quality and more natural prosody, but the current implementation uses OpenAI for simplicity and reduced external dependencies. The ElevenLabs integration can be activated by swapping the TTSService implementation.</p>
+
+<h4>Webhook Path TTS</h4>
+<p>The REST webhook path uses Amazon Polly (Joanna voice) via Twilio's built-in <code>&lt;Say&gt;</code> verb. This is simpler but doesn't support streaming &mdash; the entire response must be synthesized before playback begins.</p>
+</div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<!--  SECTION 12 — AWS INFRASTRUCTURE                              -->
+<!-- ════════════════════════════════════════════════════════════════ -->
+<section id="s12">
+<h2><span class="num">12</span> AWS Infrastructure</h2>
+
+<div class="card">
+<h3>Infrastructure Layout Diagram</h3>
+<pre><code><span class="hl-orange">              AWS Infrastructure Layout (Terraform-managed)</span>
+
+<span class="hl-blue">+=====================================================================+</span>
+<span class="hl-blue">|  VPC: 10.0.0.0/16                                                   |</span>
+<span class="hl-blue">|                                                                     |</span>
+<span class="hl-blue">|  +---------------------------+  +---------------------------+       |</span>
+<span class="hl-blue">|  | Public Subnet (AZ-a)      |  | Public Subnet (AZ-b)      |       |</span>
+<span class="hl-blue">|  | 10.0.0.0/24               |  | 10.0.1.0/24               |       |</span>
+<span class="hl-blue">|  |                           |  |                           |       |</span>
+<span class="hl-blue">|  |  <span class="hl-green">+-------------------+</span>   |  |  <span class="hl-green">+-------------------+</span>   |       |</span>
+<span class="hl-blue">|  |  <span class="hl-green">| ECS Fargate Task  |</span>   |  |  <span class="hl-green">| ECS Fargate Task  |</span>   |       |</span>
+<span class="hl-blue">|  |  <span class="hl-green">| +---------------+ |</span>   |  |  <span class="hl-green">| (scaled replica)  |</span>   |       |</span>
+<span class="hl-blue">|  |  <span class="hl-green">| | App :8000     | |</span>   |  |  <span class="hl-green">+-------------------+</span>   |       |</span>
+<span class="hl-blue">|  |  <span class="hl-green">| +---------------+ |</span>   |  |                           |       |</span>
+<span class="hl-blue">|  |  <span class="hl-green">| | Mock API :8001| |</span>   |  |                           |       |</span>
+<span class="hl-blue">|  |  <span class="hl-green">| +---------------+ |</span>   |  |                           |       |</span>
+<span class="hl-blue">|  |  <span class="hl-green">+-------------------+</span>   |  |                           |       |</span>
+<span class="hl-blue">|  +---------------------------+  +---------------------------+       |</span>
+<span class="hl-blue">|                                                                     |</span>
+<span class="hl-blue">|  <span class="hl-yellow">+-------------------------------------------------------------+</span>   |</span>
+<span class="hl-blue">|  <span class="hl-yellow">|  Application Load Balancer (internet-facing, port 80)       |</span>   |</span>
+<span class="hl-blue">|  <span class="hl-yellow">|  Health check: GET /health (200 OK)                         |</span>   |</span>
+<span class="hl-blue">|  <span class="hl-yellow">+-------------------------------------------------------------+</span>   |</span>
+<span class="hl-blue">|                                                                     |</span>
+<span class="hl-blue">|  <span class="hl-red">+--------------------------+  +--------------------------+</span>       |</span>
+<span class="hl-blue">|  <span class="hl-red">| RDS PostgreSQL 16.4      |  | ElastiCache Redis 7.1    |</span>       |</span>
+<span class="hl-blue">|  <span class="hl-red">| db.t4g.micro (dev)       |  | cache.t4g.micro (dev)    |</span>       |</span>
+<span class="hl-blue">|  <span class="hl-red">| db.t4g.small (prod)      |  | cache.t4g.small (prod)   |</span>       |</span>
+<span class="hl-blue">|  <span class="hl-red">| NOT publicly accessible  |  | NOT publicly accessible  |</span>       |</span>
+<span class="hl-blue">|  <span class="hl-red">| SG: 5432 from app only   |  | SG: 6379 from app only   |</span>       |</span>
+<span class="hl-blue">|  <span class="hl-red">+--------------------------+  +--------------------------+</span>       |</span>
+<span class="hl-blue">|                                                                     |</span>
+<span class="hl-blue">|  <span class="hl-purple">+------------------+</span>  <span class="hl-purple">+--------------------+</span>  <span class="hl-purple">+-------------+</span>    |</span>
+<span class="hl-blue">|  <span class="hl-purple">| Secrets Manager  |</span>  <span class="hl-purple">| CloudWatch Logs    |</span>  <span class="hl-purple">| ECR         |</span>    |</span>
+<span class="hl-blue">|  <span class="hl-purple">| {env}/ivr/       |</span>  <span class="hl-purple">| /ecs/{env}-ivr     |</span>  <span class="hl-purple">| ivr-app     |</span>    |</span>
+<span class="hl-blue">|  <span class="hl-purple">| app-secrets      |</span>  <span class="hl-purple">| 7-day retention    |</span>  <span class="hl-purple">| (persistent)|</span>    |</span>
+<span class="hl-blue">|  <span class="hl-purple">+------------------+</span>  <span class="hl-purple">+--------------------+</span>  <span class="hl-purple">+-------------+</span>    |</span>
+<span class="hl-blue">|                                                                     |</span>
+<span class="hl-blue">|  <span class="hl-dim">Internet Gateway &rarr; Public Route Table &rarr; 0.0.0.0/0</span>               |</span>
+<span class="hl-blue">+=====================================================================+</span></code></pre>
+
+<h4>Component Details</h4>
+<table>
+  <tr><th>Component</th><th>Resource</th><th>Configuration</th></tr>
+  <tr><td>VPC</td><td><code>aws_vpc.main</code></td><td>CIDR 10.0.0.0/16, DNS support + hostnames enabled</td></tr>
+  <tr><td>Subnets</td><td><code>aws_subnet.public[0..1]</code></td><td>2 public subnets across AZs (ALB requires min 2 AZs)</td></tr>
+  <tr><td>Internet Gateway</td><td><code>aws_internet_gateway.main</code></td><td>Attached to VPC; route table routes 0.0.0.0/0 through IGW</td></tr>
+  <tr><td>ECS Cluster</td><td><code>aws_ecs_cluster.main</code></td><td>Named <code>{project}-cluster</code>; shared across environments</td></tr>
+  <tr><td>Task Definition</td><td><code>aws_ecs_task_definition.app</code></td><td>Fargate, 2 containers (app + mock-api), awsvpc networking</td></tr>
+  <tr><td>ECS Service</td><td><code>aws_ecs_service.app</code></td><td>desired_count=1, public IP (no NAT Gateway), ALB target group</td></tr>
+  <tr><td>ALB</td><td><code>aws_lb.app</code></td><td>Internet-facing, HTTP listener on port 80, forwards to app port</td></tr>
+  <tr><td>Target Group</td><td><code>aws_lb_target_group.app</code></td><td>IP target type, /health check (200, interval 15s, 2 healthy / 3 unhealthy)</td></tr>
+  <tr><td>RDS</td><td><code>aws_db_instance.main</code></td><td>PostgreSQL 16.4, gp3 20GB, NOT publicly accessible</td></tr>
+  <tr><td>ElastiCache</td><td><code>aws_elasticache_cluster.main</code></td><td>Redis 7.1, single node, dev=DB0 / prod=DB1</td></tr>
+  <tr><td>Secrets Manager</td><td><code>aws_secretsmanager_secret.app_secrets</code></td><td>Per-environment: <code>{env}/ivr/app-secrets</code></td></tr>
+  <tr><td>CloudWatch</td><td><code>aws_cloudwatch_log_group.app</code></td><td><code>/ecs/{env}-ivr</code>, 7-day retention</td></tr>
+</table>
+
+<h4>ECS Task Definition: Two Containers</h4>
+<table>
+  <tr><th>Container</th><th>Image</th><th>Port</th><th>Secrets</th></tr>
+  <tr><td>App</td><td><code>{ecr_repo}:{image_tag}</code></td><td>8000</td><td>OPENAI_API_KEY, DEEPGRAM_API_KEY, ELEVENLABS_API_KEY, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, GROQ_API_KEY, TWILIO_API_KEY, TWILIO_API_SECRET, TWILIO_TWIML_APP_SID</td></tr>
+  <tr><td>Mock API</td><td><code>{ecr_repo}:mock-api</code></td><td>8001</td><td>None (no secrets needed)</td></tr>
+</table>
+<p>Both containers share a network namespace (awsvpc mode), so the app reaches the mock API at <code>http://localhost:8001</code>.</p>
+
+<h4>IAM Roles</h4>
+<table>
+  <tr><th>Role</th><th>Permissions</th><th>Purpose</th></tr>
+  <tr><td>ECS Execution Role</td><td>AmazonECSTaskExecutionRolePolicy + secretsmanager:GetSecretValue</td><td>Pull ECR images, write CloudWatch logs, read Secrets Manager</td></tr>
+  <tr><td>ECS Task Role</td><td>bedrock:InvokeModel, bedrock:InvokeModelWithResponseStream</td><td>App-level permission to call Bedrock (when LLM_PROVIDER=bedrock)</td></tr>
+</table>
+</div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<!--  SECTION 13 — AUTO-SCALING                                    -->
+<!-- ════════════════════════════════════════════════════════════════ -->
+<section id="s13">
+<h2><span class="num">13</span> Auto-Scaling</h2>
+
+<div class="card">
+<h3>Scaling Configuration</h3>
+<table>
+  <tr><th>Parameter</th><th>Dev Default</th><th>Prod Profile</th></tr>
+  <tr><td>Min tasks</td><td>1</td><td>2</td></tr>
+  <tr><td>Max tasks</td><td>8</td><td>8</td></tr>
+  <tr><td>Task CPU</td><td>512 (0.5 vCPU)</td><td>1024 (1 vCPU)</td></tr>
+  <tr><td>Task memory</td><td>1024 MiB</td><td>2048 MiB</td></tr>
+  <tr><td>DB instance</td><td>db.t4g.micro</td><td>db.t4g.small</td></tr>
+  <tr><td>Redis node</td><td>cache.t4g.micro</td><td>cache.t4g.small</td></tr>
+</table>
+
+<h4>Three Scaling Policies</h4>
+<table>
+  <tr><th>Metric</th><th>Target</th><th>Scale-Out Cooldown</th><th>Scale-In Cooldown</th><th>Rationale</th></tr>
+  <tr><td>CPU Utilization</td><td>60%</td><td>60s</td><td>120s</td><td>LLM calls and TTS streaming are CPU-intensive; scale before saturation</td></tr>
+  <tr><td>Memory Utilization</td><td>70%</td><td>60s</td><td>120s</td><td>WebSocket connections and in-memory session state consume memory proportional to concurrent calls</td></tr>
+  <tr><td>ALB Requests Per Target</td><td>10</td><td>60s</td><td>120s</td><td>Each active call maintains a persistent WebSocket; 10 concurrent calls per task is a conservative limit</td></tr>
+</table>
+
+<h4>Cooldown Design</h4>
+<p>Scale-out cooldown (60s) is shorter than scale-in cooldown (120s) intentionally: the system should add capacity quickly during traffic spikes but be cautious about removing capacity to avoid oscillation. A call may last 3-5 minutes, so premature scale-in would disconnect active callers (though ECS drains connections before stopping tasks).</p>
+
+<h4>Capacity Planning for 3,000 Calls/Day</h4>
+<ul>
+  <li>3,000 calls/day = ~375/hour during 8 peak hours</li>
+  <li>Average call duration: ~4 minutes = ~25 concurrent calls at peak</li>
+  <li>At 10 calls/task (ALB scaling target): need ~3 tasks at peak</li>
+  <li>With headroom: max_tasks=8 handles 2x the expected peak</li>
+  <li>Each task at 1 vCPU / 2GB handles ~10 concurrent WebSocket connections comfortably</li>
+</ul>
+</div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<!--  SECTION 14 — CI/CD PIPELINE                                  -->
+<!-- ════════════════════════════════════════════════════════════════ -->
+<section id="s14">
+<h2><span class="num">14</span> CI/CD Pipeline</h2>
+
+<div class="card">
+<h3>Pipeline Overview</h3>
+<pre><code><span class="hl-orange">              CI/CD Pipeline Flow</span>
+
+<span class="hl-blue">ci.yml</span> (push to master/staging, PRs to master)
+  <span class="hl-dim">Stage 1:</span> <span class="hl-green">Unit Tests</span>          &rarr; tests/test_utils.py (no API keys)
+  <span class="hl-dim">Stage 2:</span> <span class="hl-green">Eval Tests</span>          &rarr; eval_slots.py + eval_intents.py (needs GROQ_API_KEY)
+  <span class="hl-dim">Stage 3:</span> <span class="hl-green">E2E Twilio Tests</span>    &rarr; eval_e2e_twilio.py (master only, all keys)
+
+<span class="hl-blue">deploy.yml</span> (push to master, or manual workflow_dispatch)
+  <span class="hl-dim">Step 1:</span> <span class="hl-yellow">Build & Push</span>        &rarr; Docker build &rarr; tag sha-{short} + latest &rarr; push to ECR
+  <span class="hl-dim">Step 2:</span> <span class="hl-yellow">Deploy to Dev</span>       &rarr; aws ecs update-service --force-new-deployment
+                              &rarr; wait services-stable &rarr; health check (60s timeout)
+  <span class="hl-dim">Step 3:</span> <span class="hl-yellow">E2E Test Dev</span>        &rarr; run eval_e2e_twilio.py against dev ALB URL
+  <span class="hl-dim">Step 4:</span> <span class="hl-yellow">Deploy to Prod</span>      &rarr; manual trigger only + GitHub environment approval gate
+
+<span class="hl-blue">infra.yml</span> (manual workflow_dispatch only)
+  <span class="hl-dim">Actions:</span> plan | apply | destroy
+  <span class="hl-dim">Environments:</span> dev | prod
+  <span class="hl-dim">Scaling profiles:</span>
+    dev:  defaults (512 CPU, 1024 MiB, 1 min task)
+    prod: -var=task_cpu=1024 -var=task_memory=2048 -var=min_tasks=2
+          -var=db_instance_class=db.t4g.small -var=redis_node_type=cache.t4g.small</code></pre>
+
+<h4>Key Design Decisions</h4>
+<ul>
+  <li><strong>ECR outside Terraform</strong> &mdash; the ECR repository is created manually (or in a separate bootstrap) so <code>terraform destroy</code> doesn't delete all stored Docker images</li>
+  <li><strong>S3 + DynamoDB state backend</strong> &mdash; Terraform state is stored in <code>s3://ivr-terraform-state-{account_id}/ivr/terraform.tfstate</code> with DynamoDB locking (<code>ivr-terraform-locks</code> table) to prevent concurrent modifications</li>
+  <li><strong>Image tagging</strong> &mdash; images are tagged with <code>sha-{short_commit_hash}</code> for traceability, and also as <code>latest</code> for convenience</li>
+  <li><strong>Health check on deploy</strong> &mdash; after <code>ecs update-service</code>, the pipeline polls <code>/health</code> every 5 seconds for up to 60s (dev) or 90s (prod), failing the deploy if the service doesn't become healthy</li>
+  <li><strong>Prod requires approval</strong> &mdash; the <code>production</code> GitHub environment has required reviewers, preventing accidental production deploys</li>
+</ul>
+</div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<!--  SECTION 15 — SECURITY                                        -->
+<!-- ════════════════════════════════════════════════════════════════ -->
+<section id="s15">
+<h2><span class="num">15</span> Security</h2>
+
+<div class="card">
+<h3>Security Layers</h3>
+
+<h4>Twilio Webhook Signature Validation</h4>
+<p>When <code>VALIDATE_TWILIO_SIGNATURE=true</code> and <code>TWILIO_BASE_URL</code> is set, every inbound Twilio webhook (<code>/webhook/voice</code>, <code>/webhook/gather</code>, <code>/webhook/status</code>, <code>/webhook/recording-status</code>) validates the <code>X-Twilio-Signature</code> header using Twilio's <code>RequestValidator</code>. This HMAC-SHA1 check ensures webhooks genuinely originated from Twilio and prevents spoofed requests. Disabled in dev (no fixed URL).</p>
+
+<h4>WebSocket Authentication</h4>
+<p>The <code>/stream</code> WebSocket endpoint supports token-based auth via query parameter: <code>?token={WS_AUTH_TOKEN}</code>. When configured, the token is compared using <code>secrets.compare_digest()</code> (constant-time comparison to prevent timing attacks). Unauthenticated connections receive a 4001 close code.</p>
+
+<h4>Dashboard HTTP Basic Auth</h4>
+<p>The <code>/dashboard/*</code> and <code>/client/*</code> routes are protected by HTTP Basic Auth when <code>DASHBOARD_PASSWORD</code> is set. Credentials are compared using <code>secrets.compare_digest()</code>. Auth is disabled when the password is empty (dev mode).</p>
+
+<h4>AWS Secrets Manager</h4>
+<p>All API keys (OpenAI, Deepgram, ElevenLabs, Twilio, Groq) are stored in Secrets Manager at <code>{env}/ivr/app-secrets</code>. ECS task definitions reference them as <code>secrets</code> (not environment variables), so they're injected at container start without appearing in task definition plaintext or CloudWatch logs.</p>
+
+<h4>VPC Security Groups</h4>
+<table>
+  <tr><th>Security Group</th><th>Inbound</th><th>Outbound</th></tr>
+  <tr><td>ALB (<code>alb-sg</code>)</td><td>TCP 80 from 0.0.0.0/0</td><td>All traffic</td></tr>
+  <tr><td>App (<code>app-sg</code>)</td><td>TCP 8000 from ALB SG only</td><td>All traffic (outbound API calls)</td></tr>
+  <tr><td>RDS (<code>rds-sg</code>)</td><td>TCP 5432 from App SG only</td><td>None (no outbound rules specified)</td></tr>
+  <tr><td>Redis (<code>redis-sg</code>)</td><td>TCP 6379 from App SG only</td><td>None</td></tr>
+</table>
+<p>RDS and Redis have <strong>no public access</strong>. They accept connections only from the app security group, enforcing network-level isolation.</p>
+
+<h4>PII Protection</h4>
+<ul>
+  <li>PII redaction: <code>utils/pii_redactor.py</code> strips sensitive data from conversation logs stored in the dashboard</li>
+  <li>Card/bank data collected via DTMF only &mdash; never passes through the LLM or STT pipeline</li>
+  <li>Payment API calls use JWT (<code>X-Payment-JWT</code>) with 5-minute expiry for authorization</li>
+  <li>System prompt explicitly prohibits the LLM from revealing or hinting at data from internal records</li>
+</ul>
+</div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<!--  SECTION 16 — MONITORING & OBSERVABILITY                      -->
+<!-- ════════════════════════════════════════════════════════════════ -->
+<section id="s16">
+<h2><span class="num">16</span> Monitoring & Observability</h2>
+
+<div class="card">
+<h3>Logging Architecture</h3>
+
+<h4>CloudWatch Logs</h4>
+<p>Both ECS containers (app and mock-api) use the <code>awslogs</code> log driver, sending all stdout/stderr to CloudWatch under <code>/ecs/{env}-ivr</code> with 7-day retention. Log stream prefixes: <code>ecs/</code> for the app container, <code>mock-api/</code> for the sidecar.</p>
+
+<h4>Structured Logging</h4>
+<p>The application uses <code>structlog</code> for structured key-value logging. Every significant event includes contextual fields:</p>
+<table>
+  <tr><th>Event</th><th>Fields</th><th>Example</th></tr>
+  <tr><td><code>call_started</code></td><td>call_sid, stream_sid, auth_mode, from_number</td><td>New WebSocket connection</td></tr>
+  <tr><td><code>transcript</code></td><td>call_sid, text</td><td>Final Deepgram transcript</td></tr>
+  <tr><td><code>intent_detected</code></td><td>call_sid, intent, input</td><td>Router classification result</td></tr>
+  <tr><td><code>auth_step_change</code></td><td>call_sid, from_step, to_step</td><td>Auth state machine transition</td></tr>
+  <tr><td><code>rag_retrieved</code></td><td>call_sid, chunks, latency_ms</td><td>FAQ vector search result</td></tr>
+  <tr><td><code>llm_response</code></td><td>call_sid, node, latency_ms, chars</td><td>LLM generation timing</td></tr>
+  <tr><td><code>tts_start / tts_done</code></td><td>call_sid, text_len, chunks_sent</td><td>TTS streaming lifecycle</td></tr>
+  <tr><td><code>barge_in_fired</code></td><td>call_sid</td><td>VAD detected caller interruption</td></tr>
+</table>
+
+<h4>Live Log Streaming via SSE</h4>
+<p>The <code>log_bus.py</code> module implements an in-memory pub/sub system:</p>
+<ol>
+  <li><code>main.py</code>'s <code>_Tee</code> class intercepts all stdout/stderr and calls <code>log_bus.push(line)</code></li>
+  <li><code>log_bus</code> maintains a ring buffer (<code>deque(maxlen=500)</code>) and a list of subscriber queues</li>
+  <li><code>GET /client/logs/stream</code> returns a Server-Sent Events stream that subscribes to log_bus</li>
+  <li>The log viewer page (<code>GET /client/logs</code>) connects to this SSE endpoint and color-codes log lines by type (speech=blue, auth=orange, graph=green, error=red)</li>
+</ol>
+
+<h4>Dashboard</h4>
+<p>The <code>/dashboard</code> endpoint serves a comprehensive monitoring UI with tabs for:</p>
+<ul>
+  <li><strong>WebChat</strong> &mdash; text-based testing interface</li>
+  <li><strong>Calls</strong> &mdash; call history with turn-by-turn transcripts, intents, nodes, and timing</li>
+  <li><strong>Softphone</strong> &mdash; browser-based voice testing</li>
+  <li><strong>Logs</strong> &mdash; real-time log stream with filtering</li>
+  <li><strong>Config</strong> &mdash; current system configuration (models, providers, feature flags) with masked API keys</li>
+</ul>
+
+<h4>Call Recording</h4>
+<p>The webhook path (<code>/webhook/voice</code>) starts a Twilio recording on each call. When the recording completes, Twilio fires <code>/webhook/recording-status</code>, which stores the recording SID and MP3 URL in the conversation store for later review.</p>
+</div>
+</section>
+
+</div><!-- /.container -->
+
+</body>
+</html>

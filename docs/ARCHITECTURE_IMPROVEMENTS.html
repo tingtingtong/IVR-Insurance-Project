@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UIC IVR — Architecture Improvements for Production</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --surface: #1e293b;
+    --surface2: #334155;
+    --border: #475569;
+    --text: #e2e8f0;
+    --text-dim: #94a3b8;
+    --accent: #f97316;
+    --accent2: #38bdf8;
+    --green: #4ade80;
+    --red: #f87171;
+    --yellow: #fbbf24;
+    --purple: #a78bfa;
+    --pink: #f472b6;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg); color: var(--text); line-height:1.7; padding:0;
+  }
+  .header {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    border-bottom: 2px solid var(--accent);
+    padding: 3rem 2rem; text-align: center;
+  }
+  .header h1 {
+    font-size:2.2rem; font-weight:700;
+    background: linear-gradient(135deg, var(--accent), var(--yellow));
+    -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+    background-clip:text;
+    margin-bottom:0.5rem;
+  }
+  .header p { color:var(--text-dim); font-size:1.1rem; }
+  .container { max-width:1100px; margin:0 auto; padding:2rem; }
+
+  /* TOC */
+  .toc {
+    background:var(--surface); border:1px solid var(--border);
+    border-radius:12px; padding:1.5rem 2rem; margin-bottom:2.5rem;
+  }
+  .toc h2 { font-size:1.2rem; color:var(--accent); margin-bottom:1rem; }
+  .toc ol { padding-left:1.5rem; }
+  .toc li { margin-bottom:0.35rem; }
+  .toc a { color:var(--accent2); text-decoration:none; }
+  .toc a:hover { text-decoration:underline; }
+
+  /* Section headings */
+  .section-title {
+    font-size:1.6rem; color:var(--accent); font-weight:700;
+    border-bottom:2px solid var(--border); padding-bottom:0.5rem;
+    margin: 2.5rem 0 1.5rem 0;
+  }
+
+  /* Cards */
+  .card {
+    background:var(--surface); border:1px solid var(--border);
+    border-radius:12px; padding:2rem; margin-bottom:1.5rem;
+    position: relative;
+    transition: border-color 0.2s ease;
+  }
+  .card:hover { border-color: var(--accent); }
+  .card-badge {
+    position:absolute; top:-0.75rem; left:1.5rem;
+    background: linear-gradient(135deg, var(--accent), var(--yellow));
+    color:#0f172a; font-weight:800; font-size:0.85rem;
+    padding:0.2rem 0.75rem; border-radius:20px;
+    letter-spacing:0.5px;
+  }
+  .card h3 {
+    font-size:1.2rem; color:var(--accent2); margin:0.5rem 0 0.25rem 0;
+  }
+  .card .subtitle {
+    color:var(--text-dim); font-size:0.95rem; font-style:italic;
+    margin-bottom:1rem; display:block;
+  }
+  .card p, .card li { margin-bottom:0.5rem; }
+  .card ul { padding-left:1.5rem; margin-top:0.5rem; }
+  .label {
+    display:inline-block; font-size:0.78rem; font-weight:600; text-transform:uppercase;
+    padding:0.15rem 0.6rem; border-radius:4px; margin-right:0.5rem;
+    letter-spacing:0.5px;
+  }
+  .label-current { background:var(--surface2); color:var(--red); }
+  .label-improve { background:var(--surface2); color:var(--green); }
+  .label-why { background:var(--surface2); color:var(--yellow); }
+  .label-how { background:var(--surface2); color:var(--accent2); }
+  .label-effort { background:var(--surface2); color:var(--purple); }
+
+  /* Tables */
+  table {
+    width:100%; border-collapse:collapse; margin-bottom:1.2rem;
+    font-size:0.92rem;
+  }
+  th {
+    text-align:left; padding:0.75rem 1rem;
+    background:var(--surface2); color:var(--accent); font-weight:600;
+    border-bottom:2px solid var(--accent);
+  }
+  td {
+    padding:0.75rem 1rem; border-bottom:1px solid var(--border);
+    vertical-align:top;
+  }
+  tr:hover td { background:rgba(248,113,113,0.04); }
+  td:first-child { color:var(--accent2); font-weight:500; }
+
+  /* Table sections */
+  .table-section {
+    background:var(--surface); border:1px solid var(--border);
+    border-radius:12px; padding:2rem; margin-bottom:2rem;
+  }
+  .table-section h2 {
+    font-size:1.45rem; color:var(--accent);
+    border-bottom:2px solid var(--border); padding-bottom:0.5rem; margin-bottom:1.5rem;
+  }
+
+  /* Diagram */
+  .diagram-section {
+    background:var(--surface); border:1px solid var(--border);
+    border-radius:12px; padding:2rem; margin-bottom:2rem;
+  }
+  .diagram-section h2 {
+    font-size:1.45rem; color:var(--accent);
+    border-bottom:2px solid var(--border); padding-bottom:0.5rem; margin-bottom:1.5rem;
+  }
+  .diagram-box {
+    background:#0d1117; border:1px solid var(--border); border-radius:8px;
+    padding:1.5rem 1rem; overflow-x:auto;
+    font-family:'Cascadia Code','Fira Code','Consolas',monospace;
+    font-size:0.78rem; line-height:1.5; color:#c9d1d9;
+  }
+  .diagram-box .fa { color:var(--accent); font-weight:600; }
+  .diagram-box .fb { color:var(--accent2); font-weight:600; }
+  .diagram-box .fg { color:var(--green); font-weight:600; }
+  .diagram-box .fp { color:var(--purple); font-weight:600; }
+  .diagram-box .fy { color:var(--yellow); font-weight:600; }
+  .diagram-box .fk { color:var(--pink); font-weight:600; }
+
+  /* Priority pills */
+  .pri-critical { background:#dc2626; color:#fff; padding:0.15rem 0.5rem; border-radius:4px; font-size:0.78rem; font-weight:600; }
+  .pri-high { background:#f97316; color:#fff; padding:0.15rem 0.5rem; border-radius:4px; font-size:0.78rem; font-weight:600; }
+  .pri-medium { background:#eab308; color:#0f172a; padding:0.15rem 0.5rem; border-radius:4px; font-size:0.78rem; font-weight:600; }
+  .pri-low { background:#22c55e; color:#0f172a; padding:0.15rem 0.5rem; border-radius:4px; font-size:0.78rem; font-weight:600; }
+
+  code {
+    font-family:'Cascadia Code','Fira Code','Consolas',monospace;
+    background:var(--surface2); padding:0.15rem 0.4rem; border-radius:4px;
+    font-size:0.85rem; color:var(--yellow);
+  }
+
+  @media (max-width:768px) {
+    .container { padding:1rem; }
+    .header { padding:2rem 1rem; }
+    .header h1 { font-size:1.5rem; }
+    .card { padding:1.5rem 1rem; }
+    table { font-size:0.82rem; }
+    th, td { padding:0.5rem 0.6rem; }
+    .diagram-box { font-size:0.65rem; padding:1rem 0.5rem; }
+  }
+
+  .footer {
+    text-align:center; padding:2rem; color:var(--text-dim);
+    font-size:0.85rem; border-top:1px solid var(--border);
+    margin-top:2rem;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>UIC IVR — Architecture Improvements for Production</h1>
+  <p>US Insurance Company (UIC) Conversational IVR Platform — Production Readiness Roadmap</p>
+</div>
+
+<div class="container">
+
+  <!-- TOC -->
+  <div class="toc">
+    <h2>Table of Contents</h2>
+    <ol>
+      <li><a href="#s1">Network Architecture</a></li>
+      <li><a href="#s2">HTTPS &amp; TLS</a></li>
+      <li><a href="#s3">High Availability &amp; DR</a></li>
+      <li><a href="#s4">Database Improvements</a></li>
+      <li><a href="#s5">LLM Provider Resilience</a></li>
+      <li><a href="#s6">Observability &amp; Monitoring</a></li>
+      <li><a href="#s7">Security Hardening</a></li>
+      <li><a href="#s8">Cost Optimization</a></li>
+      <li><a href="#matrix">Priority Matrix</a></li>
+      <li><a href="#roadmap">Implementation Roadmap</a></li>
+      <li><a href="#cost">Cost Comparison</a></li>
+      <li><a href="#diagram">Target Architecture Diagram</a></li>
+    </ol>
+  </div>
+
+  <!-- ================================================================ -->
+  <!-- 1. NETWORK ARCHITECTURE                                           -->
+  <!-- ================================================================ -->
+  <div class="card" id="s1">
+    <span class="card-badge">#1</span>
+    <h3>Network Architecture</h3>
+    <span class="subtitle">From public-only subnets to a production-grade VPC topology</span>
+
+    <p><span class="label label-current">Current State</span></p>
+    <ul>
+      <li>VPC with <strong>2 public subnets only</strong> (<code>map_public_ip_on_launch = true</code>)</li>
+      <li>Fargate tasks run in public subnets with <code>assign_public_ip = true</code></li>
+      <li>No NAT Gateway — containers reach the internet via their own public IPs</li>
+      <li>RDS and Redis sit in the same public subnets (though not publicly accessible)</li>
+      <li>No VPC endpoints — all AWS API calls traverse the public internet</li>
+    </ul>
+
+    <p><span class="label label-improve">Improvement</span></p>
+    <ul>
+      <li>Add <strong>private subnets</strong> (2 AZs) for ECS tasks, RDS, and Redis</li>
+      <li>Deploy <strong>NAT Gateway</strong> in each public subnet for outbound internet access</li>
+      <li>Add <strong>VPC endpoints</strong> for ECR (dkr + api), S3, Secrets Manager, CloudWatch Logs</li>
+      <li>Move all backend resources (ECS, RDS, Redis) to private subnets — only ALB stays public</li>
+    </ul>
+
+    <p><span class="label label-why">Why It Matters</span></p>
+    <ul>
+      <li>Containers with public IPs are directly addressable from the internet — attack surface reduction</li>
+      <li>VPC endpoints eliminate data transfer charges for ECR image pulls and log shipping</li>
+      <li>Required for compliance frameworks (PCI DSS, HIPAA) that mandate network segmentation</li>
+    </ul>
+
+    <p><span class="label label-how">How to Implement</span></p>
+    <ul>
+      <li>Add <code>aws_subnet.private</code> (2 AZs), <code>aws_nat_gateway</code>, <code>aws_eip</code>, private route tables</li>
+      <li>Add <code>aws_vpc_endpoint</code> for ECR, S3, Secrets Manager, CloudWatch</li>
+      <li>Update ECS service: <code>assign_public_ip = false</code>, subnets = private</li>
+      <li>Move RDS/Redis subnet groups to private subnets</li>
+    </ul>
+
+    <p><span class="label label-effort">Effort</span> ~2 days Terraform changes | NAT Gateway cost: ~$32/mo per AZ ($64/mo for 2 AZs)</p>
+  </div>
+
+  <!-- ================================================================ -->
+  <!-- 2. HTTPS & TLS                                                    -->
+  <!-- ================================================================ -->
+  <div class="card" id="s2">
+    <span class="card-badge">#2</span>
+    <h3>HTTPS &amp; TLS</h3>
+    <span class="subtitle">From HTTP-only to fully encrypted traffic</span>
+
+    <p><span class="label label-current">Current State</span></p>
+    <ul>
+      <li>ALB listener on <strong>port 80 (HTTP only)</strong> — no HTTPS listener</li>
+      <li>ALB SG only allows inbound port 80</li>
+      <li>No ACM certificate, no custom domain, no Route 53</li>
+      <li>Twilio webhooks use <code>http://</code> — browser mic access blocked (requires HTTPS)</li>
+      <li>WebSocket connections use <code>ws://</code> instead of <code>wss://</code></li>
+    </ul>
+
+    <p><span class="label label-improve">Improvement</span></p>
+    <ul>
+      <li>Request <strong>ACM certificate</strong> for custom domain (e.g., <code>ivr.uic-insurance.com</code>)</li>
+      <li>Add <strong>HTTPS listener (443)</strong> on ALB with ACM cert</li>
+      <li>Redirect HTTP (80) to HTTPS (443) automatically</li>
+      <li>Configure <strong>Route 53</strong> hosted zone with A record alias to ALB</li>
+      <li>Update Twilio webhook URLs to <code>https://</code> and WebSocket to <code>wss://</code></li>
+    </ul>
+
+    <p><span class="label label-why">Why It Matters</span></p>
+    <ul>
+      <li>Browser microphone access requires HTTPS — the softphone web UI is broken without it</li>
+      <li>Twilio strongly recommends HTTPS for all webhook endpoints</li>
+      <li>PII (phone numbers, DOB, policy numbers) transmitted in plaintext over HTTP</li>
+    </ul>
+
+    <p><span class="label label-how">How to Implement</span></p>
+    <ul>
+      <li>Add <code>aws_acm_certificate</code> + DNS validation via Route 53</li>
+      <li>Add <code>aws_lb_listener.https</code> (443) with certificate, modify HTTP listener to redirect</li>
+      <li>Update ALB SG to allow inbound 443</li>
+      <li>Add <code>aws_route53_zone</code> and <code>aws_route53_record</code> (A alias)</li>
+    </ul>
+
+    <p><span class="label label-effort">Effort</span> ~1 day | ACM certs are free | Route 53: $0.50/mo per hosted zone + $12/yr domain</p>
+  </div>
+
+  <!-- ================================================================ -->
+  <!-- 3. HIGH AVAILABILITY & DR                                         -->
+  <!-- ================================================================ -->
+  <div class="card" id="s3">
+    <span class="card-badge">#3</span>
+    <h3>High Availability &amp; DR</h3>
+    <span class="subtitle">From single points of failure to multi-AZ resilience</span>
+
+    <p><span class="label label-current">Current State</span></p>
+    <ul>
+      <li>ECS service <code>desired_count = 1</code> — single task, single AZ effectively</li>
+      <li>RDS: single instance, <code>multi_az = false</code> (default), <code>skip_final_snapshot = true</code></li>
+      <li>Redis: single-node ElastiCache cluster (<code>num_cache_nodes = 1</code>), no replication</li>
+      <li>Health check is basic <code>/health</code> endpoint — does not verify database or Redis connectivity</li>
+    </ul>
+
+    <p><span class="label label-improve">Improvement</span></p>
+    <ul>
+      <li>Set ECS <code>min_tasks = 2</code> across different AZs for zero-downtime deployments</li>
+      <li>Enable <strong>RDS Multi-AZ</strong> (<code>multi_az = true</code>) for automatic failover</li>
+      <li>Switch to <strong>ElastiCache Replication Group</strong> with 1 primary + 1 replica across AZs</li>
+      <li>Implement <strong>deep health checks</strong> that verify DB, Redis, and LLM API connectivity</li>
+      <li>Add <strong>circuit breakers</strong> for external services (Deepgram, ElevenLabs, Groq)</li>
+      <li>Enable RDS automated backups with 7-day retention and final snapshot on delete</li>
+    </ul>
+
+    <p><span class="label label-why">Why It Matters</span></p>
+    <ul>
+      <li>Single ECS task = any deployment or crash drops 100% of active calls</li>
+      <li>Single-AZ RDS = full outage if that AZ has issues (happens multiple times/year)</li>
+      <li>Insurance call centers cannot tolerate downtime during business hours</li>
+    </ul>
+
+    <p><span class="label label-how">How to Implement</span></p>
+    <ul>
+      <li>Update <code>var.min_tasks</code> default to 2, set deployment <code>minimum_healthy_percent = 100</code></li>
+      <li>Add <code>multi_az = true</code> to <code>aws_db_instance</code>, set <code>skip_final_snapshot = false</code></li>
+      <li>Replace <code>aws_elasticache_cluster</code> with <code>aws_elasticache_replication_group</code></li>
+      <li>Extend <code>/health</code> to query DB and Redis, return degraded status if either fails</li>
+    </ul>
+
+    <p><span class="label label-effort">Effort</span> ~3 days | Multi-AZ RDS doubles cost (~$28/mo more for t4g.small) | Redis replica: ~$13/mo</p>
+  </div>
+
+  <!-- ================================================================ -->
+  <!-- 4. DATABASE IMPROVEMENTS                                          -->
+  <!-- ================================================================ -->
+  <div class="card" id="s4">
+    <span class="card-badge">#4</span>
+    <h3>Database Improvements</h3>
+    <span class="subtitle">From bare-minimum RDS to production-grade data layer</span>
+
+    <p><span class="label label-current">Current State</span></p>
+    <ul>
+      <li>Single RDS instance (<code>db.t4g.micro</code>), 20GB gp3, no replicas</li>
+      <li>Dev and prod share the same instance (different database names: <code>ivr_dev</code>, <code>ivr_prod</code>)</li>
+      <li>pgvector runs on the same instance — embedding queries compete with transactional writes</li>
+      <li>No connection pooling — each ECS task opens direct connections</li>
+      <li>No schema versioning tool — manual SQL migrations</li>
+      <li><code>deletion_protection = false</code>, no automated backup retention configured</li>
+    </ul>
+
+    <p><span class="label label-improve">Improvement</span></p>
+    <ul>
+      <li>Separate dev and prod into <strong>different RDS instances</strong></li>
+      <li>Add a <strong>read replica</strong> for pgvector queries (RAG retrieval) to offload the primary</li>
+      <li>Deploy <strong>RDS Proxy</strong> for connection pooling and failover acceleration</li>
+      <li>Enable <code>deletion_protection = true</code> and automated backups (7-day retention)</li>
+      <li>Adopt <strong>Alembic</strong> for schema version control — migrations in source control</li>
+      <li>Enable <strong>Performance Insights</strong> for query-level monitoring</li>
+    </ul>
+
+    <p><span class="label label-why">Why It Matters</span></p>
+    <ul>
+      <li>Shared instance means a dev mistake (e.g., <code>DROP TABLE</code>) can impact prod</li>
+      <li>pgvector similarity searches are CPU-intensive — they degrade checkpoint writes under load</li>
+      <li>Without connection pooling, scaling ECS tasks exhausts the 80-connection limit on t4g.micro</li>
+    </ul>
+
+    <p><span class="label label-how">How to Implement</span></p>
+    <ul>
+      <li>Parameterize RDS per environment in Terraform (use workspaces or separate tfvars)</li>
+      <li>Add <code>aws_db_instance</code> read replica, point RAG retrieval to replica endpoint</li>
+      <li>Add <code>aws_db_proxy</code> resource, update ECS <code>DATABASE_URL</code> to proxy endpoint</li>
+      <li>Add Alembic to the Python project: <code>alembic init</code>, create initial migration from existing schema</li>
+    </ul>
+
+    <p><span class="label label-effort">Effort</span> ~4 days | RDS Proxy: ~$20/mo | Read replica: ~$14/mo (t4g.micro)</p>
+  </div>
+
+  <!-- ================================================================ -->
+  <!-- 5. LLM PROVIDER RESILIENCE                                        -->
+  <!-- ================================================================ -->
+  <div class="card" id="s5">
+    <span class="card-badge">#5</span>
+    <h3>LLM Provider Resilience</h3>
+    <span class="subtitle">From manual failover to automatic multi-provider resilience</span>
+
+    <p><span class="label label-current">Current State</span></p>
+    <ul>
+      <li>Groq is the primary LLM provider; Bedrock is available but requires <strong>manual switch</strong> via <code>LLM_PROVIDER</code> env var</li>
+      <li>If Groq goes down, calls fail until an operator redeploys with <code>LLM_PROVIDER=bedrock</code></li>
+      <li>No response caching — identical FAQ questions call the LLM every time</li>
+      <li>No token usage monitoring or budget alerts</li>
+    </ul>
+
+    <p><span class="label label-improve">Improvement</span></p>
+    <ul>
+      <li>Implement <strong>automatic failover chain</strong>: Groq (primary) -> Bedrock (secondary) -> OpenAI (tertiary)</li>
+      <li>Add <strong>circuit breaker</strong> pattern: after N consecutive failures or latency > threshold, switch provider</li>
+      <li>Cache LLM responses for common FAQ/RAG queries in Redis (TTL 1 hour)</li>
+      <li>Track token usage per provider per day, alert when approaching budget thresholds</li>
+      <li>Add <strong>latency-based routing</strong>: if Groq response > 500ms, prefer Bedrock for next request</li>
+    </ul>
+
+    <p><span class="label label-why">Why It Matters</span></p>
+    <ul>
+      <li>Groq has had multiple outages (rate limits, capacity issues) — each one is a full IVR outage today</li>
+      <li>Response caching can eliminate 30-40% of LLM calls for common questions, saving both latency and cost</li>
+      <li>Insurance regulators expect documented uptime SLAs — manual failover does not meet those standards</li>
+    </ul>
+
+    <p><span class="label label-how">How to Implement</span></p>
+    <ul>
+      <li>Create an <code>LLMProviderManager</code> class with ordered provider list and circuit breaker state</li>
+      <li>Use <code>tenacity</code> library for retry logic with exponential backoff</li>
+      <li>Add Redis cache layer: hash prompt -> cached response (skip for PII/account-specific queries)</li>
+      <li>Emit custom CloudWatch metrics: <code>llm_latency_ms</code>, <code>llm_failures</code>, <code>llm_tokens_used</code></li>
+    </ul>
+
+    <p><span class="label label-effort">Effort</span> ~3 days application code | No additional infra cost</p>
+  </div>
+
+  <!-- ================================================================ -->
+  <!-- 6. OBSERVABILITY & MONITORING                                     -->
+  <!-- ================================================================ -->
+  <div class="card" id="s6">
+    <span class="card-badge">#6</span>
+    <h3>Observability &amp; Monitoring</h3>
+    <span class="subtitle">From basic logs to full-stack observability</span>
+
+    <p><span class="label label-current">Current State</span></p>
+    <ul>
+      <li>CloudWatch Logs with <strong>7-day retention</strong> — standard ECS log driver</li>
+      <li>SSE-based log viewer in the web UI for real-time debugging</li>
+      <li>No custom metrics, no alarms, no dashboards</li>
+      <li>No distributed tracing — hard to debug latency across STT -> LLM -> TTS pipeline</li>
+      <li>No alerting — failures discovered manually</li>
+    </ul>
+
+    <p><span class="label label-improve">Improvement</span></p>
+    <ul>
+      <li>Publish <strong>custom CloudWatch metrics</strong>: calls/min, avg response latency, auth success rate, LLM latency by provider</li>
+      <li>Enable <strong>AWS X-Ray</strong> tracing across the full call pipeline (STT -> LangGraph -> TTS)</li>
+      <li>Create <strong>CloudWatch alarms</strong>: error rate > 5%, p99 latency > 3s, ECS task count = 0, RDS CPU > 80%</li>
+      <li>Set up <strong>SNS topic</strong> for alarm notifications (email, PagerDuty, Slack webhook)</li>
+      <li>Build a <strong>CloudWatch dashboard</strong>: active calls, latency percentiles, error rates, LLM provider status</li>
+      <li>Increase log retention to 30 days (prod), add structured JSON logging</li>
+    </ul>
+
+    <p><span class="label label-why">Why It Matters</span></p>
+    <ul>
+      <li>Without metrics, you cannot measure SLA compliance or identify degradation trends</li>
+      <li>Voice latency issues need trace-level debugging — "which component added 800ms?"</li>
+      <li>Proactive alerting is the difference between "we noticed before callers did" and incident escalation</li>
+    </ul>
+
+    <p><span class="label label-how">How to Implement</span></p>
+    <ul>
+      <li>Add <code>aws-embedded-metrics</code> Python library for custom metric emission</li>
+      <li>Add <code>aws-xray-sdk</code> and patch HTTP clients, add X-Ray daemon as ECS sidecar</li>
+      <li>Define <code>aws_cloudwatch_metric_alarm</code> resources in Terraform</li>
+      <li>Add <code>aws_sns_topic</code> + <code>aws_sns_topic_subscription</code> for alert routing</li>
+    </ul>
+
+    <p><span class="label label-effort">Effort</span> ~3 days | CloudWatch custom metrics: ~$0.30/metric/mo | X-Ray: ~$5/mo at moderate volume</p>
+  </div>
+
+  <!-- ================================================================ -->
+  <!-- 7. SECURITY HARDENING                                             -->
+  <!-- ================================================================ -->
+  <div class="card" id="s7">
+    <span class="card-badge">#7</span>
+    <h3>Security Hardening</h3>
+    <span class="subtitle">From basic security to compliance-ready posture</span>
+
+    <p><span class="label label-current">Current State</span></p>
+    <ul>
+      <li>Security groups: ALB allows 0.0.0.0/0 on port 80, app SG allows ALB only, RDS/Redis allow app SG only</li>
+      <li>Secrets Manager stores all API keys (Twilio, Groq, Deepgram, ElevenLabs, OpenAI)</li>
+      <li>Twilio webhook signature validation implemented in application code</li>
+      <li>No WAF, no DDoS protection, no VPC Flow Logs, no audit trail</li>
+      <li>No secrets rotation policy</li>
+    </ul>
+
+    <p><span class="label label-improve">Improvement</span></p>
+    <ul>
+      <li>Deploy <strong>AWS WAF</strong> on ALB: rate limiting (100 req/s per IP), SQL injection rules, geo-blocking</li>
+      <li>Enable <strong>AWS Shield Standard</strong> (free) for DDoS protection on ALB</li>
+      <li>Enable <strong>VPC Flow Logs</strong> to S3 for network forensics</li>
+      <li>Enable <strong>GuardDuty</strong> for threat detection (anomalous API calls, compromised credentials)</li>
+      <li>Enable <strong>CloudTrail</strong> for full API audit logging</li>
+      <li>Configure <strong>secrets rotation</strong> via Lambda for Twilio and database credentials</li>
+      <li>Implement <strong>IAM least-privilege</strong>: scope ECS task role to only required Bedrock models and Secrets Manager ARNs</li>
+      <li>Plan for <strong>PCI DSS</strong> (payment card data) and <strong>HIPAA</strong> (health insurance data) compliance audits</li>
+    </ul>
+
+    <p><span class="label label-why">Why It Matters</span></p>
+    <ul>
+      <li>Insurance IVR handles PII (SSN, DOB, policy numbers) and PHI (health claims) — breach = regulatory fines</li>
+      <li>Without WAF, the ALB is exposed to bot traffic, credential stuffing, and application-layer DDoS</li>
+      <li>Compliance auditors require audit trails, encryption evidence, and access control documentation</li>
+    </ul>
+
+    <p><span class="label label-how">How to Implement</span></p>
+    <ul>
+      <li>Add <code>aws_wafv2_web_acl</code> with managed rule groups (AWSManagedRulesCommonRuleSet, RateBased)</li>
+      <li>Add <code>aws_flow_log</code> resource targeting VPC, destination S3 bucket</li>
+      <li>Enable GuardDuty and CloudTrail via Terraform (<code>aws_guardduty_detector</code>, <code>aws_cloudtrail</code>)</li>
+      <li>Create Lambda rotation functions for Secrets Manager</li>
+    </ul>
+
+    <p><span class="label label-effort">Effort</span> ~5 days | WAF: ~$5/mo + $0.60/M requests | GuardDuty: ~$4/mo | CloudTrail: ~$2/mo</p>
+  </div>
+
+  <!-- ================================================================ -->
+  <!-- 8. COST OPTIMIZATION                                              -->
+  <!-- ================================================================ -->
+  <div class="card" id="s8">
+    <span class="card-badge">#8</span>
+    <h3>Cost Optimization</h3>
+    <span class="subtitle">From fixed-cost resources to right-sized, tagged infrastructure</span>
+
+    <p><span class="label label-current">Current State</span></p>
+    <ul>
+      <li>All resources run on-demand pricing — no Savings Plans or Reserved Instances</li>
+      <li>ECS auto-scaling configured but <code>desired_count = 1</code> with no scale-to-zero</li>
+      <li>No cost allocation tags — cannot attribute spend to dev vs prod</li>
+      <li>No AWS Budgets or billing alarms</li>
+      <li>NAT Gateway not used (because no private subnets) — will become a cost factor when added</li>
+    </ul>
+
+    <p><span class="label label-improve">Improvement</span></p>
+    <ul>
+      <li>Use <strong>Fargate Spot</strong> for dev/staging environments (up to 70% savings)</li>
+      <li>Evaluate <strong>Compute Savings Plans</strong> for prod (up to 50% savings on Fargate)</li>
+      <li>Apply <strong>RDS Reserved Instances</strong> for prod (1-year, no upfront = ~35% savings)</li>
+      <li>Add <strong>cost allocation tags</strong> (<code>Environment</code>, <code>Project</code>, <code>CostCenter</code>) to all resources</li>
+      <li>Set up <strong>AWS Budgets</strong> with monthly threshold alerts ($100 dev, $500 prod)</li>
+      <li>Implement <strong>ECS scheduled scaling</strong>: scale down to 1 task outside business hours (6pm-8am)</li>
+      <li>Use <strong>S3 Intelligent-Tiering</strong> for VPC Flow Logs and CloudTrail storage</li>
+    </ul>
+
+    <p><span class="label label-why">Why It Matters</span></p>
+    <ul>
+      <li>On-demand pricing is 2-3x more expensive than committed pricing for predictable workloads</li>
+      <li>Without tags, finance cannot attribute cloud spend to the IVR project vs other workloads</li>
+      <li>Surprise bills erode stakeholder confidence in the cloud migration</li>
+    </ul>
+
+    <p><span class="label label-how">How to Implement</span></p>
+    <ul>
+      <li>Add <code>capacity_provider_strategy</code> block to ECS service with <code>FARGATE_SPOT</code> for dev</li>
+      <li>Purchase Savings Plans via AWS Console (requires billing access)</li>
+      <li>Add <code>default_tags</code> block in Terraform <code>provider "aws"</code> configuration</li>
+      <li>Add <code>aws_budgets_budget</code> resources with SNS notification actions</li>
+    </ul>
+
+    <p><span class="label label-effort">Effort</span> ~2 days | Net savings: 30-50% on compute and database costs</p>
+  </div>
+
+  <!-- ================================================================ -->
+  <!-- PRIORITY MATRIX                                                   -->
+  <!-- ================================================================ -->
+  <div class="table-section" id="matrix">
+    <h2>Priority Matrix</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Improvement</th>
+          <th>Impact</th>
+          <th>Effort</th>
+          <th>Priority</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>HTTPS &amp; TLS (#2)</td>
+          <td>Blocks browser mic, PII in plaintext</td>
+          <td>1 day</td>
+          <td><span class="pri-critical">P0 Critical</span></td>
+        </tr>
+        <tr>
+          <td>Network Architecture (#1)</td>
+          <td>Attack surface, compliance blocker</td>
+          <td>2 days</td>
+          <td><span class="pri-critical">P0 Critical</span></td>
+        </tr>
+        <tr>
+          <td>High Availability (#3)</td>
+          <td>Eliminates single points of failure</td>
+          <td>3 days</td>
+          <td><span class="pri-high">P1 High</span></td>
+        </tr>
+        <tr>
+          <td>Security Hardening (#7)</td>
+          <td>WAF, audit trail, compliance</td>
+          <td>5 days</td>
+          <td><span class="pri-high">P1 High</span></td>
+        </tr>
+        <tr>
+          <td>LLM Provider Resilience (#5)</td>
+          <td>Auto-failover prevents outages</td>
+          <td>3 days</td>
+          <td><span class="pri-high">P1 High</span></td>
+        </tr>
+        <tr>
+          <td>Observability (#6)</td>
+          <td>Metrics, tracing, alerting</td>
+          <td>3 days</td>
+          <td><span class="pri-medium">P2 Medium</span></td>
+        </tr>
+        <tr>
+          <td>Database Improvements (#4)</td>
+          <td>Connection pooling, read replicas</td>
+          <td>4 days</td>
+          <td><span class="pri-medium">P2 Medium</span></td>
+        </tr>
+        <tr>
+          <td>Cost Optimization (#8)</td>
+          <td>30-50% cost savings</td>
+          <td>2 days</td>
+          <td><span class="pri-low">P3 Nice-to-have</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ================================================================ -->
+  <!-- ROADMAP                                                           -->
+  <!-- ================================================================ -->
+  <div class="table-section" id="roadmap">
+    <h2>Implementation Roadmap</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Phase</th>
+          <th>Items</th>
+          <th>Timeline</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Phase 1: Production Blockers</td>
+          <td>
+            HTTPS/TLS + ACM + Route 53 (#2)<br>
+            Private subnets + NAT Gateway + VPC endpoints (#1)<br>
+            LLM auto-failover with circuit breaker (#5)
+          </td>
+          <td>Week 1-2</td>
+        </tr>
+        <tr>
+          <td>Phase 2: Reliability &amp; Security</td>
+          <td>
+            Multi-AZ RDS + Redis replication + min 2 ECS tasks (#3)<br>
+            WAF + GuardDuty + CloudTrail + VPC Flow Logs (#7)<br>
+            Custom CloudWatch metrics + alarms + dashboards (#6)
+          </td>
+          <td>Week 3-5</td>
+        </tr>
+        <tr>
+          <td>Phase 3: Optimization</td>
+          <td>
+            RDS Proxy + read replicas + Alembic migrations (#4)<br>
+            Fargate Spot (dev) + Savings Plans + cost tags + Budgets (#8)<br>
+            X-Ray tracing + PagerDuty integration (#6)
+          </td>
+          <td>Week 6-8</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ================================================================ -->
+  <!-- COST COMPARISON                                                   -->
+  <!-- ================================================================ -->
+  <div class="table-section" id="cost">
+    <h2>Cost Comparison (Estimated Monthly)</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Component</th>
+          <th>Dev (Current)</th>
+          <th>Dev (Improved)</th>
+          <th>Prod (Improved)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>ECS Fargate (1-2 tasks)</td>
+          <td>$30</td>
+          <td>$12 (Spot)</td>
+          <td>$45 (Savings Plan)</td>
+        </tr>
+        <tr>
+          <td>ALB</td>
+          <td>$18</td>
+          <td>$18</td>
+          <td>$22</td>
+        </tr>
+        <tr>
+          <td>RDS PostgreSQL</td>
+          <td>$14 (t4g.micro)</td>
+          <td>$14 (t4g.micro)</td>
+          <td>$55 (t4g.small, Multi-AZ)</td>
+        </tr>
+        <tr>
+          <td>ElastiCache Redis</td>
+          <td>$13 (t4g.micro)</td>
+          <td>$13 (t4g.micro)</td>
+          <td>$26 (t4g.small, replica)</td>
+        </tr>
+        <tr>
+          <td>NAT Gateway (2 AZ)</td>
+          <td>$0</td>
+          <td>$64</td>
+          <td>$64</td>
+        </tr>
+        <tr>
+          <td>Route 53 + ACM</td>
+          <td>$0</td>
+          <td>$1</td>
+          <td>$1</td>
+        </tr>
+        <tr>
+          <td>WAF</td>
+          <td>$0</td>
+          <td>$0 (dev off)</td>
+          <td>$8</td>
+        </tr>
+        <tr>
+          <td>Monitoring (CW, X-Ray)</td>
+          <td>$0</td>
+          <td>$3</td>
+          <td>$10</td>
+        </tr>
+        <tr>
+          <td>RDS Proxy</td>
+          <td>$0</td>
+          <td>$0 (dev off)</td>
+          <td>$20</td>
+        </tr>
+        <tr>
+          <td style="color:var(--accent); font-weight:700;">Total</td>
+          <td style="color:var(--accent); font-weight:700;">~$75</td>
+          <td style="color:var(--accent); font-weight:700;">~$125</td>
+          <td style="color:var(--accent); font-weight:700;">~$251</td>
+        </tr>
+      </tbody>
+    </table>
+    <p style="color:var(--text-dim); font-size:0.85rem;">* Estimates based on us-east-1 pricing. Does not include data transfer, LLM API costs (Groq/Bedrock/OpenAI), or STT/TTS costs (Deepgram/ElevenLabs).</p>
+  </div>
+
+  <!-- ================================================================ -->
+  <!-- TARGET ARCHITECTURE DIAGRAM                                       -->
+  <!-- ================================================================ -->
+  <div class="diagram-section" id="diagram">
+    <h2>Target Architecture Diagram (All Improvements Applied)</h2>
+    <div class="diagram-box">
+<pre style="background:none;border:none;margin:0;padding:0;color:inherit;text-align:left;display:inline-block;">
+<span class="fa">                     UIC IVR — Target Production Architecture</span>
+
+<span class="fy">    Internet</span>
+        |
+        v
+<span class="fb">+--[ Route 53 ]--&gt;--[ ACM/HTTPS ]--&gt;--[ WAF + Shield ]--+</span>
+        |                                                   |
+        v                                                   |
+<span class="fb">+----------------------------------------------+</span>         |
+<span class="fb">|           Application Load Balancer           |</span>  <span class="fy">&lt;-- CloudTrail</span>
+<span class="fb">|          (HTTPS:443, redirect HTTP)           |</span>  <span class="fy">&lt;-- GuardDuty</span>
+<span class="fb">+----------------------------------------------+</span>
+        |                                |
+        v  <span class="fy">Public Subnets (2 AZs)</span>       v
+  +-------------+               +-------------+
+  | <span class="fg">NAT GW AZ-a</span> |               | <span class="fg">NAT GW AZ-b</span> |
+  +-------------+               +-------------+
+        |                                |
+  ------+------------- <span class="fy">Private Subnets</span> -+----------------
+        |                                |
+        v                                v
+<span class="fg">+----------------+</span>            <span class="fg">+----------------+</span>
+<span class="fg">|  ECS Task AZ-a |</span>            <span class="fg">|  ECS Task AZ-b |</span>
+<span class="fg">| +------------+ |</span>            <span class="fg">| +------------+ |</span>
+<span class="fg">| |  IVR App   | |</span>            <span class="fg">| |  IVR App   | |</span>
+<span class="fg">| | + Mock API | |</span>            <span class="fg">| | + Mock API | |</span>
+<span class="fg">| | + X-Ray    | |</span>            <span class="fg">| | + X-Ray    | |</span>
+<span class="fg">| +------------+ |</span>            <span class="fg">| +------------+ |</span>
+<span class="fg">+----------------+</span>            <span class="fg">+----------------+</span>
+        |          \            /          |
+        |           \          /           |
+        v            v        v            v
+<span class="fa">+----------------+</span>       <span class="fp">+-------------------+</span>
+<span class="fa">| RDS PostgreSQL |</span>       <span class="fp">| ElastiCache Redis |</span>
+<span class="fa">|   (Multi-AZ)   |</span>       <span class="fp">|  (Primary+Replica)|</span>
+<span class="fa">| Primary  | Stby|</span>       <span class="fp">|  AZ-a    |  AZ-b  |</span>
+<span class="fa">+----------------+</span>       <span class="fp">+-------------------+</span>
+        |
+<span class="fa">+----------------+</span>
+<span class="fa">|  RDS Proxy     |</span>  <span class="fy">&lt;-- Connection Pooling</span>
+<span class="fa">|  + Read Replica|</span>  <span class="fy">&lt;-- pgvector queries</span>
+<span class="fa">+----------------+</span>
+
+<span class="fy">  VPC Endpoints:</span>  ECR (dkr+api) | S3 | Secrets Manager | CloudWatch Logs
+<span class="fy">  VPC Flow Logs:</span>  All traffic logged to S3
+
+<span class="fb">  LLM Failover Chain:</span>   <span class="fg">Groq</span> --[circuit breaker]--&gt; <span class="fa">Bedrock</span> --&gt; <span class="fp">OpenAI</span>
+
+<span class="fy">  Monitoring Stack:</span>
+    CloudWatch Metrics --&gt; Alarms --&gt; SNS --&gt; PagerDuty/Slack
+    X-Ray Tracing    --&gt; Service Map --&gt; Latency Analysis
+    AWS Budgets      --&gt; Cost Alerts --&gt; Email
+</pre>
+    </div>
+  </div>
+
+</div><!-- end container -->
+
+<div class="footer">
+  US Insurance Company (UIC) &mdash; IVR Architecture Improvements for Production
+</div>
+
+</body>
+</html>
