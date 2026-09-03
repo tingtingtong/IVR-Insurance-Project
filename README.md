@@ -165,11 +165,14 @@ aws ecs update-service --cluster ivr-cluster --service dev-ivr-svc --force-new-d
 # Local: cd infra && TF_VAR_db_password='your-password' terraform destroy
 ```
 
-## Browser Softphone (HTTP Troubleshooting)
+## Browser Softphone (HTTPS)
 
-The softphone at `/client` requires microphone access, which browsers only allow on **HTTPS** or **localhost** origins. When deployed behind an HTTP-only ALB:
+The softphone at `/client` requires microphone access, which browsers only allow on **HTTPS** or **localhost** origins.
 
-1. **Recommended**: Call `+19087425347` from a real phone — bypasses browser restrictions entirely
+**HTTPS is enabled via CloudFront** — use the `cloudfront_url` output (e.g., `https://d1234567.cloudfront.net/client`) for browser softphone access. CloudFront terminates TLS and forwards to the HTTP ALB.
+
+**Fallback options** (if CloudFront is not deployed):
+1. Call `+19087425347` from a real phone — bypasses browser restrictions entirely
 2. **Chrome workaround**: Close all Chrome windows, then launch with:
    ```bash
    # Windows
@@ -178,7 +181,7 @@ The softphone at `/client` requires microphone access, which browsers only allow
    # macOS / Linux
    google-chrome --unsafely-treat-insecure-origin-as-secure="http://<alb-dns>" --user-data-dir=/tmp/chrome-dev
    ```
-3. **Permanent fix**: Add an ACM certificate + custom domain to the ALB for HTTPS
+3. **Custom domain**: Add an ACM certificate + Route 53 domain to the ALB for native HTTPS
 
 ## License
 

@@ -1,0 +1,992 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UIC IVR - Avaya PBX Integration Architecture</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --surface: #1e293b;
+    --surface2: #334155;
+    --border: #475569;
+    --text: #e2e8f0;
+    --text-dim: #94a3b8;
+    --accent: #f97316;
+    --accent2: #38bdf8;
+    --green: #4ade80;
+    --red: #f87171;
+    --yellow: #fbbf24;
+    --purple: #a78bfa;
+    --pink: #f472b6;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg); color: var(--text); line-height:1.7; padding:0;
+  }
+  .header {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    border-bottom: 2px solid var(--accent);
+    padding: 3rem 2rem; text-align: center;
+  }
+  .header h1 {
+    font-size:2.2rem; font-weight:700;
+    background: linear-gradient(135deg, var(--accent), var(--yellow));
+    -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+    margin-bottom:0.5rem;
+  }
+  .header p { color:var(--text-dim); font-size:1.1rem; }
+  .container { max-width:1100px; margin:0 auto; padding:2rem; }
+
+  /* TOC */
+  .toc {
+    background:var(--surface); border:1px solid var(--border);
+    border-radius:12px; padding:1.5rem 2rem; margin-bottom:2.5rem;
+    columns: 2; column-gap: 2rem;
+  }
+  .toc h2 { font-size:1.2rem; color:var(--accent); margin-bottom:1rem; column-span:all; }
+  .toc ol { padding-left:1.5rem; }
+  .toc li { margin-bottom:0.35rem; break-inside:avoid; }
+  .toc a { color:var(--accent2); text-decoration:none; }
+  .toc a:hover { text-decoration:underline; }
+
+  /* Sections */
+  .section {
+    background:var(--surface); border:1px solid var(--border);
+    border-radius:12px; padding:2rem; margin-bottom:2rem;
+  }
+  .section h2 {
+    font-size:1.45rem; color:var(--accent);
+    border-bottom:2px solid var(--border); padding-bottom:0.5rem; margin-bottom:1.5rem;
+  }
+  .section h3 { font-size:1.1rem; color:var(--accent2); margin:1.5rem 0 0.75rem 0; }
+  p, li { margin-bottom:0.7rem; }
+  ul, ol { padding-left:1.5rem; margin-bottom:1rem; }
+
+  /* Code */
+  pre {
+    background:#0d1117; border:1px solid var(--border); border-radius:8px;
+    padding:1.2rem; overflow-x:auto; font-family:'Cascadia Code','Fira Code','Consolas',monospace;
+    font-size:0.85rem; line-height:1.6; margin-bottom:1.2rem; color:#c9d1d9;
+  }
+  code {
+    font-family:'Cascadia Code','Fira Code','Consolas',monospace;
+    background:var(--surface2); padding:0.15rem 0.4rem; border-radius:4px;
+    font-size:0.85rem; color:var(--yellow);
+  }
+  pre code { background:none; padding:0; color:inherit; }
+
+  /* Tables */
+  table { width:100%; border-collapse:collapse; margin-bottom:1.2rem; font-size:0.9rem; }
+  th {
+    background:var(--surface2); color:var(--accent); font-weight:600;
+    text-align:left; padding:0.65rem 0.8rem; border:1px solid var(--border);
+  }
+  td { padding:0.55rem 0.8rem; border:1px solid var(--border); }
+  tr:nth-child(even) td { background:rgba(51,65,85,0.3); }
+  tr:hover td { background:rgba(249,115,22,0.06); }
+
+  /* Callout boxes */
+  .callout {
+    border-radius:0 8px 8px 0; padding:1rem 1.2rem; margin-bottom:1.2rem;
+  }
+  .callout-tip {
+    background:rgba(74,222,128,0.08); border-left:4px solid var(--green);
+  }
+  .callout-tip strong { color:var(--green); }
+  .callout-warn {
+    background:rgba(251,191,36,0.08); border-left:4px solid var(--yellow);
+  }
+  .callout-warn strong { color:var(--yellow); }
+  .callout-info {
+    background:rgba(56,189,248,0.08); border-left:4px solid var(--accent2);
+  }
+  .callout-info strong { color:var(--accent2); }
+  .callout-danger {
+    background:rgba(248,113,113,0.08); border-left:4px solid var(--red);
+  }
+  .callout-danger strong { color:var(--red); }
+
+  /* Badges */
+  .badge {
+    display:inline-block; padding:0.12rem 0.55rem; border-radius:9999px;
+    font-size:0.75rem; font-weight:600;
+  }
+  .badge-phase { background:rgba(249,115,22,0.2); color:var(--accent); border:1px solid var(--accent); }
+  .badge-security { background:rgba(248,113,113,0.2); color:var(--red); border:1px solid var(--red); }
+  .badge-ha { background:rgba(74,222,128,0.2); color:var(--green); border:1px solid var(--green); }
+
+  /* Phase timeline */
+  .phase {
+    display:flex; align-items:stretch; margin-bottom:0.5rem;
+  }
+  .phase-line {
+    width:3px; background:var(--accent); margin:0 1.2rem; flex-shrink:0; position:relative;
+  }
+  .phase-line::before {
+    content:""; width:12px; height:12px; background:var(--accent);
+    border-radius:50%; position:absolute; top:0.7rem; left:-4.5px;
+  }
+  .phase-content {
+    background:var(--surface2); border-radius:8px; padding:0.8rem 1rem; flex:1;
+  }
+  .phase-content .label { color:var(--accent); font-weight:600; font-size:0.9rem; }
+
+  /* Summary box */
+  .summary-box {
+    background: linear-gradient(135deg, rgba(249,115,22,0.1), rgba(56,189,248,0.1));
+    border:2px solid var(--accent); border-radius:12px;
+    padding:2rem; margin-top:2rem;
+  }
+  .summary-box h2 { border-bottom-color:var(--accent); }
+</style>
+</head>
+<body>
+
+<!-- ===== HEADER ===== -->
+<div class="header">
+  <h1>Avaya PBX Integration Architecture</h1>
+  <p>US Insurance Company (UIC) AI-Powered IVR &mdash; Avaya + Twilio + AWS Integration</p>
+</div>
+
+<div class="container">
+
+<!-- ===== TABLE OF CONTENTS ===== -->
+<div class="toc">
+  <h2>Table of Contents</h2>
+  <ol>
+    <li><a href="#overview">Overview</a></li>
+    <li><a href="#integration-architecture">Integration Architecture</a></li>
+    <li><a href="#sip-trunk-config">SIP Trunk Configuration</a></li>
+    <li><a href="#uui-headers">Context Passing (UUI Headers)</a></li>
+    <li><a href="#auth-flow">Authentication Flow Integration</a></li>
+    <li><a href="#escalation">Escalation Back to Avaya</a></li>
+    <li><a href="#network-architecture">Network Architecture</a></li>
+    <li><a href="#high-availability">High Availability Considerations</a></li>
+    <li><a href="#security">Security</a></li>
+    <li><a href="#implementation-phases">Implementation Phases</a></li>
+    <li><a href="#target-architecture">Target Architecture Diagram</a></li>
+    <li><a href="#key-takeaways">Key Takeaways</a></li>
+  </ol>
+</div>
+
+<!-- ===== 1. OVERVIEW ===== -->
+<div class="section" id="overview">
+  <h2>1. Overview</h2>
+  <p>
+    US Insurance Company (UIC) operates an <strong>Avaya PBX</strong> as its primary telephony platform,
+    handling all inbound and outbound calls across the organization. The AI-powered IVR system augments
+    this existing infrastructure by providing intelligent, conversational self-service capabilities for
+    policyholders.
+  </p>
+  <p>
+    When callers reach the main Avaya IVR menu, <strong>option 3</strong> routes them to the AI IVR.
+    This routing is accomplished via a <strong>SIP trunk</strong> between the Avaya PBX and
+    <strong>Twilio Elastic SIP Trunking</strong>, which bridges the call into the AWS-hosted AI IVR
+    application running on ECS behind an Application Load Balancer (ALB).
+  </p>
+  <div class="callout callout-info">
+    <strong>Key Concept:</strong> The Avaya PBX remains the front door for all calls. The AI IVR is a
+    specialized backend reached via SIP trunk, not a replacement for the Avaya system.
+  </div>
+  <h3>Why This Approach?</h3>
+  <ul>
+    <li><strong>Minimal disruption</strong> &mdash; existing Avaya dial plans, queues, and agent workflows remain unchanged</li>
+    <li><strong>Incremental rollout</strong> &mdash; only option 3 traffic flows to the AI IVR; other options stay on Avaya</li>
+    <li><strong>Bidirectional</strong> &mdash; calls can escalate back from AI IVR to Avaya agent queues with full context</li>
+    <li><strong>Shared authentication</strong> &mdash; caller identity verified in Avaya can be passed to AI IVR via SIP headers</li>
+  </ul>
+</div>
+
+<!-- ===== 2. INTEGRATION ARCHITECTURE ===== -->
+<div class="section" id="integration-architecture">
+  <h2>2. Integration Architecture</h2>
+  <p>The end-to-end call flow from the caller through Avaya to the AI IVR involves six distinct hops:</p>
+
+  <h3>Call Flow Diagram</h3>
+<pre><code>
+  Caller (PSTN)
+      |
+      |  PSTN / SIP
+      v
+ +------------------+
+ |    Avaya PBX     |
+ |  (IVR Menu)      |
+ |                  |
+ |  Press 1: Claims |
+ |  Press 2: Billing|
+ |  Press 3: AI IVR |----+
+ |  Press 0: Agent  |    |
+ +------------------+    |
+                          |  SIP INVITE (with UUI headers)
+                          |  via SIP Trunk
+                          v
+                 +------------------+
+                 |  Twilio Elastic  |
+                 |  SIP Trunking   |
+                 +------------------+
+                          |
+                          |  HTTPS Webhook (TwiML)
+                          v
+                 +------------------+
+                 |   AWS ALB        |
+                 |  (HTTPS:443)     |
+                 +------------------+
+                          |
+                          |  HTTP forward
+                          v
+                 +------------------+
+                 |   ECS FastAPI    |
+                 |  (AI IVR App)    |
+                 |                  |
+                 |  - WebSocket     |
+                 |    Media Stream  |
+                 |  - LangGraph     |
+                 |  - Bedrock/Groq  |
+                 +------------------+
+</code></pre>
+
+  <h3>Step-by-Step Flow</h3>
+  <ol>
+    <li><strong>Caller dials UIC main number</strong> &mdash; PSTN routes to Avaya PBX</li>
+    <li><strong>Avaya IVR menu plays</strong> &mdash; caller selects option 3 for AI-assisted service</li>
+    <li><strong>Avaya sends SIP INVITE</strong> &mdash; routed via configured SIP trunk to Twilio's SIP URI, including UUI headers with caller context</li>
+    <li><strong>Twilio receives the SIP INVITE</strong> &mdash; triggers a TwiML webhook (HTTP POST) to the configured ALB endpoint</li>
+    <li><strong>ALB forwards to ECS</strong> &mdash; the FastAPI application processes the webhook, returns TwiML with <code>&lt;Connect&gt;&lt;Stream&gt;</code> to establish a WebSocket media stream</li>
+    <li><strong>Bidirectional audio streaming</strong> &mdash; Twilio streams audio over WebSocket; the AI IVR processes speech via STT, runs LangGraph agent logic, and returns TTS audio</li>
+  </ol>
+</div>
+
+<!-- ===== 3. SIP TRUNK CONFIGURATION ===== -->
+<div class="section" id="sip-trunk-config">
+  <h2>3. SIP Trunk Configuration</h2>
+
+  <h3>Avaya Side Configuration</h3>
+  <p>On the Avaya Communication Manager, configure a SIP trunk group pointing to Twilio:</p>
+<pre><code># Avaya CM - SIP Trunk Group Configuration
+# System Management Interface (SMI)
+
+Trunk Group: 50
+  Group Type: sip
+  Group Name: TWILIO-AI-IVR
+  TAC: 550
+  Direction: two-way
+  Dial Access: n
+  Service Type: tie
+
+Signaling Group: 50
+  Group Type: sip
+  Transport Method: tls
+  Near-end Node Name: procr
+  Far-end Node Name: twilio-sip
+  Far-end Network Region: 1
+  Far-end Domain: uic-ivr.pstn.twilio.com
+  SRTP Allowed: best-effort
+
+Route Pattern: 50
+  Pattern: 1  Grp: 50  FRL: 0  Pfx: *
+  # Routes DID +1-800-XXX-XXXX option 3 to this trunk
+</code></pre>
+
+  <h3>Twilio Side Configuration</h3>
+  <p>Configure Twilio Elastic SIP Trunking in the Twilio Console:</p>
+<pre><code># Twilio Elastic SIP Trunk Configuration
+
+Trunk Name: UIC-Avaya-AI-IVR
+SIP Trunk SID: TKxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# Origination (Twilio receives calls FROM Avaya)
+Origination URI: sip:uic-ivr@uic-ivr.pstn.twilio.com
+  Weight: 10
+  Priority: 10
+
+# Termination (Twilio sends calls TO Avaya for escalation)
+Termination SIP URI: uic-ivr.pstn.twilio.com
+  Authentication:
+    IP ACL: 203.0.113.0/24   # Avaya SBC public IP range
+    Credential List: uic-avaya-creds
+
+# Webhook Configuration
+Incoming Call Webhook: https://ivr-alb.uic.internal/api/twilio/voice
+  Method: POST
+  Fallback URL: https://ivr-alb.uic.internal/api/twilio/fallback
+</code></pre>
+
+  <h3>Codec Negotiation</h3>
+  <div class="callout callout-warn">
+    <strong>Important:</strong> Twilio supports <code>G.711 PCMU</code> (u-law) and <code>G.711 PCMA</code> (a-law) only.
+    Ensure Avaya is configured to offer these codecs with highest priority. Wideband codecs (G.722, Opus)
+    will be rejected by Twilio.
+  </div>
+  <table>
+    <thead>
+      <tr><th>Codec</th><th>Avaya Support</th><th>Twilio Support</th><th>Recommendation</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>G.711 PCMU (u-law)</td><td>Yes</td><td>Yes</td><td>Primary &mdash; preferred for North America</td></tr>
+      <tr><td>G.711 PCMA (a-law)</td><td>Yes</td><td>Yes</td><td>Secondary fallback</td></tr>
+      <tr><td>G.729</td><td>Yes</td><td>No</td><td>Do not use</td></tr>
+      <tr><td>G.722</td><td>Yes</td><td>No</td><td>Do not use</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Dial Plan on Avaya</h3>
+  <p>
+    Configure a route pattern in Avaya that directs calls to the SIP trunk when the caller selects
+    option 3 from the main IVR menu. This can be achieved by mapping a virtual extension or DID
+    to the Twilio SIP trunk group:
+  </p>
+<pre><code># Avaya Vector (Call Vectoring)
+# Main IVR Vector - Step for Option 3
+
+01 wait-time 0 secs hearing ringback
+02 collect 1 digits after announcement 30001
+03 goto step 5  if digits =  "1"    /* Claims */
+04 goto step 7  if digits =  "2"    /* Billing */
+05 goto step 9  if digits =  "3"    /* AI IVR */
+06 goto step 11 if digits =  "0"    /* Agent */
+...
+09 route-to number 85500 with cov n  /* 85500 = SIP trunk TAC */
+10 stop
+</code></pre>
+</div>
+
+<!-- ===== 4. UUI HEADERS ===== -->
+<div class="section" id="uui-headers">
+  <h2>4. Context Passing (UUI Headers)</h2>
+  <p>
+    Avaya supports <strong>User-to-User Information (UUI)</strong> headers in SIP signaling, defined
+    in <a href="https://www.rfc-editor.org/rfc/rfc7433" style="color:var(--accent2);">RFC 7433</a>.
+    These headers allow the Avaya PBX to pass caller context to the AI IVR without requiring
+    the caller to re-identify themselves.
+  </p>
+
+  <h3>UUI Data Payload</h3>
+  <p>The UUI header carries a semicolon-delimited string with the following fields:</p>
+  <table>
+    <thead>
+      <tr><th>Field</th><th>Description</th><th>Example</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>ani</code></td><td>Caller's ANI (phone number)</td><td>+13175551234</td></tr>
+      <tr><td><code>acct</code></td><td>Account/policy number (if entered)</td><td>POL-9876543</td></tr>
+      <tr><td><code>auth</code></td><td>Authentication status from Avaya IVR</td><td>verified / none</td></tr>
+      <tr><td><code>path</code></td><td>IVR menu path taken</td><td>main&gt;3</td></tr>
+      <tr><td><code>cid</code></td><td>Avaya call ID for correlation</td><td>AVY-20260903-00142</td></tr>
+    </tbody>
+  </table>
+
+  <h3>SIP INVITE Example</h3>
+<pre><code>INVITE sip:+18005551234@uic-ivr.pstn.twilio.com SIP/2.0
+Via: SIP/2.0/TLS avaya-sbc.uic.com:5061;branch=z9hG4bK776
+From: &lt;sip:+13175551234@avaya-sbc.uic.com&gt;;tag=1928301
+To: &lt;sip:+18005551234@uic-ivr.pstn.twilio.com&gt;
+Call-ID: a84b4c76e66710@avaya-cm.uic.com
+User-to-User: ani=+13175551234;acct=POL-9876543;auth=verified;path=main>3;cid=AVY-20260903-00142;encoding=ascii
+Contact: &lt;sip:avaya-sbc.uic.com:5061;transport=tls&gt;
+Content-Type: application/sdp
+</code></pre>
+
+  <h3>Twilio Webhook Forwarding</h3>
+  <p>
+    Twilio forwards SIP headers as custom parameters in the webhook POST body. UUI data appears
+    as <code>SipHeader_User-to-User</code> or via Twilio's <code>X-</code> header passthrough:
+  </p>
+
+  <h3>FastAPI Extraction Code</h3>
+<pre><code>from fastapi import Request
+from urllib.parse import unquote
+
+def extract_uui_context(request_form: dict) -> dict:
+    """
+    Extract User-to-User Information from Twilio webhook parameters.
+    Twilio passes SIP headers as form fields prefixed with 'SipHeader_'.
+    """
+    context = {
+        "ani": request_form.get("From", ""),
+        "account_number": None,
+        "pre_authenticated": False,
+        "ivr_path": None,
+        "avaya_call_id": None,
+    }
+
+    # Extract UUI header from Twilio's SIP header passthrough
+    uui_raw = request_form.get("SipHeader_User-To-User", "")
+    if not uui_raw:
+        uui_raw = request_form.get("SipHeader_X-UUI", "")
+
+    if uui_raw:
+        uui_decoded = unquote(uui_raw)
+        # Parse semicolon-delimited fields
+        for pair in uui_decoded.split(";"):
+            if "=" in pair:
+                key, value = pair.split("=", 1)
+                key = key.strip().lower()
+                if key == "acct":
+                    context["account_number"] = value.strip()
+                elif key == "auth":
+                    context["pre_authenticated"] = value.strip() == "verified"
+                elif key == "path":
+                    context["ivr_path"] = value.strip()
+                elif key == "cid":
+                    context["avaya_call_id"] = value.strip()
+
+    return context
+
+
+# Usage in the /api/twilio/voice endpoint
+@app.post("/api/twilio/voice")
+async def handle_incoming_call(request: Request):
+    form = await request.form()
+    uui_context = extract_uui_context(dict(form))
+
+    # Store context in Redis for the session
+    call_sid = form.get("CallSid")
+    await redis.hset(f"call:{call_sid}", mapping={
+        "ani": uui_context["ani"],
+        "account_number": uui_context["account_number"] or "",
+        "pre_authenticated": str(uui_context["pre_authenticated"]),
+        "avaya_call_id": uui_context["avaya_call_id"] or "",
+    })
+
+    # If pre-authenticated, skip auth flow in LangGraph
+    if uui_context["pre_authenticated"]:
+        # Route directly to intent handling
+        ...
+</code></pre>
+
+  <div class="callout callout-tip">
+    <strong>Tip:</strong> Always validate and sanitize UUI header values before use. Treat them as
+    untrusted input &mdash; see the <a href="#security" style="color:var(--green);">Security section</a>
+    for sanitization guidance.
+  </div>
+</div>
+
+<!-- ===== 5. AUTH FLOW ===== -->
+<div class="section" id="auth-flow">
+  <h2>5. Authentication Flow Integration</h2>
+  <p>
+    The AI IVR's authentication flow adapts based on whether the caller was already verified
+    by the Avaya IVR before being routed to option 3.
+  </p>
+
+  <h3>Decision Flow</h3>
+<pre><code>
+  Caller arrives at AI IVR
+          |
+          v
+  +-------------------+
+  | UUI auth=verified?|
+  +-------------------+
+       |           |
+      YES          NO
+       |           |
+       v           v
+  Skip auth    Check ANI
+  Go to        (caller's phone #)
+  intent       against policy DB
+  handling          |
+               +----+----+
+               |Found?   |
+               v         v
+             YES        NO
+              |          |
+         Ask DOB      Ask phone #
+         or name      + DOB or name
+              |          |
+              v          v
+         2-PII match verified?
+              |
+         +----+----+
+         |         |
+        YES       NO (3 retries)
+         |         |
+    Authenticated  Route to agent
+</code></pre>
+
+  <h3>Pre-Authentication via UUI</h3>
+  <p>
+    When <code>auth=verified</code> is present in the UUI header, the AI IVR trusts that the Avaya
+    system has already performed identity verification. The caller proceeds directly to intent
+    handling (e.g., "How can I help you today?"). The account number from <code>acct=</code> is
+    pre-loaded into the session.
+  </p>
+
+  <h3>Fresh Authentication</h3>
+  <p>When no pre-authentication exists (<code>auth=none</code> or UUI absent):</p>
+  <ol>
+    <li><strong>ANI Check</strong> &mdash; the system first checks the caller's phone number (ANI) against the policy database</li>
+    <li><strong>If ANI matches</strong> &mdash; ask for one additional PII factor (date of birth <em>or</em> last name)</li>
+    <li><strong>If ANI does not match</strong> &mdash; ask caller to provide their phone number or policy number, then verify with DOB or name</li>
+    <li><strong>2-PII requirement</strong> &mdash; always requires two matching pieces of identifying information (phone+DOB, phone+name, policy+DOB, or policy+name)</li>
+  </ol>
+
+  <h3>Session State in Redis</h3>
+  <p>
+    Authentication state is stored in Redis keyed by Twilio <code>CallSid</code>. This enables
+    warm transfer context persistence &mdash; if the call is escalated back to an Avaya agent,
+    the agent's screen pop can query the same Redis store to see authentication status and
+    conversation history.
+  </p>
+<pre><code># Redis session structure
+call:{CallSid}:
+  ani: "+13175551234"
+  account_number: "POL-9876543"
+  authenticated: "true"
+  auth_method: "uui_passthrough"   # or "ani+dob", "policy+name"
+  avaya_call_id: "AVY-20260903-00142"
+  intent: "billing_inquiry"
+  conversation_summary: "Caller asked about premium payment due date..."
+</code></pre>
+</div>
+
+<!-- ===== 6. ESCALATION ===== -->
+<div class="section" id="escalation">
+  <h2>6. Escalation Back to Avaya</h2>
+  <p>
+    When the AI IVR determines that a live agent is needed (complex inquiry, caller frustration,
+    or explicit request), the call is transferred back to an Avaya agent queue with full context.
+  </p>
+
+  <h3>Transfer Mechanism</h3>
+  <p>
+    The AI IVR uses Twilio's <code>&lt;Dial&gt;</code> verb with a SIP URI pointing back to the
+    Avaya PBX. Conversation context is passed via custom SIP headers:
+  </p>
+<pre><code># TwiML response for agent escalation
+&lt;Response&gt;
+  &lt;Say&gt;Let me connect you with a specialist who can help further.&lt;/Say&gt;
+  &lt;Dial callerId="+13175551234"&gt;
+    &lt;Sip&gt;
+      sip:agent-queue-billing@avaya-sbc.uic.com:5061;transport=tls
+      ?X-UIC-CallSid=CA1234567890abcdef
+      &amp;X-UIC-Intent=billing_inquiry
+      &amp;X-UIC-Auth=verified
+      &amp;X-UIC-Account=POL-9876543
+      &amp;X-UIC-Summary=Caller+asked+about+premium+due+date
+    &lt;/Sip&gt;
+  &lt;/Dial&gt;
+&lt;/Response&gt;
+</code></pre>
+
+  <h3>FastAPI Escalation Handler</h3>
+<pre><code>from twilio.twiml.voice_response import VoiceResponse, Dial
+
+async def escalate_to_agent(call_sid: str, queue: str = "general"):
+    """Generate TwiML to transfer call back to Avaya agent queue."""
+    # Retrieve session context from Redis
+    session = await redis.hgetall(f"call:{call_sid}")
+
+    response = VoiceResponse()
+    response.say("Let me connect you with a specialist who can help further.")
+
+    dial = Dial(caller_id=session.get("ani", ""))
+    sip_uri = (
+        f"sip:agent-queue-{queue}@avaya-sbc.uic.com:5061;transport=tls"
+        f"?X-UIC-CallSid={call_sid}"
+        f"&X-UIC-Intent={session.get('intent', 'unknown')}"
+        f"&X-UIC-Auth={'verified' if session.get('authenticated') == 'true' else 'none'}"
+        f"&X-UIC-Account={session.get('account_number', '')}"
+    )
+    dial.sip(sip_uri)
+    response.append(dial)
+
+    return str(response)
+</code></pre>
+
+  <h3>Agent Screen Pop</h3>
+  <p>
+    When the call arrives at the Avaya agent desktop, the CRM system (or CTI middleware) reads
+    the custom SIP headers and performs an API call to retrieve the full conversation context:
+  </p>
+  <ol>
+    <li>Avaya CTI connector extracts <code>X-UIC-CallSid</code> from inbound SIP INVITE</li>
+    <li>CRM queries <code>GET /api/session/{CallSid}</code> on the AI IVR API</li>
+    <li>Returns: authentication status, caller intent, conversation transcript, account details</li>
+    <li>Agent sees full context in a screen pop before picking up the call</li>
+  </ol>
+</div>
+
+<!-- ===== 7. NETWORK ARCHITECTURE ===== -->
+<div class="section" id="network-architecture">
+  <h2>7. Network Architecture</h2>
+
+  <h3>Network Topology</h3>
+<pre><code>
+  UIC Data Center                          Twilio Cloud                    AWS (us-east-1)
+ +-------------------------+          +-------------------+         +---------------------------+
+ |                         |          |                   |         |  VPC: 10.0.0.0/16         |
+ |  +------------------+  |  SIP/TLS |  Elastic SIP      |  HTTPS  |  +---------------------+  |
+ |  |   Avaya CM       |  |  (5061)  |  Trunking         |  (443)  |  |  Public Subnet      |  |
+ |  |   + Media GW     |--+--------&gt;-|                   |-------&gt;-|  |  +---------------+  |  |
+ |  +------------------+  |          |  SIP Edge Servers  |         |  |  | ALB           |  |  |
+ |          |              |  RTP/SRTP|  (global PoPs)    | WSS     |  |  | (HTTPS + WSS) |  |  |
+ |  +------------------+  |  (media) |                   | (media) |  |  +-------+-------+  |  |
+ |  |   Avaya SBC      |--+--------&gt;-|  Media Relay      |-------&gt;-|  |          |          |  |
+ |  |   (Session       |  |          |  Servers           |         |  +---------------------+  |
+ |  |    Border Ctrl)   |  |          |                   |         |                            |
+ |  +------------------+  |          +-------------------+         |  +---------------------+  |
+ |          |              |                                        |  |  Private Subnet     |  |
+ |  +------------------+  |                                        |  |  +---------------+  |  |
+ |  |   Firewall       |  |                                        |  |  | ECS Fargate   |  |  |
+ |  |   (SIP + RTP     |  |                                        |  |  | (AI IVR x2+)  |  |  |
+ |  |    whitelisted)   |  |                                        |  |  +-------+-------+  |  |
+ |  +------------------+  |                                        |  |          |          |  |
+ |                         |                                        |  |  +-------+-------+  |  |
+ +-------------------------+                                        |  |  | Redis (cache) |  |  |
+                                                                    |  |  | RDS (persist) |  |  |
+                                                                    |  |  +---------------+  |  |
+                                                                    |  +---------------------+  |
+                                                                    +---------------------------+
+</code></pre>
+
+  <h3>Firewall Rules</h3>
+  <table>
+    <thead>
+      <tr><th>Direction</th><th>Protocol</th><th>Ports</th><th>Source/Dest</th><th>Purpose</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Outbound</td><td>TCP/TLS</td><td>5061</td><td>Avaya SBC &rarr; Twilio SIP Edge</td><td>SIP signaling (TLS)</td></tr>
+      <tr><td>Outbound</td><td>UDP</td><td>10000-20000</td><td>Avaya SBC &rarr; Twilio Media</td><td>RTP/SRTP media streams</td></tr>
+      <tr><td>Inbound</td><td>TCP/TLS</td><td>5061</td><td>Twilio SIP Edge &rarr; Avaya SBC</td><td>SIP signaling (escalation callbacks)</td></tr>
+      <tr><td>Inbound</td><td>UDP</td><td>10000-20000</td><td>Twilio Media &rarr; Avaya SBC</td><td>RTP/SRTP for return audio</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout callout-tip">
+    <strong>Tip:</strong> Twilio publishes their IP ranges for SIP signaling and media servers at
+    <code>https://www.twilio.com/docs/sip-trunking/ip-addresses</code>. Use these for precise
+    firewall ACLs rather than broad CIDR blocks.
+  </div>
+
+  <h3>NAT and Codec Handling</h3>
+  <p>
+    Twilio handles <strong>NAT traversal</strong> transparently &mdash; the Avaya SBC does not need
+    to worry about NAT for the Twilio leg. Twilio also handles <strong>codec transcoding</strong>
+    if needed, though configuring Avaya to offer G.711 PCMU first avoids any transcoding latency.
+  </p>
+
+  <div class="callout callout-warn">
+    <strong>Note:</strong> The ALB currently receives HTTPS webhooks from Twilio. Ensure a valid
+    TLS certificate is configured on the ALB. Self-signed certificates will cause Twilio webhook
+    delivery failures.
+  </div>
+</div>
+
+<!-- ===== 8. HIGH AVAILABILITY ===== -->
+<div class="section" id="high-availability">
+  <h2>8. High Availability Considerations</h2>
+
+  <table>
+    <thead>
+      <tr><th>Component</th><th>HA Strategy</th><th>Failover Time</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Avaya PBX <span class="badge badge-ha">HA</span></td>
+        <td>Dual SIP trunks (primary + failback) to Twilio; Avaya CM duplication if available</td>
+        <td>&lt; 5 seconds</td>
+      </tr>
+      <tr>
+        <td>Twilio <span class="badge badge-ha">HA</span></td>
+        <td>Built-in HA across multiple global Points of Presence (PoPs); automatic failover</td>
+        <td>Transparent</td>
+      </tr>
+      <tr>
+        <td>ALB <span class="badge badge-ha">HA</span></td>
+        <td>Multi-AZ deployment; health checks on ECS targets every 10 seconds</td>
+        <td>&lt; 30 seconds</td>
+      </tr>
+      <tr>
+        <td>ECS (AI IVR) <span class="badge badge-ha">HA</span></td>
+        <td>Minimum 2 tasks in production; auto-scaling based on CPU/connection count</td>
+        <td>&lt; 60 seconds (new task launch)</td>
+      </tr>
+      <tr>
+        <td>Redis</td>
+        <td>ElastiCache with Multi-AZ replica; automatic failover</td>
+        <td>&lt; 15 seconds</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Failover Behavior</h3>
+  <p>If the AI IVR becomes completely unavailable (all ECS tasks down, ALB health checks failing):</p>
+  <ol>
+    <li>Twilio receives no response or an error from the webhook URL</li>
+    <li>Twilio falls back to the configured <strong>fallback URL</strong> which returns a simple TwiML response</li>
+    <li>Fallback TwiML plays an apology message and routes the caller back to Avaya via SIP REFER</li>
+    <li>Avaya receives the call back and routes to the <strong>traditional IVR or agent queue</strong></li>
+  </ol>
+
+<pre><code># Twilio Fallback TwiML (served from S3 or separate endpoint)
+&lt;Response&gt;
+  &lt;Say&gt;We're sorry, our automated assistant is temporarily unavailable.
+       Please hold while we connect you to a representative.&lt;/Say&gt;
+  &lt;Dial&gt;
+    &lt;Sip&gt;sip:agent-queue-general@avaya-sbc.uic.com:5061;transport=tls&lt;/Sip&gt;
+  &lt;/Dial&gt;
+&lt;/Response&gt;
+</code></pre>
+
+  <div class="callout callout-tip">
+    <strong>Tip:</strong> Host the fallback TwiML on a separate, highly reliable endpoint (e.g., an S3
+    static website or Twilio TwiML Bin) so it remains available even during an AWS region outage.
+  </div>
+</div>
+
+<!-- ===== 9. SECURITY ===== -->
+<div class="section" id="security">
+  <h2>9. Security</h2>
+
+  <h3>Layered Security Model</h3>
+  <table>
+    <thead>
+      <tr><th>Layer</th><th>Mechanism</th><th>Details</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>SIP Authentication <span class="badge badge-security">Critical</span></td>
+        <td>IP ACL + Credentials</td>
+        <td>Twilio only accepts SIP INVITEs from whitelisted Avaya SBC IPs; optional digest authentication</td>
+      </tr>
+      <tr>
+        <td>SIP Signaling Encryption</td>
+        <td>TLS (SIPS)</td>
+        <td>SIP signaling over TLS on port 5061; prevents eavesdropping on call setup</td>
+      </tr>
+      <tr>
+        <td>Media Encryption</td>
+        <td>SRTP</td>
+        <td>Audio streams encrypted with SRTP; configured as "best-effort" on Avaya for compatibility</td>
+      </tr>
+      <tr>
+        <td>Webhook Security</td>
+        <td>Twilio Request Validation</td>
+        <td>Every webhook from Twilio is validated using the X-Twilio-Signature header and auth token</td>
+      </tr>
+      <tr>
+        <td>UUI Sanitization <span class="badge badge-security">Critical</span></td>
+        <td>Input Validation</td>
+        <td>All UUI header values are validated, length-limited, and sanitized before use</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Twilio Request Validation</h3>
+<pre><code>from twilio.request_validator import RequestValidator
+
+TWILIO_AUTH_TOKEN = os.environ["TWILIO_AUTH_TOKEN"]
+validator = RequestValidator(TWILIO_AUTH_TOKEN)
+
+@app.middleware("http")
+async def validate_twilio_request(request: Request, call_next):
+    if request.url.path.startswith("/api/twilio/"):
+        signature = request.headers.get("X-Twilio-Signature", "")
+        form = await request.form()
+        url = str(request.url).replace("http://", "https://")
+
+        if not validator.validate(url, dict(form), signature):
+            return JSONResponse(status_code=403, content={"error": "Invalid signature"})
+
+    return await call_next(request)
+</code></pre>
+
+  <h3>UUI Header Sanitization</h3>
+<pre><code>import re
+
+ALLOWED_UUI_FIELDS = {"ani", "acct", "auth", "path", "cid"}
+MAX_FIELD_LENGTH = 64
+
+def sanitize_uui(uui_raw: str) -> dict:
+    """Sanitize UUI header to prevent injection attacks."""
+    sanitized = {}
+    for pair in uui_raw.split(";"):
+        if "=" not in pair:
+            continue
+        key, value = pair.split("=", 1)
+        key = key.strip().lower()
+
+        # Only accept known fields
+        if key not in ALLOWED_UUI_FIELDS:
+            continue
+
+        # Length limit
+        value = value.strip()[:MAX_FIELD_LENGTH]
+
+        # Remove any potentially dangerous characters
+        value = re.sub(r'[^\w\-\+\.\>\@]', '', value)
+
+        sanitized[key] = value
+
+    return sanitized
+</code></pre>
+
+  <div class="callout callout-danger">
+    <strong>Warning:</strong> Never trust UUI headers for authorization decisions without additional
+    verification. A compromised or misconfigured SIP trunk could inject false <code>auth=verified</code>
+    values. Consider adding an HMAC signature to the UUI payload that the AI IVR can verify.
+  </div>
+</div>
+
+<!-- ===== 10. IMPLEMENTATION PHASES ===== -->
+<div class="section" id="implementation-phases">
+  <h2>10. Implementation Phases</h2>
+  <p>The Avaya integration follows a phased rollout to minimize risk and validate each layer independently:</p>
+
+  <div class="phase">
+    <div class="phase-line"></div>
+    <div class="phase-content">
+      <div class="label">Phase 1: SIP Trunk Setup + Basic Routing (1-2 weeks)</div>
+      <ul>
+        <li>Configure SIP trunk between Avaya SBC and Twilio Elastic SIP Trunking</li>
+        <li>Set up IP ACL and credential authentication on Twilio</li>
+        <li>Configure Avaya dial plan to route option 3 to the SIP trunk</li>
+        <li>Validate end-to-end call flow with test calls</li>
+        <li>Verify codec negotiation (G.711 PCMU preferred)</li>
+        <li>Test firewall rules for SIP and RTP traffic</li>
+      </ul>
+      <p><span class="badge badge-phase">Milestone:</span> Test call from Avaya reaches AI IVR and gets a response</p>
+    </div>
+  </div>
+
+  <div class="phase">
+    <div class="phase-line"></div>
+    <div class="phase-content">
+      <div class="label">Phase 2: Context Passing via UUI Headers (1 week)</div>
+      <ul>
+        <li>Configure Avaya to populate UUI headers with caller ANI, account number, and auth status</li>
+        <li>Update AI IVR FastAPI endpoint to extract and parse UUI headers from Twilio webhook</li>
+        <li>Implement UUI sanitization and validation</li>
+        <li>Test pre-authenticated flow (skip auth when <code>auth=verified</code>)</li>
+        <li>Test fresh auth flow (ANI check + DOB/name verification)</li>
+      </ul>
+      <p><span class="badge badge-phase">Milestone:</span> Pre-authenticated callers skip the auth flow in AI IVR</p>
+    </div>
+  </div>
+
+  <div class="phase">
+    <div class="phase-line"></div>
+    <div class="phase-content">
+      <div class="label">Phase 3: Bidirectional Transfers with Context (2 weeks)</div>
+      <ul>
+        <li>Implement escalation TwiML to transfer calls back to Avaya agent queues via SIP</li>
+        <li>Pass conversation context (intent, summary, auth status) in custom SIP headers</li>
+        <li>Configure Avaya to accept inbound SIP calls from Twilio with context headers</li>
+        <li>Set up skill-based routing in Avaya based on AI-determined intent</li>
+        <li>Test end-to-end escalation flow including context preservation</li>
+      </ul>
+      <p><span class="badge badge-phase">Milestone:</span> Agent receives call with AI conversation context visible</p>
+    </div>
+  </div>
+
+  <div class="phase">
+    <div class="phase-line"></div>
+    <div class="phase-content">
+      <div class="label">Phase 4: Agent Screen Pop Integration (2 weeks)</div>
+      <ul>
+        <li>Build REST API endpoint for CRM to query conversation session data</li>
+        <li>Integrate Avaya CTI connector to extract custom SIP headers on agent delivery</li>
+        <li>Configure CRM screen pop to display: caller identity, intent, conversation transcript, and suggested actions</li>
+        <li>Load testing and performance tuning for Redis session lookup latency</li>
+        <li>UAT with agent teams and production pilot</li>
+      </ul>
+      <p><span class="badge badge-phase">Milestone:</span> Full production deployment with agent screen pop</p>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 11. TARGET ARCHITECTURE ===== -->
+<div class="section" id="target-architecture">
+  <h2>11. Target Architecture Diagram</h2>
+  <p>Complete integrated architecture showing all components and data flows:</p>
+
+<pre><code>
+                           US Insurance Company (UIC) - Integrated AI IVR Architecture
+ ===================================================================================================
+
+   PSTN                  UIC Data Center                  Twilio Cloud                AWS us-east-1
+ --------        ----------------------------       --------------------      -------------------------
+                 |                            |     |                    |    |                         |
+  Caller         |    +------------------+    |     |   Elastic SIP      |    |   +------- ALB ------+ |
+  (Phone)  ----&gt; |    |   Avaya CM       |    |     |   Trunking         |    |   | HTTPS :443       | |
+                 |    |   Cluster        |    |     |                    |    |   | WSS   :443       | |
+                 |    |  +------------+  |    |     |  +-------------+  |    |   +--------+---------+ |
+                 |    |  | IVR Vector |  |    |     |  | SIP Edge    |  |    |            |           |
+                 |    |  |  Opt 1: Clm|  |    | SIP |  | Servers     |  |HTTPS           |           |
+                 |    |  |  Opt 2: Bil|  |    | TLS |  | (Global     |  |    |  +---------v--------+  |
+                 |    |  |  Opt 3: AI |--+---------&gt;|  |  PoPs)      |-----&gt;|  | ECS Fargate      |  |
+                 |    |  |  Opt 0: Agt|  |    |(5061)|  +-------------+  |    |  | Cluster          |  |
+                 |    |  +------------+  |    |     |                    |    |  |                  |  |
+                 |    +------------------+    |     |  +-------------+  |    |  | +--- Task 1 ---+ |  |
+                 |            |               |     |  | Media       |  |    |  | | FastAPI      | |  |
+                 |    +------------------+    | RTP |  | Relay       |  |WSS |  | | + LangGraph  | |  |
+                 |    |   Avaya SBC      |    | SRTP|  | Servers     |-------&gt;  | | + WebSocket  | |  |
+                 |    |  (Session Border  |----+----&gt;|  |             |  |    |  | +--------------+ |  |
+                 |    |   Controller)    |    |     |  +-------------+  |    |  |                  |  |
+                 |    +------------------+    |     |                    |    |  | +--- Task 2 ---+ |  |
+                 |            |               |     +--------------------+    |  | | FastAPI      | |  |
+                 |    +------------------+    |                              |  | | (replica)    | |  |
+                 |    |   Firewall       |    |                              |  | +--------------+ |  |
+                 |    |  SIP: 5061       |    |                              |  +------------------+  |
+                 |    |  RTP: 10000-20000|    |                              |           |            |
+                 |    +------------------+    |                              |           v            |
+                 |                            |                              |  +------------------+  |
+                 |    +------------------+    |                              |  | LLM Providers    |  |
+                 |    |   Agent Desktop  |    |                              |  |  Bedrock (Nova)  |  |
+                 |    |   + CRM          |&lt;---+-- REST API (screen pop) -----+  |  Groq (Qwen)    |  |
+                 |    |   + CTI Bar      |    |                              |  +------------------+  |
+                 |    +------------------+    |                              |           |            |
+                 |                            |                              |  +--------v---------+  |
+                 ----------------------------                              |  | Redis (sessions) |  |
+                                                                            |  | RDS (persistent) |  |
+                          Escalation Path (SIP back to Avaya):              |  +------------------+  |
+                          AI IVR -&gt; Twilio -&gt; SIP -&gt; Avaya Agent Queue     |           |            |
+                          + Context headers (intent, summary, auth)         |  +------------------+  |
+                                                                            |  | Secrets Manager  |  |
+                                                                            |  | (API keys, creds)|  |
+                                                                            |  +------------------+  |
+                                                                            -------------------------
+</code></pre>
+</div>
+
+<!-- ===== KEY TAKEAWAYS ===== -->
+<div class="section summary-box" id="key-takeaways">
+  <h2>12. Key Takeaways</h2>
+  <ol>
+    <li>
+      <strong>Avaya remains the front door</strong> &mdash; the AI IVR is accessed via option 3 on the existing
+      Avaya IVR menu, requiring no changes to the caller experience for other menu options.
+    </li>
+    <li>
+      <strong>SIP trunk is the bridge</strong> &mdash; Twilio Elastic SIP Trunking connects Avaya to the
+      AWS-hosted AI IVR with minimal infrastructure changes. G.711 PCMU is the required codec.
+    </li>
+    <li>
+      <strong>UUI headers eliminate redundant authentication</strong> &mdash; callers verified by Avaya
+      skip re-authentication in the AI IVR, reducing handle time and improving caller experience.
+    </li>
+    <li>
+      <strong>Bidirectional transfers preserve context</strong> &mdash; escalation back to Avaya agent
+      queues includes conversation summary, caller intent, and authentication status via SIP headers
+      and Redis-backed session state.
+    </li>
+    <li>
+      <strong>Security is layered</strong> &mdash; IP ACLs, TLS, SRTP, webhook validation, and UUI
+      sanitization work together to protect the integration at every layer.
+    </li>
+    <li>
+      <strong>Failover is graceful</strong> &mdash; if the AI IVR is unavailable, Twilio's fallback
+      URL routes callers back to Avaya's traditional IVR or agent queue.
+    </li>
+    <li>
+      <strong>Phased rollout reduces risk</strong> &mdash; four phases over approximately 6-7 weeks,
+      from basic SIP trunk connectivity through full agent screen pop integration.
+    </li>
+  </ol>
+</div>
+
+</div><!-- /container -->
+</body>
+</html>
