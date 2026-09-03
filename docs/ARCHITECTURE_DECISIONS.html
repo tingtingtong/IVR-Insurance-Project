@@ -186,7 +186,7 @@
   <div class="toc">
     <h2>Table of Contents</h2>
     <ol>
-      <li><a href="#arch-decisions">Architecture Decisions (14 decisions)</a></li>
+      <li><a href="#arch-decisions">Architecture Decisions (15 decisions)</a></li>
       <li><a href="#diagram">Architecture Diagram</a></li>
       <li><a href="#interview">Common Interview Questions</a></li>
     </ol>
@@ -412,6 +412,24 @@
     </ul>
   </div>
 
+  <!-- Decision 15 -->
+  <div class="card">
+    <span class="card-badge">#15</span>
+    <h3>Avaya PBX Integration via SIP Trunk (not direct replacement)</h3>
+    <span class="subtitle">Coexist with enterprise telephony rather than rip-and-replace</span>
+    <p><span class="label-decision">Decision</span> Integrate the AI IVR as an extension of the existing Avaya PBX system via SIP trunk through Twilio, rather than replacing the entire PBX. Avaya IVR menu option 3 routes callers to the AI IVR while all other options remain on the traditional system.</p>
+    <p><span class="label-why">Why</span> Enterprise PBX replacement is a multi-year, high-risk project. By integrating via SIP trunk, we can deploy the AI IVR incrementally — starting with a single menu option — without disrupting existing call flows, agent queues, or compliance controls. The Avaya system continues to handle call routing, queue management, and agent distribution.</p>
+    <ul>
+      <li><strong>Call flow</strong>: Caller → Avaya PBX → IVR Menu → Option 3 → SIP Trunk → Twilio Elastic SIP Trunking → Webhook → ALB → ECS (AI IVR)</li>
+      <li><strong>Context passing</strong>: Avaya sends User-to-User Information (UUI) headers in the SIP INVITE containing caller ANI, account number, and authentication status. Twilio forwards these as custom parameters in the webhook. The AI IVR extracts them to skip re-authentication when the caller is already verified.</li>
+      <li><strong>Escalation back</strong>: When the AI IVR needs a live agent, it uses Twilio's <code>&lt;Dial&gt;</code> with a SIP URI back to an Avaya agent queue, passing conversation context (summary, intent, account info) via SIP headers. The agent gets a screen pop with the full conversation history.</li>
+      <li><strong>Shared session state</strong>: Redis stores session data accessible by both the AI IVR and agent-facing tools, enabling warm transfers where the agent sees everything the AI discussed with the caller.</li>
+      <li><strong>High availability</strong>: Dual SIP trunks (primary + failback). If the AI IVR is unavailable (ALB health check fails), Avaya falls back to the traditional IVR or routes directly to an agent queue — no caller is dropped.</li>
+      <li><strong>Security</strong>: SIP trunk secured with IP ACL + credential authentication. TLS for SIP signaling (SIPS), SRTP for media encryption. UUI headers are sanitized to prevent injection attacks.</li>
+      <li><strong>Phased rollout</strong>: Phase 1 — basic SIP trunk routing (1-2 weeks). Phase 2 — UUI context passing (1 week). Phase 3 — bidirectional transfers with context (2 weeks). Phase 4 — agent screen pop integration (2 weeks). Total: ~6-7 weeks.</li>
+    </ul>
+  </div>
+
   <!-- ============================================================ -->
   <!-- ARCHITECTURE DIAGRAM                                          -->
   <!-- ============================================================ -->
@@ -514,6 +532,18 @@
         <tr>
           <td>"How do you handle call failures mid-conversation?"</td>
           <td>The LangGraph checkpointer saves the full graph state after each node transition. On reconnect or retry, the graph can resume from the last successful checkpoint — the caller does not have to re-authenticate or repeat information. Redis session TTL (configurable, typically 30 minutes) handles automatic cleanup of abandoned calls.</td>
+        </tr>
+        <tr>
+          <td>"How does this integrate with an existing Avaya PBX?"</td>
+          <td>Via SIP trunk through Twilio Elastic SIP Trunking. Avaya routes IVR option 3 to Twilio, which triggers a webhook to our ALB/ECS. Avaya passes caller context (ANI, auth status, account number) via UUI headers in the SIP INVITE, so the AI IVR can skip re-authentication. For escalation, the AI IVR transfers back to Avaya agent queues via SIP URI with conversation context. This coexistence model avoids PBX replacement risk and enables incremental rollout.</td>
+        </tr>
+        <tr>
+          <td>"What happens if the AI IVR goes down?"</td>
+          <td>Avaya is configured with dual SIP trunks (primary + failback). If the ALB health check fails, Twilio returns an error on the SIP trunk. Avaya detects this and routes the call to the traditional IVR menu or directly to an agent queue. No caller is ever dropped — the fallback is seamless and automatic. ECS auto-scaling (min 2 tasks in prod) and multi-AZ ALB further reduce the probability of a complete outage.</td>
+        </tr>
+        <tr>
+          <td>"How do you handle warm transfers between AI and agents?"</td>
+          <td>When escalation is needed, the AI IVR writes a conversation summary (intent, account info, what was discussed, unresolved issues) to Redis and passes a session ID via SIP headers back to Avaya. The agent's CRM pulls the conversation history from our API using that session ID, providing a screen pop with full context. The caller never has to repeat themselves — the agent sees the entire AI conversation before picking up.</td>
         </tr>
       </tbody>
     </table>
