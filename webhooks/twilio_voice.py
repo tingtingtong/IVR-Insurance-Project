@@ -207,12 +207,13 @@ async def gather_speech(request: Request):
 @router.post("/webhook/status", dependencies=[Depends(validate_twilio_webhook)])
 async def call_status(request: Request):
     form = await request.form()
-    log.info(
-        "call_status",
-        call_sid=form.get("CallSid"),
-        status=form.get("CallStatus"),
-        duration=form.get("CallDuration"),
-    )
+    call_sid = form.get("CallSid", "")
+    status = form.get("CallStatus", "")
+    duration = form.get("CallDuration", "")
+    log.info("call_status", call_sid=call_sid, status=status, duration=duration)
+    if status in ("completed", "canceled", "failed", "busy", "no-answer"):
+        end_call(call_sid)
+        log_event(call_sid, "call_end", reason=f"status_callback:{status}", duration=duration)
     return Response(content="", status_code=204)
 
 

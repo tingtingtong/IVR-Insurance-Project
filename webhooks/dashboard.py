@@ -32,6 +32,19 @@ async def get_call_events(call_sid: str):
     return JSONResponse({"call_sid": call_sid, "events": call.get("events", [])})
 
 
+@router.post("/calls/cleanup")
+async def cleanup_stale_calls():
+    """Mark all 'active' calls as 'ended' — they're stale if Twilio has no active calls."""
+    from services.conversation_store import get_calls, end_call
+    calls = get_calls()
+    cleaned = 0
+    for c in calls:
+        if c.get("status") == "active":
+            end_call(c["call_sid"])
+            cleaned += 1
+    return JSONResponse({"cleaned": cleaned})
+
+
 @router.get("/analytics")
 async def api_analytics():
     """Aggregate analytics across all calls — auto-detect issues."""
