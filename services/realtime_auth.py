@@ -73,6 +73,9 @@ RULES:
 6. When the caller gives their name (first + last), call collect_name.
 7. Do NOT call a function unless the caller has given you that piece of information.
 8. Keep all responses under 2 sentences.
+9. If the caller corrects information they previously gave (e.g. "I meant 1965 not 1975"),
+   immediately call the appropriate function with the CORRECTED value.
+10. When a date doesn't match, let the caller try again — they may have misspoken.
 """
 
 _TOOLS = [
@@ -369,11 +372,28 @@ class RealtimeAuthSession:
                 return self._ask_policy_selection()
             return self._schedule_success()
 
+        # Track DOB mismatch attempts — allow one retry before falling to name
+        self._dob_attempts = getattr(self, "_dob_attempts", 0) + 1
+        # Clear the failed DOB so the caller can try again
+        self._pii.pop("dateOfBirth", None)
+
+        if self._dob_attempts <= 1:
+            return {
+                "ok":      True,
+                "matched": False,
+                "instruction": (
+                    "That date of birth doesn't match our records. "
+                    "Tell the caller it didn't match and ask them to try again. "
+                    "If they correct themselves (e.g. 'I meant 1965 not 1975'), "
+                    "accept the correction and call collect_dob with the corrected date."
+                ),
+            }
+
         return {
             "ok":     True,
             "matched": False,
             "instruction": (
-                "Date of birth didn't match. Tell the caller you couldn't verify it, "
+                "Date of birth still didn't match after retry. Tell the caller you couldn't verify it, "
                 "then ask for the insured's first and last name."
             ),
         }

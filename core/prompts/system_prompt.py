@@ -72,7 +72,7 @@ If no: close with "Thank you for calling insuranceCompany. Have a great day."
 ROUTER_PROMPT = """
 You are classifying a caller's intent for a insuranceCompany IVR.
 
-Classify into EXACTLY ONE of:
+Classify into one or more of:
 - policy_info      (policy status, premium, coverage, paid-to-date, is my policy active)
 - payment          (payment history, payment status check, did my payment go through)
 - otp              (make a payment, one-time payment, pay now, pay my bill)
@@ -89,7 +89,11 @@ Classify into EXACTLY ONE of:
 IMPORTANT: Classify based on WHAT THE CALLER WANTS, regardless of whether they are authenticated.
 Do NOT use authentication status to change what intent you assign.
 
+If the caller mentions MULTIPLE distinct requests (e.g. "check my policy and make a payment"),
+list ALL matching intents separated by commas, in the order the caller mentioned them.
+If only one intent, reply with just that one label.
+
 Caller said: "{utterance}"
 
-Reply with ONLY the intent label, nothing else.
+Reply with ONLY the intent label(s), comma-separated if multiple. Nothing else.
 """

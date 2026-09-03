@@ -125,6 +125,15 @@ async def auth_node(state: CNOState) -> dict:
     elif auth_step == "collecting_caller_name":
         # Post-auth persona identification — ask caller's name and match against policy personas
         result = _collecting_caller_name(state, last_human)
+    elif auth_step == "failed":
+        # Already escalated — re-confirm transfer (don't restart from phone)
+        return {
+            "auth_step":    "failed",
+            "tts_text":     PROMPTS["escalation"]["max_attempts"],
+            "current_node": "auth",
+            "active_flow":  "",
+            "transfer_to":  settings.twilio_agent_phone_number,
+        }
     else:
         # Unknown state — restart from phone
         result = _ask("collecting_phone", pii_collected, get_retry_prompt("phone", "ask"))
@@ -177,12 +186,15 @@ async def auth_node(state: CNOState) -> dict:
 
 async def _collecting_phone(state, last_human, pii_collected, auth_attempts, candidate_party):
     slot = "phone"
+    call_sid = state.get("call_sid", "unknown")
 
     if not last_human:
+        log_event(call_sid, "auth_detail", step="collecting_phone", action="reprompt_empty")
         return _ask("collecting_phone", pii_collected, get_retry_prompt(slot, "ask"))
 
     # IDK: caller doesn't know their phone → skip straight to policy number
     if is_idk(last_human):
+        log_event(call_sid, "auth_detail", step="collecting_phone", action="idk_skip_to_policy")
         tts = "No problem. " + get_retry_prompt("policy_number", "ask")
         return {
             "auth_step":       "collecting_policy",
@@ -195,6 +207,8 @@ async def _collecting_phone(state, last_human, pii_collected, auth_attempts, can
         }
 
     digits, hint = normalize_phone_with_hint(last_human)
+    log_event(call_sid, "auth_detail", step="collecting_phone", action="parse_phone",
+              input=last_human[:30], digits=digits[:6] + "****" if digits else "", parsed=bool(digits))
 
     if not digits:
         blank_count  = _get_slot(state, slot, "blank")
@@ -222,6 +236,9 @@ async def _collecting_phone(state, last_human, pii_collected, auth_attempts, can
 
     pii_collected["phoneNumber"] = digits
     result = await party_search(phone=digits)
+    log_event(call_sid, "auth_detail", step="collecting_phone", action="party_search",
+              found=bool(result["success"] and result.get("parties")),
+              party_count=len(result.get("parties", [])))
 
     if result["success"] and result["parties"]:
         found = result["parties"][0]
@@ -394,8 +411,10 @@ async def _collecting_policy(state, last_human, pii_collected, auth_attempts, ca
 
 def _collecting_dob(state, last_human, pii_collected, auth_attempts, candidate_party):
     slot = "date_of_birth"
+    call_sid = state.get("call_sid", "unknown")
 
     if not last_human:
+        log_event(call_sid, "auth_detail", step="collecting_dob", action="reprompt_empty")
         return {**_ask("collecting_dob", pii_collected, get_retry_prompt(slot, "ask")),
                 "candidate_party": candidate_party}
 
@@ -413,6 +432,8 @@ def _collecting_dob(state, last_human, pii_collected, auth_attempts, candidate_p
         }
 
     parsed = normalize_dob(last_human)
+    log_event(call_sid, "auth_detail", step="collecting_dob", action="parse_dob",
+              input=last_human[:40], parsed=parsed or "FAILED")
 
     if not parsed:
         blank_count  = _get_slot(state, slot, "blank")
@@ -439,13 +460,39 @@ def _collecting_dob(state, last_human, pii_collected, auth_attempts, candidate_p
 
     # DOB parsed — check auth immediately (no read-back confirmation step)
     pii_collected["dateOfBirth"] = parsed
-    if check_auth_success(candidate_party, pii_collected):
+    match = check_auth_success(candidate_party, pii_collected)
+    expected_dob = candidate_party.get("DOB", "unknown")
+    log_event(call_sid, "auth_detail", step="collecting_dob", action="dob_verify",
+              given=parsed, expected=expected_dob[:7] + "**", match=match)
+    if match:
         policy_numbers = _get_policy_numbers(candidate_party)
         if len(policy_numbers) > 1:
             return _ask_policy_selection(candidate_party, pii_collected, policy_numbers)
         return _auth_complete(candidate_party, pii_collected)
-    # DOB doesn't match — fall through to name verification
-    tts = "I wasn't able to verify that date. " + get_retry_prompt("insured_name", "ask")
+
+    # DOB doesn't match — allow one retry before falling through to name
+    dob_mismatch_count = _get_slot(state, "dob_mismatch", "invalid")
+    log_event(call_sid, "auth_detail", step="collecting_dob", action="dob_mismatch",
+              attempt=dob_mismatch_count + 1, will_retry=dob_mismatch_count == 0)
+    if dob_mismatch_count == 0:
+        # First mismatch — give the caller another chance
+        new_pii = {k: v for k, v in pii_collected.items() if k != "dateOfBirth"}
+        tts = (
+            "That date of birth doesn't match our records. "
+            "Could you please try again? What is the insured's date of birth?"
+        )
+        return {
+            "auth_step":       "collecting_dob",
+            "pii_collected":   new_pii,
+            "candidate_party": candidate_party,
+            "tts_text":        tts,
+            "slot_attempts":   _inc_slot(state, "dob_mismatch", "invalid"),
+            "current_node":    "auth",
+            "active_flow":     "auth",
+        }
+
+    # Second mismatch — fall through to name verification
+    tts = "I still wasn't able to verify that date. " + get_retry_prompt("insured_name", "ask")
     return {
         "auth_step":       "collecting_name",
         "pii_collected":   pii_collected,
@@ -731,10 +778,11 @@ def _auth_complete(party: dict, pii_collected: dict, policy_number: str = "") ->
 def _escalate(state: CNOState) -> dict:
     return {
         "auth_step":    "failed",
+        "auth_attempts": settings.max_auth_attempts,  # prevent re-entry restart
         "tts_text":     PROMPTS["escalation"]["max_attempts"],
         "current_node": "auth",
         "active_flow":  "",
-        "transfer_to":  "",
+        "transfer_to":  settings.twilio_agent_phone_number,
     }
 
 

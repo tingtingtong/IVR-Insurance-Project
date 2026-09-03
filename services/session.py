@@ -46,6 +46,7 @@ class SessionService:
             "current_intent": "",
             "current_node":  "",
             "active_flow":   "",
+            "pending_intents": [],
             "slot_attempts": {},
             "tts_text":      "",
             "transfer_to":   "",

@@ -142,6 +142,15 @@ def _extract_year(text: str) -> int:
     m = re.search(r"\b(19|20)\d{2}\b", text)
     if m:
         return int(m.group(0))
+    # STT garbled: digits separated by commas/spaces/periods (e.g. "1, 9 6 5" or "1 9 6 5.")
+    # Collect all digit characters and see if they form a valid year
+    digits_only = re.sub(r"[^0-9]", "", text)
+    # Look for 19xx or 20xx pattern in the digit string
+    m = re.search(r"(19\d{2}|20\d{2})", digits_only)
+    if m:
+        return int(m.group(0))
+    # 3-digit truncated year (e.g. "196" from "1965" cut off by STT)
+    # — can't reliably guess the last digit, so skip this case
     # Spoken year: "nineteen seventy-eight" → 1978, "twenty twenty" → 2020
     for decade_word, base in _DECADE_WORDS.items():
         if decade_word in text:

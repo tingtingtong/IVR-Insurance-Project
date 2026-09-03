@@ -39,6 +39,7 @@ CONTEXT_SWITCH_CONFIG: dict[str, str] = {
 
 # Maps active_flow name → intent string that routes back to that flow
 _FLOW_TO_INTENT: dict[str, str] = {
+    "auth":        "faq",           # auth in progress — route to any guarded node (auth_guard handles it)
     "otp":         "otp",
     "payment":     "payment",
     "policy":      "policy_info",
@@ -149,6 +150,10 @@ async def router_node(state: CNOState) -> dict:
     auth_step      = state.get("auth_step", "collecting_phone")
     active_flow    = state.get("active_flow", "")
     caller_persona = state.get("caller_persona", "")
+    call_sid       = state.get("call_sid", "unknown")
+
+    log_event(call_sid, "router_enter", authenticated=authenticated, auth_step=auth_step,
+              active_flow=active_flow, caller_persona=caller_persona)
 
     # ── Get last human utterance ──────────────────────────────────────────────
     last_human = ""
@@ -217,21 +222,46 @@ async def router_node(state: CNOState) -> dict:
             "current_node":   "router",
         }
 
+    # ── Check for queued intents from previous multi-intent classification ────
+    # Only auto-dequeue if the caller gives a simple confirmation ("yes", "sure", etc.)
+    # or doesn't introduce a clearly new topic. If they say something substantive,
+    # classify normally and clear the queue.
+    pending = list(state.get("pending_intents", []))
+    if not active_flow and authenticated and caller_persona and pending:
+        _confirm_words = {"yes", "yeah", "yep", "sure", "ok", "okay", "go ahead",
+                          "please", "next", "continue", "what else", "yes please"}
+        _lh_lower = last_human.lower().strip().rstrip(".")
+        if _lh_lower in _confirm_words or any(_lh_lower.startswith(w) for w in _confirm_words):
+            intent = pending.pop(0)
+            call_sid = state.get("call_sid", "unknown")
+            log_event(call_sid, "intent_dequeued", intent=intent, remaining=len(pending))
+            return {"current_intent": intent, "current_node": "router", "pending_intents": pending}
+
     # ── LLM intent classification (with retry for transient Groq errors) ──────
     # ISSUE-3-001 fix: added _invoke_llm_with_retry wrapper — see docstring above.
     prompt = ROUTER_PROMPT.format(utterance=last_human)
 
     try:
         response = await _invoke_llm_with_retry([
-            SystemMessage(content="You are a call intent classifier. Reply with ONE word only."),
+            SystemMessage(content="You are a call intent classifier. Reply with the intent label(s), comma-separated if multiple."),
             HumanMessage(content=prompt),
         ])
         raw = response.content.strip().lower().replace(" ", "_")
-        intent = raw if raw in VALID_INTENTS else "faq"
+
+        # Parse multi-intent response (e.g. "policy_info,payment" or "policy_info, payment")
+        raw_intents = [r.strip().replace(" ", "_") for r in raw.replace(",_", ",").split(",")]
+        classified = [r for r in raw_intents if r in VALID_INTENTS]
+        if not classified:
+            classified = ["faq"]
+
+        intent = classified[0]
+        # Queue remaining intents for later processing
+        pending = classified[1:] if len(classified) > 1 else []
     except Exception:
         # All retry attempts exhausted — fall back to active flow or escalate
         # so the caller is handled gracefully rather than getting a 500 error.
         intent = _FLOW_TO_INTENT.get(active_flow, "escalate") if active_flow else "escalate"
+        pending = []
 
     # ── escalate_only: suppress any non-escalation pivot ─────────────────────
     if cs_mode == "escalate_only" and intent != "escalate":
@@ -250,5 +280,6 @@ async def router_node(state: CNOState) -> dict:
         return {"current_intent": "escalate", "current_node": "router"}
 
     call_sid = state.get("call_sid", "unknown")
-    log_event(call_sid, "intent_detected", intent=intent, input=last_human[:80])
-    return {"current_intent": intent, "current_node": "router"}
+    log_event(call_sid, "intent_detected", intent=intent, input=last_human[:80],
+              pending=pending if pending else None)
+    return {"current_intent": intent, "current_node": "router", "pending_intents": pending}

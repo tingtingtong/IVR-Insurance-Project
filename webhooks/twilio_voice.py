@@ -45,7 +45,7 @@ def _gather_response(say_text: str, action: str = "/webhook/gather") -> str:
         language="en-US",
         timeout=8,
         profanityFilter=False,
-        hints="yes, no, correct, incorrect, right, wrong, confirm, cancel, repeat, policy, beneficiary, payment, loan, status, help, agent, transfer",
+        hints="yes, no, correct, incorrect, right, wrong, confirm, cancel, repeat, policy, beneficiary, payment, loan, status, help, agent, transfer, january, february, march, april, may, june, july, august, september, october, november, december, nineteen, twenty, sixty, seventy, eighty, ninety",
     )
     gather.say(normalize_tts_text(say_text), voice="Polly.Joanna")
     response.append(gather)
@@ -68,6 +68,28 @@ async def incoming_call(request: Request):
 
     session = SessionService()
     await session.init_session(call_sid)
+
+    # ANI pre-check: look up the caller's phone number before they speak.
+    # If found, store in session so the first graph invocation includes it.
+    if from_num:
+        try:
+            from core.tools.party_search import party_search
+            digits = "".join(c for c in from_num if c.isdigit())
+            if len(digits) > 10:
+                digits = digits[-10:]  # strip country code
+            if len(digits) == 10:
+                result = await party_search(phone=digits)
+                if result["success"] and result["parties"]:
+                    state = await session.get_state(call_sid)
+                    state["pii_collected"] = {"phoneNumber": digits}
+                    state["candidate_party"] = result["parties"][0]
+                    state["auth_step"] = "collecting_dob"
+                    await session.save_state(call_sid, state)
+                    log_event(call_sid, "ani_match", phone=digits[:3] + "***" + digits[7:])
+                else:
+                    log_event(call_sid, "ani_no_match", phone=digits[:3] + "***" + digits[7:])
+        except Exception as e:
+            log.warning("ani_check_failed", call_sid=call_sid, error=str(e))
 
     # Start recording — status callback fires when recording is available
     try:
@@ -103,10 +125,25 @@ async def gather_speech(request: Request):
     add_call_turn(call_sid, "human", transcript)
 
     try:
-        # Only pass the new message — LangGraph checkpointer owns auth_step,
-        # pii_collected, candidate_party, etc. across turns.
+        # Build graph input — always include the new message.
+        graph_input = {"messages": [HumanMessage(content=transcript)], "call_sid": call_sid}
+
+        # On the first turn, inject ANI pre-check data from the session
+        # so the graph checkpoint starts with phone + candidate_party populated.
+        session = SessionService()
+        sess_state = await session.get_state(call_sid)
+        if sess_state.get("auth_step") == "collecting_dob" and sess_state.get("candidate_party"):
+            # ANI match was found — seed the graph state
+            graph_input["pii_collected"] = sess_state["pii_collected"]
+            graph_input["candidate_party"] = sess_state["candidate_party"]
+            graph_input["auth_step"] = "collecting_dob"
+            # Clear session flag so we don't re-inject on subsequent turns
+            sess_state["auth_step"] = ""
+            await session.save_state(call_sid, sess_state)
+
+        # LangGraph checkpointer owns state across turns after first injection.
         result = await _graph_module.cno_graph.ainvoke(
-            {"messages": [HumanMessage(content=transcript)], "call_sid": call_sid},
+            graph_input,
             config={"configurable": {"thread_id": call_sid}},
         )
 
@@ -114,6 +151,11 @@ async def gather_speech(request: Request):
         transfer_to  = result.get("transfer_to", "")
         current_node = result.get("current_node", "")
         intent       = result.get("current_intent", "")
+        auth_step    = result.get("auth_step", "")
+
+        log_event(call_sid, "graph_result", node=current_node, intent=intent,
+                  auth_step=auth_step, authenticated=result.get("authenticated", False),
+                  tts_preview=tts_text[:80] if tts_text else "")
 
         update_call_metadata(call_sid, result)
         add_call_turn(call_sid, "bot", tts_text, intent=intent, node=current_node)

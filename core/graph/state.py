@@ -40,6 +40,7 @@ class CNOState(TypedDict):
     current_node:    str   # last node that ran
     active_flow:     str   # node currently "owning" the conversation
                            # context switch behaviour is governed by CONTEXT_SWITCH_CONFIG[active_flow]
+    pending_intents: list  # queued intents when caller asks for multiple things at once
 
     # ── Per-slot retry counters ───────────────────────────────────────────────
     slot_attempts: dict
