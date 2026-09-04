@@ -612,6 +612,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;backgrou
 <div class="topbar">
   <h1>IVR Dashboard</h1>
   <span class="live">LIVE</span>
+  <span style="font-size:11px;color:#a78bfa;background:rgba(167,139,250,.12);padding:2px 8px;border-radius:4px;margin-left:6px;font-family:monospace">v1.6.0</span>
   <a href="/client" target="_blank">Softphone</a>
 </div>
 
