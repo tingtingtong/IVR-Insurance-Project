@@ -28,37 +28,152 @@ RESET = "\033[0m"
 RESULTS_DIR = os.path.join(os.path.dirname(__file__), "eval_results")
 
 RAG_TEST_SET = [
+    # ── Policy Types ─────────────────────────────────────────────────────
     {
         "question": "What is a whole life insurance policy?",
-        "expected_keywords": ["whole life", "permanent", "coverage", "cash value"],
-    },
-    {
-        "question": "What is the grace period for a missed payment?",
-        "expected_keywords": ["grace period", "days", "payment"],
-    },
-    {
-        "question": "How does the cash value of a policy grow?",
-        "expected_keywords": ["cash value", "grow", "interest"],
-    },
-    {
-        "question": "What happens if I stop paying my premiums?",
-        "expected_keywords": ["lapse", "premium", "stop", "nonforfeiture"],
-    },
-    {
-        "question": "Can I take a loan against my life insurance policy?",
-        "expected_keywords": ["loan", "borrow", "cash value", "interest"],
+        "expected_keywords": ["whole life", "permanent", "cash value", "death benefit"],
     },
     {
         "question": "What is term life insurance?",
         "expected_keywords": ["term", "period", "coverage", "expires"],
     },
     {
-        "question": "How do I change my beneficiary?",
-        "expected_keywords": ["beneficiary", "change", "form", "request"],
+        "question": "What is universal life insurance?",
+        "expected_keywords": ["universal life", "flexible", "premium", "cash value"],
     },
     {
-        "question": "What documents do I need for a claim?",
-        "expected_keywords": ["claim", "death certificate", "form"],
+        "question": "What is Medicare Supplement insurance?",
+        "expected_keywords": ["medicare", "medigap", "copay", "deductible"],
+    },
+    {
+        "question": "What is the difference between whole life and term life?",
+        "expected_keywords": ["whole life", "term", "cash value", "permanent"],
+    },
+
+    # ── Policy Status ────────────────────────────────────────────────────
+    {
+        "question": "What does it mean if my policy is lapsed?",
+        "expected_keywords": ["lapsed", "premiums", "grace period", "reinstate"],
+    },
+    {
+        "question": "What is a paid-up policy?",
+        "expected_keywords": ["paid up", "no more premiums", "death benefit"],
+    },
+    {
+        "question": "What happens if I surrender my policy?",
+        "expected_keywords": ["surrendered", "cash surrender value", "forfeited"],
+    },
+
+    # ── Premiums & Grace Period ──────────────────────────────────────────
+    {
+        "question": "What is the grace period for a missed payment?",
+        "expected_keywords": ["grace period", "30 days", "lapse"],
+    },
+    {
+        "question": "What happens if I stop paying my premiums?",
+        "expected_keywords": ["lapse", "premium", "grace period"],
+    },
+    {
+        "question": "Can I change my billing frequency?",
+        "expected_keywords": ["monthly", "quarterly", "annual", "billing"],
+    },
+    {
+        "question": "How long does it take for a payment to post?",
+        "expected_keywords": ["24", "48 hours", "business days"],
+    },
+    {
+        "question": "What is autopay and how do I enroll?",
+        "expected_keywords": ["autopay", "automatic", "bank account", "billing"],
+    },
+
+    # ── Payment Methods ──────────────────────────────────────────────────
+    {
+        "question": "What payment methods do you accept?",
+        "expected_keywords": ["credit", "debit", "ACH", "Visa", "Mastercard"],
+    },
+    {
+        "question": "Can I pay with a prepaid card?",
+        "expected_keywords": ["prepaid", "cardholder name", "not accepted"],
+    },
+    {
+        "question": "What information do I need for an ACH payment?",
+        "expected_keywords": ["routing number", "account number", "debit"],
+    },
+
+    # ── Cash Value & Loans ───────────────────────────────────────────────
+    {
+        "question": "How does the cash value of a policy grow?",
+        "expected_keywords": ["cash value", "tax deferred", "permanent"],
+    },
+    {
+        "question": "Can I take a loan against my life insurance policy?",
+        "expected_keywords": ["loan", "borrow", "cash value", "interest"],
+    },
+    {
+        "question": "What happens if I don't repay my policy loan?",
+        "expected_keywords": ["loan", "lapse", "cash value", "1099"],
+    },
+    {
+        "question": "What is a paid-up addition?",
+        "expected_keywords": ["paid up addition", "dividend", "death benefit"],
+    },
+
+    # ── Beneficiaries ────────────────────────────────────────────────────
+    {
+        "question": "How do I change my beneficiary?",
+        "expected_keywords": ["beneficiary", "change", "form", "written request"],
+    },
+    {
+        "question": "What is a contingent beneficiary?",
+        "expected_keywords": ["contingent", "primary", "predeceased", "estate"],
+    },
+
+    # ── Documents ────────────────────────────────────────────────────────
+    {
+        "question": "Can you email me my policy documents?",
+        "expected_keywords": ["mail", "no email", "compliance", "security"],
+    },
+    {
+        "question": "How do I request a copy of my policy?",
+        "expected_keywords": ["policy copy", "mailed", "7", "10 business days"],
+    },
+    {
+        "question": "What documents do I need to file a claim?",
+        "expected_keywords": ["claim", "death certificate", "form", "beneficiary"],
+    },
+
+    # ── Privacy ──────────────────────────────────────────────────────────
+    {
+        "question": "How do you use my personal information?",
+        "expected_keywords": ["personal information", "policy", "not sold"],
+    },
+    {
+        "question": "Can I opt out of information sharing?",
+        "expected_keywords": ["opt out", "affiliated", "marketing", "30 days"],
+    },
+
+    # ── Dividends ────────────────────────────────────────────────────────
+    {
+        "question": "What are policy dividends?",
+        "expected_keywords": ["dividends", "participating", "whole life", "not guaranteed"],
+    },
+    {
+        "question": "How can I use my dividends?",
+        "expected_keywords": ["dividend", "cash", "reduce premium", "paid-up addition"],
+    },
+
+    # ── General / IVR ────────────────────────────────────────────────────
+    {
+        "question": "How do I speak to a live agent?",
+        "expected_keywords": ["agent", "representative", "transfer"],
+    },
+    {
+        "question": "What can't the IVR help me with?",
+        "expected_keywords": ["cannot", "claim", "surrender", "cancel", "agent"],
+    },
+    {
+        "question": "What information do I need to verify my identity?",
+        "expected_keywords": ["phone number", "policy number", "date of birth", "name"],
     },
 ]
 
