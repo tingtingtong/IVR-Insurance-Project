@@ -41,15 +41,17 @@ def _gather_response(say_text: str, action: str = "/webhook/gather") -> str:
         input="speech",
         action=action,
         method="POST",
-        speechTimeout="auto",
+        speechTimeout="3",
         language="en-US",
-        timeout=8,
+        timeout=10,
         profanityFilter=False,
+        actionOnEmptyResult=True,
         hints="yes, no, correct, incorrect, right, wrong, confirm, cancel, repeat, policy, beneficiary, payment, loan, status, help, agent, transfer, january, february, march, april, may, june, july, august, september, october, november, december, nineteen, twenty, sixty, seventy, eighty, ninety",
     )
     gather.say(normalize_tts_text(say_text), voice="Polly.Joanna")
     response.append(gather)
-    # Fallback if caller says nothing
+    # Fallback if caller says nothing (actionOnEmptyResult sends to action URL first,
+    # but this redirect is a safety net in case Gather doesn't fire at all)
     response.redirect("/webhook/gather", method="POST")
     return str(response)
 
@@ -113,6 +115,10 @@ async def gather_speech(request: Request):
     transcript  = form.get("SpeechResult", "").strip()
     confidence  = form.get("Confidence", "0")
 
+    # ── Diagnostic: log ALL Twilio form params to detect missing/unexpected data ──
+    form_keys = {k: (v if k not in ("SpeechResult",) else v[:60]) for k, v in form.items()}
+    log.info("gather_raw", call_sid=call_sid, form_params=form_keys)
+
     log.info("speech_received", call_sid=call_sid,
              transcript=transcript, confidence=confidence)
     log_event(call_sid, "stt_result", transcript=transcript[:80],
@@ -120,6 +126,8 @@ async def gather_speech(request: Request):
               chars=len(transcript))
 
     if not transcript:
+        log_event(call_sid, "stt_empty", reason="no_speech_result",
+                  form_keys=list(form.keys()))
         return Response(
             content=_gather_response(_TIMEOUT_MSG),
             media_type="application/xml",
