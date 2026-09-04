@@ -692,9 +692,9 @@ def _collecting_caller_name(state: CNOState, last_human: str) -> dict:
     # Strip conversational prefixes before storing and matching the name
     clean_name = _clean_caller_name(last_human)
 
-    # Detect phone-number-like input (caller confused, said digits instead of name)
+    # Detect phone number input (caller confused, said digits instead of name)
     digits_only = "".join(c for c in clean_name if c.isdigit())
-    if len(digits_only) >= 7:
+    if len(digits_only) == 10:
         call_sid = state.get("call_sid", "unknown")
         log_event(call_sid, "auth_detail", step="collecting_caller_name",
                   action="digits_instead_of_name", input=clean_name[:20])
@@ -704,7 +704,7 @@ def _collecting_caller_name(state: CNOState, last_human: str) -> dict:
             return _persona_identified("other", clean_name, personas)
         return {
             "auth_step":     "collecting_caller_name",
-            "tts_text":      "It sounds like you may have provided a number. Could you please tell me your first and last name?",
+            "tts_text":      "I couldn't get the complete number you mentioned. Can you give me a 10-digit phone number?",
             "current_node":  "auth",
             "active_flow":   "auth",
             "slot_attempts": _inc_slot(state, "caller_name", "blank"),
@@ -718,10 +718,11 @@ def _match_persona(caller_name: str, personas: list) -> str:
     """
     Match caller_name against each persona in the list.
     Normalizes both strings: lowercase, strips punctuation.
-    Partial match OK — "John" matches "John Smith".
+    Uses multiple strategies: exact word, substring, starts-with.
     Returns the role of the first match, or "other" if none.
     """
     import re
+    from difflib import SequenceMatcher
 
     def _norm(s: str) -> str:
         return re.sub(r"[^a-z0-9 ]", "", s.lower()).strip()
@@ -732,10 +733,30 @@ def _match_persona(caller_name: str, personas: list) -> str:
     for persona in personas:
         persona_norm = _norm(persona.get("name", ""))
         persona_parts = persona_norm.split()
-        # Match if any word the caller said appears in the persona name
-        # (e.g. "John" matches "john smith"; "Smith Corp" matches "smith corp")
+
+        # Strategy 1: exact word match ("John" matches "john smith")
         if any(part in persona_parts for part in caller_parts if len(part) > 1):
             return persona.get("role", "other")
+
+        # Strategy 2: substring / starts-with match
+        # Catches STT errors like "Johnson" for "John", "Smithe" for "Smith"
+        for cp in caller_parts:
+            if len(cp) < 3:
+                continue
+            for pp in persona_parts:
+                # Either the caller word starts with a persona word or vice versa
+                # e.g. "johnson" starts with "john", "smith" starts with "smith"
+                if cp.startswith(pp) or pp.startswith(cp):
+                    return persona.get("role", "other")
+
+        # Strategy 3: fuzzy match — handles slight STT misspellings
+        # e.g. "Jon" vs "John", "Smyth" vs "Smith"
+        for cp in caller_parts:
+            if len(cp) < 3:
+                continue
+            for pp in persona_parts:
+                if SequenceMatcher(None, cp, pp).ratio() >= 0.75:
+                    return persona.get("role", "other")
 
     return "other"
 

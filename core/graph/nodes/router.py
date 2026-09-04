@@ -284,6 +284,7 @@ async def router_node(state: CNOState) -> dict:
     }
     caller_persona = state.get("caller_persona", "")
     if authenticated and caller_persona == "other" and intent in RESTRICTED_INTENTS:
+        log_event(call_sid, "persona_gate_blocked", intent=intent, persona="other")
         # Override to escalation — agent can assist callers without policy relationship
         return {"current_intent": "escalate", "current_node": "router"}
 

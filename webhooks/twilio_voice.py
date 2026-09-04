@@ -186,6 +186,9 @@ async def gather_speech(request: Request):
             if tts_text:
                 response.say(normalize_tts_text(tts_text), voice="Polly.Joanna")
             response.dial(transfer_to)
+            # Hangup after dial completes/fails — prevents call from continuing
+            response.say("Thank you for calling. Goodbye.", voice="Polly.Joanna")
+            response.hangup()
             return Response(content=str(response), media_type="application/xml")
 
         if current_node == "goodbye":
