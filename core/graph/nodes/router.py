@@ -85,7 +85,10 @@ def _caller_wants_escalation(text: str) -> bool:
 
 def _caller_wants_goodbye(text: str) -> bool:
     """Check if caller wants to end the call — intent that must bypass the auth wall."""
-    lower = text.lower().strip()
+    import re
+    # Strip punctuation so "No, thank you" matches "no thank you"
+    lower = re.sub(r"[^a-z0-9 ]", " ", text.lower()).strip()
+    lower = " ".join(lower.split())  # collapse multiple spaces
     return any(kw in lower for kw in _GOODBYE_KEYWORDS)
 
 

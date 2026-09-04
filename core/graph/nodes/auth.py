@@ -107,6 +107,18 @@ async def auth_node(state: CNOState) -> dict:
             "active_flow":     "auth",
         }
 
+    # ── Defensive guard: never restart from collecting_phone if phone was already verified ──
+    # If candidate_party is populated (phone/policy search succeeded), the phone step is done.
+    # This prevents state corruption from causing a loop back to phone collection.
+    if auth_step == "collecting_phone" and candidate_party:
+        log_event(call_sid, "auth_detail", step="collecting_phone",
+                  action="skip_phone_already_verified")
+        if pii_collected.get("dateOfBirth"):
+            # DOB was already collected — go to name as last resort
+            auth_step = "collecting_name"
+        else:
+            auth_step = "collecting_dob"
+
     # ── Dispatch ─────────────────────────────────────────────────────────────
     if auth_step == "collecting_phone":
         result = await _collecting_phone(state, last_human, pii_collected, auth_attempts, candidate_party)
@@ -679,6 +691,25 @@ def _collecting_caller_name(state: CNOState, last_human: str) -> dict:
 
     # Strip conversational prefixes before storing and matching the name
     clean_name = _clean_caller_name(last_human)
+
+    # Detect phone-number-like input (caller confused, said digits instead of name)
+    digits_only = "".join(c for c in clean_name if c.isdigit())
+    if len(digits_only) >= 7:
+        call_sid = state.get("call_sid", "unknown")
+        log_event(call_sid, "auth_detail", step="collecting_caller_name",
+                  action="digits_instead_of_name", input=clean_name[:20])
+        name_retry_count = state.get("slot_attempts", {}).get("caller_name", {}).get("blank", 0)
+        if name_retry_count >= 1:
+            # Already re-asked once — treat as "other" to avoid looping
+            return _persona_identified("other", clean_name, personas)
+        return {
+            "auth_step":     "collecting_caller_name",
+            "tts_text":      "It sounds like you may have provided a number. Could you please tell me your first and last name?",
+            "current_node":  "auth",
+            "active_flow":   "auth",
+            "slot_attempts": _inc_slot(state, "caller_name", "blank"),
+        }
+
     role = _match_persona(clean_name, personas)
     return _persona_identified(role, clean_name, personas)
 

@@ -45,6 +45,17 @@ async def cleanup_stale_calls():
     return JSONResponse({"cleaned": cleaned})
 
 
+@router.post("/calls/{call_sid}/end")
+async def end_single_call(call_sid: str):
+    """Mark a single call as ended."""
+    from services.conversation_store import end_call, get_call
+    call = get_call(call_sid)
+    if not call.get("call_sid"):
+        return JSONResponse({"error": "Call not found"}, status_code=404)
+    end_call(call_sid)
+    return JSONResponse({"call_sid": call_sid, "status": "ended"})
+
+
 @router.get("/analytics")
 async def api_analytics():
     """Aggregate analytics across all calls — auto-detect issues."""
@@ -1209,9 +1220,11 @@ async function loadCalls() {
       const from = (c.from_number||'').replace('client:','').replace('+1','');
       const active = c.status === 'active';
       const sel = c.call_sid === selCall ? ' on' : '';
+      const endBtn = active ? '<button onclick="endCallFn(\\''+c.call_sid+'\\');event.stopPropagation()" style="font-size:9px;color:#ef4444;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);padding:1px 6px;border-radius:3px;cursor:pointer;margin-left:6px">End</button>' : '';
       return '<div class="call-item'+sel+'" onclick="selCallFn(\\''+c.call_sid+'\\')"><div class="csid">'+c.call_sid.slice(0,24)+'</div>'
         + '<div class="cfrom">'+(from||'Softphone')+'</div>'
         + '<div class="cmeta"><span class="dot '+(active?'active':'ended')+'"></span>'+(active?'Active':'Ended')
+        + endBtn
         + ' &nbsp; '+c.turns.length+' turns &nbsp; '+c.started_at.slice(11,16)+'</div></div>';
     }).join('');
     // Auto-refresh selected call detail during polling
@@ -1291,6 +1304,12 @@ async function refreshCallDetail(csid) {
     const shareBtn = '<a href="/dashboard/call/'+csid+'" target="_blank" style="font-size:11px;color:#a78bfa;margin-left:10px;text-decoration:none;border:1px solid rgba(167,139,250,.3);padding:2px 8px;border-radius:4px">&#x2197; Share</a>';
     document.getElementById('call-hdr').innerHTML += shareBtn;
 
+    // End Call button — only shown for active calls
+    if (call.status === 'active') {
+      const endBtn = '<button onclick="endCallFn(\\''+csid+'\\');event.stopPropagation()" style="font-size:11px;color:#ef4444;margin-left:10px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.4);padding:2px 10px;border-radius:4px;cursor:pointer">✕ End Call</button>';
+      document.getElementById('call-hdr').innerHTML += endBtn;
+    }
+
     renderStatePanel(call);
     renderEventTimeline(csid);
 
@@ -1347,6 +1366,15 @@ async function refreshCallDetail(csid) {
       hdrEl.appendChild(idBtn);
     }
   } catch(e) { console.error('refreshCallDetail error', e); }
+}
+
+async function endCallFn(csid) {
+  if (!confirm('End this call?')) return;
+  try {
+    await fetch('/dashboard/calls/' + csid + '/end', { method: 'POST' });
+    await loadCalls();
+    await refreshCallDetail(csid);
+  } catch(e) { console.error('endCall error', e); }
 }
 
 async function selCallFn(csid) {
