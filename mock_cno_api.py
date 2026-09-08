@@ -457,9 +457,25 @@ async def payment_card(request: Request):
     policy_num  = body.get("PolicyNumber", "").strip().upper()
     amount      = float(body.get("Amount", 0))
     card_number = body.get("CardNumber", "")
+    expiry      = body.get("ExpiryDate", "")
+    cvv         = body.get("CVV", "")
 
     if policy_num not in POLICY_DETAIL:
         return _error(f"Policy {policy_num} not found", status=400)
+
+    # ── Validate card fields (BUG-018) ──────────────────────────────────────
+    from utils.payment_validator import validate_card_number, validate_expiry, validate_cvv
+    ok, err = validate_card_number(card_number)
+    if not ok:
+        return _error(err, status=422)
+    ok, err = validate_expiry(expiry)
+    if not ok:
+        return _error(err, status=422)
+    ok, err = validate_cvv(cvv)
+    if not ok:
+        return _error(err, status=422)
+    if amount <= 0:
+        return _error("Amount must be greater than zero", status=422)
 
     # Simulate decline for test card ending in 0000
     if card_number.endswith("0000"):
@@ -468,18 +484,21 @@ async def payment_card(request: Request):
             content={"ErrorBlock": [{"ErrorCode": "DECLINE", "ErrorMessage": "Card declined by issuer"}]},
         )
 
+    from utils.payment_validator import generate_payment_id
+    payment_id = generate_payment_id()
     conf = _confirmation_number("CNF")
     log.info("mock_card_payment_processed",
-             policy=policy_num, amount=amount, confirmation=conf)
+             policy=policy_num, amount=amount, confirmation=conf, payment_id=payment_id)
 
     return JSONResponse(
         status_code=200,
         content={
-            "PolicyNumber":      policy_num,
-            "Amount":            str(amount),
+            "PolicyNumber":       policy_num,
+            "Amount":             str(amount),
             "ConfirmationNumber": conf,
-            "Status":            "Approved",
-            "PostingDate":       str(date.today()),
+            "PaymentId":          payment_id,
+            "Status":             "Approved",
+            "PostingDate":        str(date.today()),
         },
     )
 
@@ -492,9 +511,21 @@ async def payment_ach(request: Request):
     policy_num     = body.get("PolicyNumber", "").strip().upper()
     amount         = float(body.get("Amount", 0))
     routing_number = body.get("RoutingNumber", "")
+    account_number = body.get("AccountNumber", "")
 
     if policy_num not in POLICY_DETAIL:
         return _error(f"Policy {policy_num} not found", status=400)
+
+    # ── Validate ACH fields (BUG-018) ──────────────────────────────────────
+    from utils.payment_validator import validate_routing_number, validate_account_number
+    ok, err = validate_routing_number(routing_number)
+    if not ok:
+        return _error(err, status=422)
+    ok, err = validate_account_number(account_number)
+    if not ok:
+        return _error(err, status=422)
+    if amount <= 0:
+        return _error("Amount must be greater than zero", status=422)
 
     # Simulate invalid routing number
     if routing_number == "000000000":
@@ -503,16 +534,19 @@ async def payment_ach(request: Request):
             content={"ErrorBlock": [{"ErrorCode": "INVALID_ROUTING", "ErrorMessage": "Invalid routing number"}]},
         )
 
+    from utils.payment_validator import generate_payment_id
+    payment_id = generate_payment_id()
     conf = _confirmation_number("ACH")
     log.info("mock_ach_payment_processed",
-             policy=policy_num, amount=amount, confirmation=conf)
+             policy=policy_num, amount=amount, confirmation=conf, payment_id=payment_id)
 
     return JSONResponse(
         status_code=200,
         content={
             "PolicyNumber":       policy_num,
             "Amount":             str(amount),
-            "ConfirmationNumber":  conf,
+            "ConfirmationNumber": conf,
+            "PaymentId":          payment_id,
             "Status":             "Accepted",
             "EstimatedPosting":   "1-2 business days",
         },

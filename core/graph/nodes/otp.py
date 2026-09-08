@@ -141,7 +141,10 @@ async def otp_node(state: CNOState) -> dict:
         result = await _process_payment(otp_data, policy_number, access_token)
         if result["success"]:
             confirmation = result.get("confirmation", "")
-            tts = f"Your payment has been processed. Confirmation number: {confirmation}. {PROMPTS['payment_disclosure']}"
+            payment_id = result.get("payment_id", "")
+            # BUG-018: Include payment ID so callers can reference it later
+            id_part = f" Your payment reference ID is {payment_id}." if payment_id else ""
+            tts = f"Your payment has been processed. Confirmation number: {confirmation}.{id_part} {PROMPTS['payment_disclosure']}"
         else:
             tts = f"I'm sorry, the payment could not be processed. {result.get('error', '')} Please try again or call back."
         return {
