@@ -193,8 +193,8 @@
   <h1>UIC IVR — Architect Interview Questions</h1>
   <p>30 Questions Covering System Design, LLM Strategy, Infrastructure & Security</p>
   <div class="stats">
-    <div class="stat"><span class="num">30</span><span class="label">Questions</span></div>
-    <div class="stat"><span class="num">6</span><span class="label">Categories</span></div>
+    <div class="stat"><span class="num">35</span><span class="label">Questions</span></div>
+    <div class="stat"><span class="num">7</span><span class="label">Categories</span></div>
     <div class="stat"><span class="num">3</span><span class="label">Difficulty Levels</span></div>
   </div>
 </div>
@@ -252,6 +252,14 @@
       <a href="#q28">Q28. Multi-tenancy & scaling to prod</a>
       <a href="#q29">Q29. Key tradeoffs you'd revisit</a>
       <a href="#q30">Q30. Walk through a complete call flow</a>
+    </div>
+    <div>
+      <div class="cat-label">STT Robustness & Payment UX</div>
+      <a href="#q31">Q31. STT card number extraction</a>
+      <a href="#q32">Q32. Progressive card capture for elderly callers</a>
+      <a href="#q33">Q33. Per-field confirmation & smart correction</a>
+      <a href="#q34">Q34. Beneficiary management state machine</a>
+      <a href="#q35">Q35. API failure escalation pattern</a>
     </div>
   </div>
 </div>
@@ -1262,6 +1270,194 @@ UI command:   mlflow ui --port 5000 --backend-store-uri sqlite:///mlflow.db</cod
     </ol>
 
     <p><strong>Components touched:</strong> Twilio (voice gateway), CloudFront (HTTPS), ALB (routing), ECS Fargate (compute), Deepgram (STT), Groq (LLM x2), ElevenLabs (TTS), Party Search API, Auth Token API, Holding Inquiry API, Payment API, PostgreSQL (checkpoints x12+), Redis (session state).</p>
+  </div></div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SECTION 7: STT Robustness & Payment UX -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 class="section-title" id="s7"><span class="section-icon">7</span> STT Robustness & Payment UX</h2>
+
+<!-- Q31 -->
+<div class="qa-card" id="q31">
+  <div class="qa-header" onclick="toggle(this)">
+    <span class="qa-num">31</span>
+    <span class="qa-question">STT transcribes card numbers in many formats — commas, dots, word numbers, homophones. How does the system handle all these variations?<span class="diff-label diff-inter">Intermediate</span></span>
+    <span class="qa-toggle">&#9660;</span>
+  </div>
+  <div class="qa-body"><div class="qa-content">
+    <p><strong>Problem:</strong> Twilio/Deepgram STT output for a card number can arrive as:</p>
+    <ul>
+      <li><code>"4, 5, 3, 2, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2"</code> (comma-separated)</li>
+      <li><code>"1111. 2222. 3333. 4444."</code> (dot-separated groups)</li>
+      <li><code>"four five three two one two three four five six seven eight nine zero one two"</code> (word numbers)</li>
+      <li><code>"for five tree to won to three fore five six seven ate nine oh won to"</code> (homophones)</li>
+      <li><code>"double four double four double two double two..."</code> (repeat prefixes)</li>
+      <li><code>"my card number is 4532 1234 5678 9012"</code> (noise words mixed in)</li>
+    </ul>
+    <p><strong>Solution: <code>utils/card_extractor.py</code></strong> — a dedicated extraction pipeline:</p>
+    <ol>
+      <li><strong>Expand repeat prefixes:</strong> "double four" → "4 4", "triple one" → "1 1 1"</li>
+      <li><strong>Tokenize and classify each token:</strong>
+        <ul>
+          <li>Pure digits (<code>"4532"</code>) → use directly</li>
+          <li>Word-digit or homophone (<code>"four"</code>, <code>"for"</code>, <code>"ate"</code>) → map to digit via <code>_WORD_TO_DIGIT</code></li>
+          <li>Punctuated digits (<code>"1,1,1,1"</code>) → extract inner digits</li>
+          <li>Non-digit word (<code>"my"</code>, <code>"card"</code>, <code>"please"</code>) → skip as noise</li>
+        </ul>
+      </li>
+      <li><strong>Concatenate all extracted digits</strong> → pass to Luhn validator</li>
+    </ol>
+    <p><strong>Key design decision:</strong> We do <em>not</em> use the same extractor for CVV/expiry/phone. Card numbers are the most complex because they're 16 digits long — STT has more opportunity to introduce noise. The card extractor is aggressive about homophone conversion (<code>"to"→2</code>, <code>"for"→4</code>) because in a card-number-only context, these words are almost certainly digits. For general speech (e.g., router intent classification), we'd never convert <code>"to"</code> to <code>"2"</code>.</p>
+    <p><strong>Test coverage:</strong> 29 unit tests in <code>tests/test_card_capture.py</code> — covering every STT pattern we've seen in production calls.</p>
+  </div></div>
+</div>
+
+<!-- Q32 -->
+<div class="qa-card" id="q32">
+  <div class="qa-header" onclick="toggle(this)">
+    <span class="qa-num">32</span>
+    <span class="qa-question">Elderly callers often can't say 16 digits at once. How does the progressive card capture work, and how are corrections handled?<span class="diff-label diff-adv">Advanced</span></span>
+    <span class="qa-toggle">&#9660;</span>
+  </div>
+  <div class="qa-body"><div class="qa-content">
+    <p><strong>Problem:</strong> Older callers stop after 4 digits. The original flow rejected anything &lt; 16 and asked to start over — frustrating for someone who just said the right first 4 digits.</p>
+    <p><strong>Solution: Progressive capture with per-group confirmation</strong></p>
+    <p>The OTP node's <code>collecting_card_dtmf</code> step now accumulates digits in <code>otp_data["card_groups"]</code>:</p>
+    <pre><code>BOT: Please enter your 16-digit card number...
+USER: 4111                              ← only 4 digits
+BOT: I received the first 4 digits:     ← progressive capture kicks in
+     4, 1, 1, 1. Is that correct?
+USER: Yes
+BOT: Can you tell me the next 4 digits?
+USER: 1111
+BOT: I received the next digits:
+     1, 1, 1, 1. Is that correct?
+USER: No, it's 1112                     ← inline correction
+BOT: I have the next digits:
+     1, 1, 1, 2. Is that correct?       ← replaces last group
+USER: Yes
+BOT: Can you tell me the next 4 digits?
+USER: 1111
+BOT: ...Is that correct?
+USER: Yes
+BOT: Now the last 4 digits?             ← context-aware prompt
+USER: 1111
+BOT: Your card number ending in         ← full card assembled
+     1, 1, 1, 1. Is that correct?       ← Luhn validated</code></pre>
+    <p><strong>State machine additions:</strong></p>
+    <ul>
+      <li><code>confirming_card_group</code>: New step that confirms the latest digit group</li>
+      <li><strong>"Yes" path:</strong> If total &lt; 16 → ask for next group. If total ≥ 16 → assemble full card → Luhn validate → <code>confirming_card</code></li>
+      <li><strong>"No" + digits path:</strong> Extract corrected digits from utterance (<code>"no, it's 1234"</code>), replace last group, re-confirm</li>
+      <li><strong>"No" alone path:</strong> Discard last group, re-ask for those digits</li>
+    </ul>
+    <p><strong>Flexible grouping:</strong> The system accepts 4, 8, 12, or all 16 digits at once. Fast callers who say all 16 skip progressive capture entirely — the ≥ 16 check short-circuits to full validation.</p>
+    <p><strong>Why not always force 4-at-a-time?</strong> Young callers rattling off 16 digits shouldn't be interrupted every 4. The system adapts to the caller's pace.</p>
+  </div></div>
+</div>
+
+<!-- Q33 -->
+<div class="qa-card" id="q33">
+  <div class="qa-header" onclick="toggle(this)">
+    <span class="qa-num">33</span>
+    <span class="qa-question">Walk through the full OTP payment state machine — from "I want to make a payment" to confirmation number. How are individual fields confirmed?<span class="diff-label diff-adv">Advanced</span></span>
+    <span class="qa-toggle">&#9660;</span>
+  </div>
+  <div class="qa-body"><div class="qa-content">
+    <p><strong>Card payment state machine (17 steps):</strong></p>
+    <pre><code>start → choosing_method → collecting_card_dtmf
+  → [progressive: confirming_card_group ↔ collecting_card_dtmf]
+  → dtmf_complete (Luhn validation + 17→16 smart correction)
+  → confirming_card → collecting_card_expiry
+  → confirming_expiry → collecting_card_cvv
+  → confirming_cvv → collecting_card_amount
+  → confirming_amount → processing → complete</code></pre>
+    <p><strong>Per-field confirmation (FEAT-005):</strong> Every collected value is confirmed individually before proceeding:</p>
+    <table style="width:100%; border-collapse:collapse; margin:1rem 0;">
+      <tr><th style="background:var(--surface2); padding:8px 12px; border:1px solid var(--border); color:var(--accent);">Field</th><th style="background:var(--surface2); padding:8px 12px; border:1px solid var(--border); color:var(--accent);">Confirmation Prompt</th><th style="background:var(--surface2); padding:8px 12px; border:1px solid var(--border); color:var(--accent);">"No" Action</th></tr>
+      <tr><td style="padding:8px 12px; border:1px solid var(--border);">Card number</td><td style="padding:8px 12px; border:1px solid var(--border);">"Card ending in 1, 1, 1, 1. Is that correct?"</td><td style="padding:8px 12px; border:1px solid var(--border);">Re-collect card</td></tr>
+      <tr><td style="padding:8px 12px; border:1px solid var(--border);">Expiry</td><td style="padding:8px 12px; border:1px solid var(--border);">"Expiry date June 2028. Is that correct?"</td><td style="padding:8px 12px; border:1px solid var(--border);">Re-collect expiry</td></tr>
+      <tr><td style="padding:8px 12px; border:1px solid var(--border);">CVV</td><td style="padding:8px 12px; border:1px solid var(--border);">"Security code 1, 2, 3. Is that correct?"</td><td style="padding:8px 12px; border:1px solid var(--border);">Re-collect CVV</td></tr>
+      <tr><td style="padding:8px 12px; border:1px solid var(--border);">Amount</td><td style="padding:8px 12px; border:1px solid var(--border);">"Payment amount $125.00. Is that correct?"</td><td style="padding:8px 12px; border:1px solid var(--border);">Re-collect amount</td></tr>
+    </table>
+    <p><strong>Smart 17→16 digit correction (FEAT-005b):</strong> When STT captures 17 digits (1 extra — common with elderly callers), the system:</p>
+    <ol>
+      <li>Finds consecutive duplicate digits (likely STT double-tap)</li>
+      <li>Tries removing each one to produce a 16-digit candidate</li>
+      <li>Luhn-checks each candidate</li>
+      <li>If exactly 1 valid candidate → suggests it: "I received 17 digits. I think you meant the card ending in 4, 4, 4, 4. Is that correct?"</li>
+      <li>If 0 or multiple valid → falls back to "too many digits, please try again"</li>
+    </ol>
+    <p><strong>Confirmation number readback (FEAT-005c):</strong> After successful payment, the confirmation code is spelled character-by-character for phone clarity:</p>
+    <pre><code>"Your confirmation number is C N F 7 5 3 3 8 0 8 7.
+ Your payment reference ID is P A Y dash 2 0 2 6 0 9 0 8 dash 9 K W V X 2.
+ Please save these numbers for your records."</code></pre>
+    <p><strong>PCI compliance:</strong> Card numbers are collected via DTMF or direct STT — they never pass through the LLM. The card extractor runs in the webhook layer (Twilio voice) or the graph node (webchat), both before any LLM invocation.</p>
+  </div></div>
+</div>
+
+<!-- Q34 -->
+<div class="qa-card" id="q34">
+  <div class="qa-header" onclick="toggle(this)">
+    <span class="qa-num">34</span>
+    <span class="qa-question">How does the beneficiary management state machine handle add, remove, and update operations with automatic percentage redistribution?<span class="diff-label diff-inter">Intermediate</span></span>
+    <span class="qa-toggle">&#9660;</span>
+  </div>
+  <div class="qa-body"><div class="qa-content">
+    <p><strong>Full state machine (10 steps):</strong></p>
+    <pre><code>listing → asking_action → collecting_name
+  → collecting_relationship (add only)
+  → collecting_percentage
+  → confirming_add / confirming_remove / confirming_update
+  → complete</code></pre>
+    <p><strong>Key capabilities:</strong></p>
+    <ul>
+      <li><strong>Add:</strong> Collect name, relationship, and percentage. Auto-redistribute remaining beneficiaries proportionally. Max 5 beneficiaries enforced.</li>
+      <li><strong>Remove:</strong> Fuzzy name matching (SequenceMatcher ≥ 0.6). Redistributes removed percentage proportionally among remaining. Min 1 enforced.</li>
+      <li><strong>Update:</strong> Change a beneficiary's percentage. All others adjusted proportionally to maintain 100% total.</li>
+    </ul>
+    <p><strong>Proportional redistribution example (add):</strong></p>
+    <pre><code>Before:  Alice 60%, Bob 40%
+Add:     Carol at 20%
+After:   Alice 48%, Bob 32%, Carol 20%    ← (60×0.8, 40×0.8)</code></pre>
+    <p><strong>STT robustness:</strong></p>
+    <ul>
+      <li><strong>Name matching:</strong> 3-tier: exact word, substring/starts-with, fuzzy (SequenceMatcher). Handles STT mangling like "Robert" → "Rupert".</li>
+      <li><strong>Action detection:</strong> Word-boundary matching (<code>set(words)</code> intersection) prevents "no" matching inside "now" — a lesson from BUG-023a.</li>
+      <li><strong>Done detection:</strong> Phrase matching ("that's all", "that is all", "no thanks") + word matching ("nothing", "done") + guarded "no" (only if it's a standalone word).</li>
+    </ul>
+    <p><strong>Re-entry:</strong> If <code>beneficiary_step == "complete"</code> and the caller re-invokes beneficiaries, the step resets to <code>"listing"</code> — prevents getting stuck in a dead state.</p>
+  </div></div>
+</div>
+
+<!-- Q35 -->
+<div class="qa-card" id="q35">
+  <div class="qa-header" onclick="toggle(this)">
+    <span class="qa-num">35</span>
+    <span class="qa-question">What happens when a backend API call fails during a service node? How do you guarantee the caller is never left in a dead end?<span class="diff-label diff-basic">Foundational</span></span>
+    <span class="qa-toggle">&#9660;</span>
+  </div>
+  <div class="qa-body"><div class="qa-content">
+    <p><strong>Problem (BUG-021, P1):</strong> When an API call fails in a service node (e.g., payment API timeout), the error path set <code>tts_text</code> with an error message but <code>transfer_to</code> was empty. The caller heard "I'm having trouble..." but then was left in silence — no transfer, no re-prompt, just dead air.</p>
+    <p><strong>Fix — mandatory escalation on API failure:</strong></p>
+    <pre><code># Pattern applied to ALL 7 service nodes:
+if not result["success"]:
+    return merge_auth_state(auth_state, {
+        "tts_text":    PROMPTS["escalation"]["error"],
+        "transfer_to": settings.twilio_agent_phone_number,  ← MANDATORY
+        "current_node": "payment", "active_flow": "",
+    })</code></pre>
+    <p><strong>Affected nodes (all 7):</strong> <code>policy.py</code>, <code>loan.py</code>, <code>payment.py</code>, <code>beneficiary.py</code>, <code>contact.py</code>, <code>document.py</code>, <code>privacy.py</code></p>
+    <p><strong>How <code>transfer_to</code> triggers the transfer:</strong></p>
+    <ol>
+      <li>Graph returns state with <code>transfer_to: "+19087425347"</code></li>
+      <li>Twilio voice webhook checks <code>result.get("transfer_to")</code></li>
+      <li>If set: generates TwiML <code>&lt;Say&gt;</code> (error message) + <code>&lt;Dial&gt;</code> (agent number) + <code>&lt;Hangup&gt;</code></li>
+      <li>Caller hears the message and is immediately connected to a live agent</li>
+    </ol>
+    <p><strong>Design principle:</strong> In a voice IVR, dead air is the worst possible outcome. The caller doesn't know if the system crashed, if they should hang up, or if something is loading. Every error path must either (a) retry with a clear re-prompt, or (b) escalate to a human. There is no acceptable third option.</p>
+    <p><strong>The <code>&lt;Hangup&gt;</code> after <code>&lt;Dial&gt;</code>:</strong> After a <code>&lt;Dial&gt;</code> that fails (agent doesn't answer), Twilio continues to the next TwiML verb. Without an explicit <code>&lt;Hangup&gt;</code>, the call redirects back to the IVR — creating an infinite loop (BUG-013). The hangup ensures a clean end.</p>
   </div></div>
 </div>
 
