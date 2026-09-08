@@ -5,6 +5,17 @@ Each version is tagged in git and deployed as a Docker image to ECR.
 
 ---
 
+## v1.9.0 — 2026-09-08
+**API escalation, DOB confirmation, beneficiary re-entry, CVV digit fix**
+
+| ID | Issue | Root Cause | Fix | Files |
+|----|-------|-----------|-----|-------|
+| BUG-021 | API failures in service nodes don't escalate to live agent — caller left in dead end (P1) | Error paths set `tts_text` with error message but `transfer_to` was empty or missing | All 7 service nodes now set `transfer_to: settings.twilio_agent_phone_number` on API failure | `policy.py`, `loan.py`, `payment.py`, `beneficiary.py`, `contact.py`, `document.py`, `privacy.py` |
+| BUG-022 | DOB mismatch says "doesn't match" without reading back what was heard — caller can't tell if STT misheard | First mismatch went straight to "try again" without confirmation | Read back parsed date: "I heard Jan 15, 1965. Is that correct?" → yes/no → fall to name or re-ask DOB | `core/graph/nodes/auth.py` |
+| BUG-023 | Beneficiary re-entry stuck in "anything else?" loop; CVV "3 to 1" gives "31" not "321" | (a) `_detect_action` substring matched "no" inside "now"; (b) `_extract_digits` strips non-digits without word-to-digit conversion | (a) Word-boundary matching for done keywords; (b) Convert STT homophones ("to"→2, "for"→4, "won"→1, "ate"→8, "oh"→0) before digit extraction | `core/graph/nodes/beneficiary.py`, `core/graph/nodes/otp.py` |
+
+---
+
 ## v1.8.0 — 2026-09-08
 **Beneficiary management**
 
