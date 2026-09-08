@@ -19,8 +19,9 @@ from utils.call_logger import log_event
 # otp_step state machine
 # "start"                   → ask card or bank
 # "choosing_method"         → detect card vs bank
-# "collecting_card_dtmf"    → card number via DTMF or voice (webhook/stream handles input)
-# "confirming_card"         → FEAT-005: confirm card number with caller
+# "collecting_card_dtmf"    → card number via DTMF or voice (full or partial)
+# "confirming_card_group"   → FEAT-006: confirm a partial group, ask for next
+# "confirming_card"         → FEAT-005: confirm full card number with caller
 # "collecting_card_expiry"  → expiry via normal STT/TTS
 # "confirming_expiry"       → FEAT-005: confirm expiry with caller
 # "collecting_card_cvv"     → CVV via normal STT/TTS
@@ -123,26 +124,121 @@ async def otp_node(state: CNOState) -> dict:
             }
 
     # ── Step: Collecting card/bank number via DTMF or voice ───────────────────
-    # BUG-024: Handle text input (webchat) — extract digits and proceed to validation
+    # BUG-024 + FEAT-006: Progressive capture — accept partial digits, confirm in groups
     if otp_step in ("collecting_card_dtmf", "collecting_bank_dtmf"):
         from utils.card_extractor import extract_card_digits
+        is_card = otp_data.get("payment_type") == "card"
         collected = extract_card_digits(last_human)
+
         if not collected:
-            prompt = ("I'm sorry, I didn't catch that. Could you please provide the full card number?"
-                      if otp_data.get("payment_type") == "card"
-                      else "I'm sorry, I didn't catch that. Could you please provide your account number?")
+            existing = "".join(otp_data.get("card_groups", []))
+            if existing:
+                prompt = (f"I didn't catch that. I have {len(existing)} digits so far. "
+                          f"Please say the next {16 - len(existing)} digits." if is_card
+                          else "I didn't catch that. Please provide the remaining digits of your account number.")
+            else:
+                prompt = ("I'm sorry, I didn't catch that. Could you please provide your card number?"
+                          if is_card
+                          else "I'm sorry, I didn't catch that. Could you please provide your account number?")
             return {
                 "otp_step":    otp_step,
                 "otp_data":    otp_data,
                 "tts_text":    prompt,
                 "current_node": "otp", "active_flow": "otp",
             }
-        if otp_data.get("payment_type") == "card":
-            otp_data["card_number"] = collected
-        else:
+
+        if not is_card:
+            # Bank account: no progressive capture (variable length)
             otp_data["account_number"] = collected
-        # Fall through to dtmf_complete validation
-        otp_step = "dtmf_complete"
+            otp_step = "dtmf_complete"
+        else:
+            # FEAT-006: Card progressive capture
+            existing_groups = list(otp_data.get("card_groups", []))
+            existing_digits = "".join(existing_groups)
+            all_digits = existing_digits + collected
+
+            if len(all_digits) >= 16:
+                # Got enough — go straight to validation
+                otp_data["card_number"] = all_digits
+                otp_data.pop("card_groups", None)
+                otp_step = "dtmf_complete"
+            else:
+                # Partial: store group and confirm
+                existing_groups.append(collected)
+                otp_data["card_groups"] = existing_groups
+                total_so_far = len(all_digits)
+                ordinal = _group_ordinal(total_so_far)
+                return {
+                    "otp_step": "confirming_card_group",
+                    "otp_data": otp_data,
+                    "tts_text": f"I received {ordinal}: {_spell_digits(collected)}. Is that correct?",
+                    "current_node": "otp", "active_flow": "otp",
+                }
+
+    # ── Step: Confirm partial card group ────────────────────────────────────
+    # FEAT-006: Per-group confirmation with correction handling
+    if otp_step == "confirming_card_group":
+        from utils.card_extractor import extract_card_digits
+        groups = list(otp_data.get("card_groups", []))
+        total_so_far = len("".join(groups))
+
+        if _is_yes(last_human):
+            remaining = 16 - total_so_far
+            if remaining <= 0:
+                # All 16 collected via groups — assemble and validate
+                otp_data["card_number"] = "".join(groups)[:16]
+                otp_data.pop("card_groups", None)
+                otp_step = "dtmf_complete"
+                # Fall through to dtmf_complete below
+            else:
+                if remaining <= 4:
+                    prompt = f"Now the last {remaining} digits?"
+                else:
+                    prompt = f"Can you tell me the next {min(remaining, 4)} digits?"
+                return {
+                    "otp_step": "collecting_card_dtmf",
+                    "otp_data": otp_data,
+                    "tts_text": prompt,
+                    "current_node": "otp", "active_flow": "otp",
+                }
+        elif _is_no(last_human):
+            # Check if caller provided corrected digits in same utterance: "no, it's 1234"
+            correction = extract_card_digits(last_human)
+            if correction and groups:
+                # Replace last group with correction
+                groups[-1] = correction
+                otp_data["card_groups"] = groups
+                new_total = len("".join(groups))
+                ordinal = _group_ordinal(new_total)
+                return {
+                    "otp_step": "confirming_card_group",
+                    "otp_data": otp_data,
+                    "tts_text": f"I have {ordinal}: {_spell_digits(correction)}. Is that correct?",
+                    "current_node": "otp", "active_flow": "otp",
+                }
+            else:
+                # No correction digits — discard last group and re-ask
+                if groups:
+                    groups.pop()
+                otp_data["card_groups"] = groups
+                prev_total = len("".join(groups))
+                if prev_total > 0:
+                    prompt = f"No problem. I have {prev_total} digits so far. Please say the next digits again."
+                else:
+                    prompt = "No problem. Let's start over. Please say the first digits of your card number."
+                return {
+                    "otp_step": "collecting_card_dtmf",
+                    "otp_data": otp_data,
+                    "tts_text": prompt,
+                    "current_node": "otp", "active_flow": "otp",
+                }
+        else:
+            return {
+                "otp_step": "confirming_card_group",
+                "otp_data": otp_data,
+                "tts_text": "Please say yes if those digits are correct, or no to correct them.",
+                "current_node": "otp", "active_flow": "otp",
+            }
 
     # ── Step: DTMF/voice collection complete — sensitive number captured ──────
     # BUG-016: Only the card/account number is collected via DTMF or voice.
@@ -738,6 +834,16 @@ def _extract_amount(utterance: str) -> float | None:
         return float(total) if total > 0 else None
 
     return None
+
+
+def _group_ordinal(total_digits: int) -> str:
+    """Return a contextual label for the digit group position."""
+    if total_digits <= 4:
+        return f"the first {total_digits} digits"
+    elif total_digits < 16:
+        return f"the next digits"
+    else:
+        return "the last digits"
 
 
 def _format_expiry_spoken(expiry: str) -> str:
