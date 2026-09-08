@@ -5,6 +5,15 @@ Each version is tagged in git and deployed as a Docker image to ECR.
 
 ---
 
+## v1.7.1 — 2026-09-08
+**Pending intent UX hint**
+
+| ID | Issue | Root Cause | Fix | Files |
+|----|-------|-----------|-----|-------|
+| BUG-019 | After serving first intent in multi-intent request, bot says generic "anything else?" — caller never knows a second intent is queued | Post-service TTS came straight from LLM with no awareness of `pending_intents` queue | Strip generic closing, append specific hint: "You also asked about {intent}. Would you like me to look into that?" | `utils/pending_intent_hint.py` (new), `webhooks/chat.py`, `webhooks/twilio_voice.py`, `webhooks/twilio_stream.py` |
+
+---
+
 ## v1.7.0 — 2026-09-08 (60413b1)
 **Payment flow overhaul + multi-intent pre-auth fix**
 
