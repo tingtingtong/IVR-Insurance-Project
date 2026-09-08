@@ -37,6 +37,18 @@ async def process_card_payment(
     DEBIT_CREDIT_CARD_PAYMENT — JWT-auth integration flow.
     Card data arrives via Twilio DTMF — never passed through LLM.
     """
+    # BUG-018: Pre-flight validation before hitting the API
+    from utils.payment_validator import validate_card_number, validate_expiry, validate_cvv
+    ok, err = validate_card_number(card_number)
+    if not ok:
+        return {"success": False, "confirmation": "", "payment_id": "", "error": err}
+    ok, err = validate_expiry(expiry)
+    if not ok:
+        return {"success": False, "confirmation": "", "payment_id": "", "error": err}
+    ok, err = validate_cvv(cvv)
+    if not ok:
+        return {"success": False, "confirmation": "", "payment_id": "", "error": err}
+
     url = f"{settings.cno_api_base_url}/payment/card"
     jwt_token = _generate_jwt(policy_number, amount)
     headers = {
@@ -58,16 +70,18 @@ async def process_card_payment(
                 body = await resp.json()
                 latency = int((time.time() - t0) * 1000)
                 if resp.status in (200, 201):
+                    payment_id = body.get("PaymentId", "")
                     _log.info("api_card_payment", policy=policy_number[:3] + "****",
-                              status=resp.status, latency_ms=latency)
-                    return {"success": True, "confirmation": body.get("ConfirmationNumber", ""), "error": ""}
+                              status=resp.status, latency_ms=latency, payment_id=payment_id)
+                    return {"success": True, "confirmation": body.get("ConfirmationNumber", ""),
+                            "payment_id": payment_id, "error": ""}
                 _log.warning("api_card_payment_failed", status=resp.status,
                              error=str(body)[:100], latency_ms=latency)
-                return {"success": False, "confirmation": "", "error": str(body)}
+                return {"success": False, "confirmation": "", "payment_id": "", "error": str(body)}
     except Exception as e:
         latency = int((time.time() - t0) * 1000)
         _log.error("api_card_payment_error", error=str(e)[:100], latency_ms=latency)
-        return {"success": False, "confirmation": "", "error": str(e)}
+        return {"success": False, "confirmation": "", "payment_id": "", "error": str(e)}
 
 
 async def process_ach_payment(
@@ -79,6 +93,15 @@ async def process_ach_payment(
     account_type: str = "checking",
 ) -> dict:
     """ACH / Bank payment — requires ACH authorization script read first."""
+    # BUG-018: Pre-flight validation
+    from utils.payment_validator import validate_routing_number, validate_account_number
+    ok, err = validate_routing_number(routing_number)
+    if not ok:
+        return {"success": False, "confirmation": "", "payment_id": "", "error": err}
+    ok, err = validate_account_number(account_number)
+    if not ok:
+        return {"success": False, "confirmation": "", "payment_id": "", "error": err}
+
     url = f"{settings.cno_api_base_url}/payment/ach"
     jwt_token = _generate_jwt(policy_number, amount)
     headers = {
@@ -100,16 +123,18 @@ async def process_ach_payment(
                 body = await resp.json()
                 latency = int((time.time() - t0) * 1000)
                 if resp.status in (200, 201):
+                    payment_id = body.get("PaymentId", "")
                     _log.info("api_ach_payment", policy=policy_number[:3] + "****",
-                              status=resp.status, latency_ms=latency)
-                    return {"success": True, "confirmation": body.get("ConfirmationNumber", ""), "error": ""}
+                              status=resp.status, latency_ms=latency, payment_id=payment_id)
+                    return {"success": True, "confirmation": body.get("ConfirmationNumber", ""),
+                            "payment_id": payment_id, "error": ""}
                 _log.warning("api_ach_payment_failed", status=resp.status,
                              error=str(body)[:100], latency_ms=latency)
-                return {"success": False, "confirmation": "", "error": str(body)}
+                return {"success": False, "confirmation": "", "payment_id": "", "error": str(body)}
     except Exception as e:
         latency = int((time.time() - t0) * 1000)
         _log.error("api_ach_payment_error", error=str(e)[:100], latency_ms=latency)
-        return {"success": False, "confirmation": "", "error": str(e)}
+        return {"success": False, "confirmation": "", "payment_id": "", "error": str(e)}
 
 
 def get_ach_script() -> str:
