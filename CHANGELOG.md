@@ -5,6 +5,18 @@ Each version is tagged in git and deployed as a Docker image to ECR.
 
 ---
 
+## v1.7.0 — 2026-09-08 (60413b1)
+**Payment flow overhaul + multi-intent pre-auth fix**
+
+| ID | Issue | Root Cause | Fix | Files |
+|----|-------|-----------|-----|-------|
+| BUG-015 | Multi-intent utterances lost when spoken before auth (e.g., "check my policy and make a payment" → only first intent processed) | Auth redirect at `router.py:200` returned before LLM classification, so `pending_intents` was never populated pre-auth | On first utterance during auth, run LLM classification to capture all intents; extras queued in `pending_intents` for dequeue after auth + first flow | `core/graph/nodes/router.py` |
+| BUG-016 | OTP payment flow only supported DTMF for all fields — no voice input, and non-sensitive fields (expiry, CVV, amount) forced through keypad | DTMFCollector collected all fields sequentially; no speech path; webhook had no DTMF support | Split architecture: card/account numbers via DTMF or voice (PCI-safe), remaining fields via normal STT/TTS. New `/webhook/gather-payment` endpoint, simplified DTMFCollector | `core/graph/nodes/otp.py`, `webhooks/twilio_voice.py`, `webhooks/twilio_stream.py` |
+| BUG-017 | Invalid card numbers accepted without validation — no retry, no feedback on partial/incorrect digits | No card validation after DTMF/voice collection; straight to confirmation | Luhn algorithm + digit count validation with intelligent self-correction: tells caller exactly what's wrong, reads back last 4 digits, max 3 retries before agent escalation | `core/graph/nodes/otp.py` |
+| BUG-018 | Payment API accepted any input without validation; no unique payment ID for caller reference | Mock API had no field validation; no payment ID generation; client had no pre-flight checks | Added Luhn, expiry, CVV, routing, account validation (server + client). Payment ID format: `PAY-YYYYMMDD-XXXXXX`. Read back in confirmation | `utils/payment_validator.py` (new), `mock_cno_api.py`, `core/tools/payment_api.py`, `core/graph/nodes/otp.py` |
+
+---
+
 ## v1.6.0 — 2026-09-04 (0a8badc)
 **Persona matching + dial safety**
 
