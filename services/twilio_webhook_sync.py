@@ -3,7 +3,7 @@ Auto-sync Twilio webhooks on app startup.
 
 Detects the public base URL and updates:
   - TwiML App voice URL  → {base}/webhook/voice   (browser softphone)
-  - Phone number voice URL → {base}/twilio/voice   (inbound PSTN calls)
+  - Phone number voice URL → {base}/webhook/voice   (inbound PSTN calls)
 
 URL resolution order:
   1. TWILIO_BASE_URL env var (explicit — use for AWS ALB/CloudFront)
@@ -68,7 +68,7 @@ def sync_webhooks(settings) -> None:
         return
 
     voice_url = f"{base_url}/webhook/voice"
-    phone_url = f"{base_url}/twilio/voice"
+    phone_url = f"{base_url}/webhook/voice"
     changed = []
 
     # ── TwiML App (browser softphone) ────────────────────────────────────────
