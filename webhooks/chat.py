@@ -69,6 +69,26 @@ async def chat_message(body: ChatMessage):
 
         add_chat_turn(session_id, "bot", bot_text, intent=intent, node=node)
 
+        # Snapshot graph state into chat session for MLflow logging on reset
+        chat = get_chat(session_id)
+        chat["call_sid"]        = f"chat_{session_id}"
+        chat["authenticated"]   = result.get("authenticated", False)
+        chat["auth_step"]       = result.get("auth_step", "")
+        chat["auth_attempts"]   = result.get("auth_attempts", 0)
+        chat["caller_name"]     = result.get("caller_name", "")
+        chat["caller_persona"]  = result.get("caller_persona", "")
+        chat["current_intent"]  = intent
+        chat["current_node"]    = node
+        history = chat.get("intent_history", [])
+        if intent and intent not in ("", "auth") and (not history or history[-1] != intent):
+            history = history + [intent]
+        chat["intent_history"] = history
+        try:
+            from config import settings as _s
+            chat["model_info"] = {"llm_model": _s.groq_model, "stt_engine": "webchat", "stt_model": "text", "stt_detail": "webchat", "auth_mode": _s.auth_mode}
+        except Exception:
+            pass
+
         log.info("chat_turn", session_id=session_id, intent=intent, node=node)
 
         return JSONResponse({
@@ -116,6 +136,22 @@ async def list_sessions():
 async def reset_session(session_id: str):
     """Clear chat history and reset graph state for a session."""
     from services.conversation_store import _chats
+    # Log to MLflow before clearing
+    chat_data = _chats.get(session_id)
+    if chat_data and chat_data.get("turns"):
+        from datetime import datetime
+        chat_data["ended_at"] = datetime.now().isoformat(timespec="seconds")
+        chat_data["status"] = "ended"
+        chat_data["channel"] = "webchat"
+        chat_data.setdefault("call_sid", f"chat_{session_id}")
+        chat_data.setdefault("from_number", "webchat")
+        chat_data.setdefault("events", [])
+        try:
+            from services.mlflow_tracker import log_call
+            log_call(chat_data)
+            log.info("mlflow_chat_logged", session_id=session_id)
+        except Exception as e:
+            log.warning("mlflow_chat_log_failed", error=str(e))
     _chats.pop(session_id, None)
     # Clear LangGraph checkpoint for this thread
     try:

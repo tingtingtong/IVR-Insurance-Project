@@ -74,6 +74,12 @@ def end_call(call_sid: str) -> None:
         _calls[call_sid]["ended_at"] = datetime.now().isoformat(timespec="seconds")
         _calls[call_sid]["status"]   = "ended"
         _db.upsert_call(call_sid, _calls[call_sid])
+        # Log completed call to MLflow
+        try:
+            from services.mlflow_tracker import log_call
+            log_call(_calls[call_sid])
+        except Exception:
+            pass
 
 
 def set_recording(call_sid: str, recording_sid: str, recording_url: str) -> None:
