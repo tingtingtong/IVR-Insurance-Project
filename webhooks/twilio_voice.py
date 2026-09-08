@@ -56,6 +56,28 @@ def _gather_response(say_text: str, action: str = "/webhook/gather") -> str:
     return str(response)
 
 
+def _gather_dtmf_or_speech(say_text: str) -> str:
+    """BUG-016: Build TwiML that accepts DTMF digits OR speech for card/account numbers.
+    DTMF terminates with #. Speech uses normal timeout."""
+    response = VoiceResponse()
+    gather = Gather(
+        input="dtmf speech",
+        action="/webhook/gather-payment",
+        method="POST",
+        speechTimeout="3",
+        timeout=15,
+        finishOnKey="#",
+        numDigits=20,  # generous max to handle card (16) + trailing
+        language="en-US",
+        profanityFilter=False,
+        actionOnEmptyResult=True,
+    )
+    gather.say(normalize_tts_text(say_text), voice="Polly.Joanna")
+    response.append(gather)
+    response.redirect("/webhook/gather-payment", method="POST")
+    return str(response)
+
+
 @router.post("/webhook/voice", dependencies=[Depends(validate_twilio_webhook)])
 async def incoming_call(request: Request):
     """Initial inbound call — initialize session and play greeting."""
@@ -199,6 +221,14 @@ async def gather_speech(request: Request):
             response.hangup()
             return Response(content=str(response), media_type="application/xml")
 
+        # BUG-016: When OTP is collecting sensitive numbers, accept both DTMF and speech
+        otp_step = result.get("otp_step", "")
+        if otp_step in ("collecting_card_dtmf", "collecting_bank_dtmf"):
+            return Response(
+                content=_gather_dtmf_or_speech(tts_text or "Please enter or say your number."),
+                media_type="application/xml",
+            )
+
         speak = tts_text or "I'm sorry, I didn't understand. Could you please repeat that?"
         return Response(
             content=_gather_response(speak),
@@ -213,6 +243,92 @@ async def gather_speech(request: Request):
         response.say(_ERROR_MSG, voice="Polly.Joanna")
         response.dial(settings.twilio_agent_phone_number)
         return Response(content=str(response), media_type="application/xml")
+
+
+@router.post("/webhook/gather-payment", dependencies=[Depends(validate_twilio_webhook)])
+async def gather_payment(request: Request):
+    """BUG-016: Handle DTMF or speech input for card/account number collection.
+    Merges the collected number into graph state and continues the OTP flow."""
+    import re
+    form = await request.form()
+    call_sid   = form.get("CallSid", "")
+    digits     = form.get("Digits", "").strip()
+    speech     = form.get("SpeechResult", "").strip()
+
+    log.info("gather_payment_raw", call_sid=call_sid, digits=digits, speech=speech[:60] if speech else "")
+
+    # Prefer DTMF digits over speech if both present
+    collected_number = ""
+    if digits:
+        collected_number = re.sub(r"\D", "", digits)
+    elif speech:
+        # Extract digits from spoken numbers (Twilio often transcribes "4 1 1 1" etc.)
+        collected_number = re.sub(r"\D", "", speech)
+
+    if not collected_number:
+        # Nothing received — re-prompt
+        return Response(
+            content=_gather_dtmf_or_speech("I didn't receive any input. Please enter or say your number."),
+            media_type="application/xml",
+        )
+
+    # Determine which field based on current otp_step in graph state
+    try:
+        result = await _graph_module.cno_graph.ainvoke(
+            {"messages": [HumanMessage(content=collected_number)], "call_sid": call_sid},
+            config={"configurable": {"thread_id": call_sid}},
+        )
+
+        # Check current state to set the right field name
+        otp_data = dict(result.get("otp_data", {}))
+        payment_type = otp_data.get("payment_type", "card")
+
+        if payment_type == "card":
+            otp_data["card_number"] = collected_number
+        else:
+            otp_data["account_number"] = collected_number
+
+        # Re-invoke graph with dtmf_complete to trigger validation + next step
+        result2 = await _graph_module.cno_graph.ainvoke(
+            {"otp_step": "dtmf_complete", "otp_data": otp_data, "call_sid": call_sid},
+            config={"configurable": {"thread_id": call_sid}},
+        )
+
+        tts_text     = result2.get("tts_text", "")
+        current_node = result2.get("current_node", "")
+        otp_step     = result2.get("otp_step", "")
+
+        update_call_metadata(call_sid, result2)
+        add_call_turn(call_sid, "bot", tts_text, node=current_node)
+
+        if result2.get("transfer_to"):
+            end_call(call_sid)
+            response = VoiceResponse()
+            if tts_text:
+                response.say(normalize_tts_text(tts_text), voice="Polly.Joanna")
+            response.dial(result2["transfer_to"])
+            response.hangup()
+            return Response(content=str(response), media_type="application/xml")
+
+        # If still collecting card (retry), use DTMF+speech gather again
+        if otp_step in ("collecting_card_dtmf", "collecting_bank_dtmf"):
+            return Response(
+                content=_gather_dtmf_or_speech(tts_text),
+                media_type="application/xml",
+            )
+
+        # Otherwise continue with normal speech gather
+        return Response(
+            content=_gather_response(tts_text or "How can I help you?"),
+            media_type="application/xml",
+        )
+
+    except Exception as e:
+        log.error("gather_payment_error", call_sid=call_sid, error=str(e))
+        return Response(
+            content=_gather_response("I'm sorry, there was an error. Let me try again. How can I help you?"),
+            media_type="application/xml",
+        )
 
 
 @router.post("/webhook/status", dependencies=[Depends(validate_twilio_webhook)])
