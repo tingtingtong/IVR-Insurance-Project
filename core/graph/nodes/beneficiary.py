@@ -58,8 +58,10 @@ async def beneficiary_node(state: CNOState) -> dict:
     if step == "listing":
         benes = await _fetch_beneficiaries(policy_number, access_token, call_sid)
         if benes is None:
+            from config import settings as _settings
             return merge_auth_state(auth_state, {
                 "tts_text": PROMPTS["escalation"]["error"],
+                "transfer_to": _settings.twilio_agent_phone_number,
                 "current_node": "beneficiary", "active_flow": "",
             })
 
@@ -559,15 +561,29 @@ def _redistribute_update(benes: list, target_idx: int, new_pct: float) -> list |
 def _detect_action(utterance: str) -> str:
     """Detect whether caller wants to add, remove, update, or is done."""
     u = utterance.lower()
+    words = set(re.split(r"[^a-z']+", u))
+
     if any(w in u for w in ["add", "new", "another"]):
         return "add"
     if any(w in u for w in ["remove", "delete", "take off", "take out"]):
         return "remove"
     if any(w in u for w in ["change", "update", "modify", "adjust", "percentage", "percent", "reallocate"]):
         return "update"
-    if any(w in u for w in ["that's all", "that is all", "no thanks", "nothing", "done",
-                             "sufficient", "good", "fine", "no", "all set", "i'm good",
-                             "thank you", "thanks"]):
+
+    # "done" detection uses word-boundary matching to avoid "no" matching inside "now", "know", etc.
+    done_phrases = ["that's all", "that is all", "no thanks", "all set", "i'm good"]
+    if any(p in u for p in done_phrases):
+        return "done"
+    done_words = {"nothing", "done", "sufficient", "fine"}
+    if words & done_words:
+        return "done"
+    # "no" and "good" need word-boundary check
+    if "no" in words and "no" not in ("now", "know", "not"):
+        return "done"
+    if "good" in words:
+        return "done"
+    # "thanks"/"thank you" only counts as done when not part of a longer request
+    if ("thanks" in words or "thank you" in u) and len(words) <= 4:
         return "done"
     return ""
 

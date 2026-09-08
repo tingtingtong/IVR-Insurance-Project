@@ -482,20 +482,19 @@ def _collecting_dob(state, last_human, pii_collected, auth_attempts, candidate_p
             return _ask_policy_selection(candidate_party, pii_collected, policy_numbers)
         return _auth_complete(candidate_party, pii_collected)
 
-    # DOB doesn't match — allow one retry before falling through to name
+    # DOB doesn't match — read back what we heard and ask caller to confirm
     dob_mismatch_count = _get_slot(state, "dob_mismatch", "invalid")
     log_event(call_sid, "auth_detail", step="collecting_dob", action="dob_mismatch",
               attempt=dob_mismatch_count + 1, will_retry=dob_mismatch_count == 0)
     if dob_mismatch_count == 0:
-        # First mismatch — give the caller another chance
-        new_pii = {k: v for k, v in pii_collected.items() if k != "dateOfBirth"}
+        # First mismatch — confirm what we heard before retrying
+        formatted_dob = format_date_natural(parsed)
         tts = (
-            "That date of birth doesn't match our records. "
-            "Could you please try again? What is the insured's date of birth?"
+            f"I heard {formatted_dob}. Is that correct?"
         )
         return {
-            "auth_step":       "collecting_dob",
-            "pii_collected":   new_pii,
+            "auth_step":       "confirming_dob",
+            "pii_collected":   pii_collected,
             "candidate_party": candidate_party,
             "tts_text":        tts,
             "slot_attempts":   _inc_slot(state, "dob_mismatch", "invalid"),

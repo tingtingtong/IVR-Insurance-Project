@@ -80,6 +80,10 @@ async def privacy_node(state: CNOState) -> dict:
                 tts = "Your privacy opt-out request has been recorded. Is there anything else I can help you with?"
             else:
                 tts = PROMPTS["escalation"]["error"]
+                from config import settings as _settings
+                return {"otp_data": {}, "tts_text": tts, "transfer_to": _settings.twilio_agent_phone_number,
+                        "current_node": "privacy", "active_flow": "",
+                        "messages": [AIMessage(content=tts)]}
             return {"otp_data": {}, "tts_text": tts, "current_node": "privacy", "active_flow": "",
                     "messages": [AIMessage(content=tts)]}
         return {
