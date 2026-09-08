@@ -38,53 +38,28 @@ log = structlog.get_logger()
 
 class DTMFCollector:
     """
-    Accumulates DTMF keypad digits across multiple sub-steps for payment collection.
-    Callers terminate each field with #. * is treated as backspace.
+    BUG-016: Collects ONLY the sensitive number (card or account) via DTMF.
+    Callers terminate with #. * is treated as backspace.
 
-    Card  flow: card_number (16 digits) → expiry (4 digits MMYY) → cvv (3-4 digits) → amount
-    Bank  flow: routing_number (9 digits) → account_number → amount
+    Card flow: collects card_number only (16 digits)
+    Bank flow: collects account_number only
 
-    The first prompt for each flow is spoken by otp_node before DTMF mode activates.
-    DTMFCollector only needs to supply the prompts for subsequent fields.
+    Remaining fields (expiry, CVV, amount, routing) are collected via
+    normal STT/TTS through the OTP graph node.
     """
 
-    _CARD_STEPS: list[tuple[str, str | None]] = [
-        # (state_key,         prompt_spoken_after_this_field_is_captured)
-        ("card_number",   "Please enter your card expiry as four digits, month then year, followed by the pound sign."),
-        ("expiry",        "Please enter your three or four digit security code, followed by the pound sign."),
-        ("cvv",           "Please enter the payment amount in whole dollars, followed by the pound sign."),
-        ("amount",        None),   # last field — triggers completion
-    ]
-
-    _BANK_STEPS: list[tuple[str, str | None]] = [
-        ("routing_number",  "Please enter your account number, followed by the pound sign."),
-        ("account_number",  "Please enter the payment amount in whole dollars, followed by the pound sign."),
-        ("amount",          None),
-    ]
-
     def __init__(self, payment_type: str) -> None:
-        self._steps   = self._CARD_STEPS if payment_type == "card" else self._BANK_STEPS
-        self._idx     = 0
-        self._buffer  = ""
-        self._data: dict[str, object] = {}
+        self._field = "card_number" if payment_type == "card" else "account_number"
+        self._buffer = ""
 
     def push_digit(self, digit: str) -> dict | None:
         """
         Feed one DTMF digit. Returns:
-          None                                     — still collecting current field
-          {"type": "prompt", "text": "..."}        — field captured, prompt for next field
-          {"type": "complete", "data": {...}}       — all fields captured
+          None                                — still collecting
+          {"type": "complete", "data": {...}} — number captured
         """
         if digit == "#":
-            field, next_prompt = self._steps[self._idx]
-            self._data[field] = self._buffer
-            self._buffer = ""
-            self._idx += 1
-
-            if self._idx >= len(self._steps):
-                return {"type": "complete", "data": self._formatted_data()}
-
-            return {"type": "prompt", "text": next_prompt}
+            return {"type": "complete", "data": {self._field: self._buffer}}
 
         if digit == "*":
             self._buffer = self._buffer[:-1]
@@ -92,20 +67,6 @@ class DTMFCollector:
             self._buffer += digit
 
         return None
-
-    def _formatted_data(self) -> dict:
-        out = dict(self._data)
-        # "0628" → "06/28"
-        if "expiry" in out and len(str(out["expiry"])) == 4:
-            e = str(out["expiry"])
-            out["expiry"] = f"{e[:2]}/{e[2:]}"
-        # dollars entered as whole number → float
-        if "amount" in out:
-            try:
-                out["amount"] = float(str(out["amount"]))
-            except ValueError:
-                out["amount"] = 0.0
-        return out
 
 
 router = APIRouter()
@@ -318,20 +279,15 @@ class CallHandler:
 
         result = self._dtmf_collector.push_digit(digit)
         if result is None:
-            return  # still accumulating current field
+            return  # still accumulating
 
-        if result["type"] == "prompt":
-            # Field captured — speak the prompt for the next field
-            await self._speak(result["text"])
-
-        elif result["type"] == "complete":
-            # All fields collected — hand off to the graph
-            self._dtmf_mode      = False
-            self._dtmf_collector = None
-            if self._processing.locked():
-                return
-            async with self._processing:
-                await self._on_dtmf_complete(result["data"])
+        # BUG-016: Only one field collected (card_number or account_number)
+        self._dtmf_mode      = False
+        self._dtmf_collector = None
+        if self._processing.locked():
+            return
+        async with self._processing:
+            await self._on_dtmf_complete(result["data"])
 
     async def _on_dtmf_complete(self, collected: dict):
         """
