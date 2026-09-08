@@ -105,12 +105,26 @@ async def otp_node(state: CNOState) -> dict:
 
     # ── Step: DTMF collection complete (handled by webhook, data in otp_data) ─
     if otp_step == "dtmf_complete":
-        amount = otp_data.get("amount", 0)
         method = otp_data.get("payment_type", "card")
+
+        # BUG-017: Validate card number with intelligent self-correction
+        if method == "card":
+            card_number = otp_data.get("card_number", "")
+            validation_result = _validate_card_with_feedback(card_number, otp_data)
+            if validation_result is not None:
+                return validation_result
+
+        amount = otp_data.get("amount", 0)
+        # Read back last 4 digits for card payments so caller can verify
+        if method == "card":
+            last4 = otp_data.get("card_number", "")[-4:]
+            tts = f"I have a card payment of ${amount:.2f} for policy {policy_number}, card ending in {last4}. Is that correct?"
+        else:
+            tts = f"I have a bank payment of ${amount:.2f} for policy {policy_number}. Is that correct?"
         return {
             "otp_step":   "confirming",
             "otp_data":   otp_data,
-            "tts_text":   f"I have a {method} payment of ${amount:.2f} for policy {policy_number}. Is that correct?",
+            "tts_text":   tts,
             "current_node": "otp", "active_flow": "otp",
         }
 
@@ -181,6 +195,63 @@ async def _process_payment(otp_data: dict, policy_number: str, access_token: str
             routing_number=otp_data.get("routing_number", ""),
             account_number=otp_data.get("account_number", ""),
         )
+
+
+MAX_CARD_RETRIES = 3
+
+
+def _validate_card_with_feedback(card_number: str, otp_data: dict) -> dict | None:
+    """
+    BUG-017: Validate card number with intelligent self-correction.
+    Returns a state dict to send back to the caller if validation fails,
+    or None if the card is valid.
+    """
+    import re
+    from utils.payment_validator import validate_card_number
+
+    digits = re.sub(r"\D", "", card_number)
+    retry_count = otp_data.get("card_retry_count", 0)
+
+    ok, err = validate_card_number(card_number)
+    if ok:
+        # Reset retry count on success
+        otp_data.pop("card_retry_count", None)
+        return None
+
+    # Max retries exceeded — escalate to agent
+    if retry_count >= MAX_CARD_RETRIES:
+        return {
+            "otp_step": "start",
+            "otp_data": {},
+            "tts_text": "I'm sorry, I wasn't able to validate your card number after several attempts. "
+                        "Let me transfer you to a representative who can assist you.",
+            "current_node": "otp", "active_flow": "",
+            "current_intent": "escalate",
+        }
+
+    otp_data["card_retry_count"] = retry_count + 1
+
+    # Build intelligent feedback based on what went wrong
+    if len(digits) == 0:
+        hint = "I didn't receive any digits."
+    elif len(digits) < 16:
+        hint = f"I only received {len(digits)} digits, but a card number should be 16 digits."
+    elif len(digits) > 16:
+        hint = f"I received {len(digits)} digits, but a card number should be 16 digits."
+    else:
+        # 16 digits but failed Luhn — one or more digits are wrong
+        hint = f"The number ending in {digits[-4:]} didn't pass verification. One or more digits may be incorrect."
+
+    # On 2nd+ retry, explicitly mention DTMF option
+    if retry_count >= 1:
+        hint += " You can also enter the number using your keypad."
+
+    return {
+        "otp_step": "collecting_card_dtmf",
+        "otp_data": otp_data,
+        "tts_text": f"{hint} Please try entering your 16-digit card number again.",
+        "current_node": "otp", "active_flow": "otp",
+    }
 
 
 def _detect_payment_method(utterance: str) -> str:
