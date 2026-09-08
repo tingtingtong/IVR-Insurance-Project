@@ -5,6 +5,18 @@ Each version is tagged in git and deployed as a Docker image to ECR.
 
 ---
 
+## v2.0.0 — 2026-09-08
+**Robust card capture + per-field payment confirmation**
+
+| ID | Issue | Root Cause | Fix | Files |
+|----|-------|-----------|-----|-------|
+| BUG-024 | Card number capture fails with STT variations — commas, dots, word numbers all rejected | `gather_payment` webhook used `re.sub(r"\D", "")` — no word-to-digit conversion, no homophone handling, no noise filtering | New `utils/card_extractor.py`: handles all STT patterns (commas, dots, word numbers, homophones, "double"/"triple" prefixes, noise words). Webchat: added `collecting_card_dtmf` handler in `otp_node` so text input works | `utils/card_extractor.py` (new), `webhooks/twilio_voice.py`, `core/graph/nodes/otp.py` |
+| FEAT-005a | No per-field confirmation — only final summary confirmed | All fields collected without individual verification | Added confirmation step after each field: card number, expiry, CVV, amount (card path) and account number, routing, amount (bank path). "No" re-collects that field | `core/graph/nodes/otp.py` |
+| FEAT-005b | 17 digits from STT not auto-corrected | No smart correction for off-by-one digit count | Try removing each consecutive duplicate digit, Luhn-check result. If exactly one valid candidate, confirm with caller | `core/graph/nodes/otp.py` |
+| FEAT-005c | Payment confirmation number not clearly spelled out | Confirmation read as one blob — hard to catch over phone | Spell out each character: "C N F 7 5 3..." and "P A Y dash 2 0 2 6..." with "save these numbers" prompt | `core/graph/nodes/otp.py` |
+
+---
+
 ## v1.9.0 — 2026-09-08
 **API escalation, DOB confirmation, beneficiary re-entry, CVV digit fix**
 
