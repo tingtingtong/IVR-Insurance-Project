@@ -244,6 +244,9 @@ class CallHandler:
         update_call_metadata(self.call_sid, result)
 
         tts_text    = result.get("tts_text", "")
+        # BUG-015: Hint about pending intents so caller knows to confirm
+        from utils.pending_intent_hint import append_pending_hint
+        tts_text = append_pending_hint(tts_text, result)
         transfer_to = result.get("transfer_to", "")
         otp_step    = result.get("otp_step", "")
 

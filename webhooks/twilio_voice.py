@@ -185,6 +185,9 @@ async def gather_speech(request: Request):
 
         graph_latency = int((_time.time() - t_graph) * 1000)
         tts_text     = result.get("tts_text", "")
+        # BUG-015: Hint about pending intents so caller knows to confirm
+        from utils.pending_intent_hint import append_pending_hint
+        tts_text = append_pending_hint(tts_text, result)
         transfer_to  = result.get("transfer_to", "")
         current_node = result.get("current_node", "")
         intent       = result.get("current_intent", "")

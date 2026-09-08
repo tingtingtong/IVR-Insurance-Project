@@ -62,6 +62,9 @@ async def chat_message(body: ChatMessage):
         )
 
         bot_text    = result.get("tts_text") or "I'm sorry, I didn't understand that. Could you please try again?"
+        # BUG-015: Hint about pending intents so caller knows to confirm
+        from utils.pending_intent_hint import append_pending_hint
+        bot_text = append_pending_hint(bot_text, result)
         intent      = result.get("current_intent", "")
         node        = result.get("current_node", "")
         is_goodbye  = node == "goodbye"
