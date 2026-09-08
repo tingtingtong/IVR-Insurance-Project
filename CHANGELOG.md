@@ -6,7 +6,7 @@ Each version is tagged in git and deployed as a Docker image to ECR.
 ---
 
 ## v2.0.0 — 2026-09-08
-**Robust card capture + per-field payment confirmation**
+**Robust card capture + per-field payment confirmation + progressive capture**
 
 | ID | Issue | Root Cause | Fix | Files |
 |----|-------|-----------|-----|-------|
@@ -14,6 +14,7 @@ Each version is tagged in git and deployed as a Docker image to ECR.
 | FEAT-005a | No per-field confirmation — only final summary confirmed | All fields collected without individual verification | Added confirmation step after each field: card number, expiry, CVV, amount (card path) and account number, routing, amount (bank path). "No" re-collects that field | `core/graph/nodes/otp.py` |
 | FEAT-005b | 17 digits from STT not auto-corrected | No smart correction for off-by-one digit count | Try removing each consecutive duplicate digit, Luhn-check result. If exactly one valid candidate, confirm with caller | `core/graph/nodes/otp.py` |
 | FEAT-005c | Payment confirmation number not clearly spelled out | Confirmation read as one blob — hard to catch over phone | Spell out each character: "C N F 7 5 3..." and "P A Y dash 2 0 2 6..." with "save these numbers" prompt | `core/graph/nodes/otp.py` |
+| FEAT-006 | Elderly callers can't say 16 digits at once — partial input rejected | Flow required all 16 digits in one utterance | Progressive capture: accept 4/8/12 digits, confirm each group, ask for next. Corrections: "no, it's 1234" replaces last group. Fast callers still say all 16 at once | `core/graph/nodes/otp.py` |
 
 ---
 
