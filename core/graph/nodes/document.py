@@ -111,6 +111,10 @@ async def document_node(state: CNOState) -> dict:
                 tts = f"Your {DOCUMENT_TYPES[otp_data['doc_type']]} will be sent within 7 to 10 business days. Is there anything else I can help you with?"
             else:
                 tts = PROMPTS["escalation"]["error"]
+                from config import settings as _settings
+                return {"otp_data": {}, "tts_text": tts, "transfer_to": _settings.twilio_agent_phone_number,
+                        "current_node": "document", "active_flow": "",
+                        "messages": [AIMessage(content=tts)]}
             return {"otp_data": {}, "tts_text": tts, "current_node": "document", "active_flow": "",
                     "messages": [AIMessage(content=tts)]}
         return {

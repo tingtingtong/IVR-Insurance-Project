@@ -32,6 +32,7 @@ async def payment_node(state: CNOState) -> dict:
     if not policy_number:
         return merge_auth_state(auth_state, {
             "tts_text":    PROMPTS["escalation"]["error"],
+            "transfer_to": settings.twilio_agent_phone_number,
             "current_node": "payment", "active_flow": "",
         })
 
@@ -42,6 +43,7 @@ async def payment_node(state: CNOState) -> dict:
     if not result["success"]:
         return merge_auth_state(auth_state, {
             "tts_text":    PROMPTS["escalation"]["error"],
+            "transfer_to": settings.twilio_agent_phone_number,
             "current_node": "payment", "active_flow": "",
         })
 

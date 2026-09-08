@@ -31,7 +31,7 @@ async def loan_node(state: CNOState) -> dict:
     log_event(call_sid, "api_call", node="loan", api="loan_inquiry",
               success=result["success"])
     if not result["success"]:
-        return merge_auth_state(auth_state, {"tts_text": PROMPTS["escalation"]["error"], "current_node": "loan", "active_flow": ""})
+        return merge_auth_state(auth_state, {"tts_text": PROMPTS["escalation"]["error"], "transfer_to": settings.twilio_agent_phone_number, "current_node": "loan", "active_flow": ""})
 
     data = result["data"]
     balance  = data.get("LoanBalance", "0")

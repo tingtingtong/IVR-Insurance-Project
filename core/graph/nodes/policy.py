@@ -32,7 +32,7 @@ async def policy_node(state: CNOState) -> dict:
     if not policy_number:
         return merge_auth_state(auth_state, {
             "tts_text":    "I'm sorry, I wasn't able to find your policy number. Let me transfer you to a representative.",
-            "transfer_to": "",
+            "transfer_to": settings.twilio_agent_phone_number,
             "current_node": "policy", "active_flow": "",
         })
 
@@ -43,6 +43,7 @@ async def policy_node(state: CNOState) -> dict:
     if not result["success"]:
         return merge_auth_state(auth_state, {
             "tts_text":    PROMPTS["escalation"]["error"],
+            "transfer_to": settings.twilio_agent_phone_number,
             "current_node": "policy", "active_flow": "",
         })
 

@@ -375,9 +375,43 @@ def _validate_card_with_feedback(card_number: str, otp_data: dict) -> dict | Non
 
 
 def _extract_digits(utterance: str) -> str:
-    """Extract only digits from an utterance (for CVV, routing, etc.)."""
+    """Extract digits from an utterance, converting STT word-digit confusions.
+
+    Common STT mishearings: "to"→2, "too"→2, "for"→4, "won"→1, "ate"→8,
+    "oh"→0, "zero"→0, "one"→1, "two"→2, etc.
+    """
     import re
-    return re.sub(r"\D", "", utterance)
+    text = _convert_word_digits(utterance)
+    return re.sub(r"\D", "", text)
+
+
+# Map of STT-confused words to digits — covers both number words and homophones
+_WORD_TO_DIGIT = {
+    "zero": "0", "oh": "0", "o": "0",
+    "one": "1", "won": "1",
+    "two": "2", "to": "2", "too": "2",
+    "three": "3", "tree": "3",
+    "four": "4", "for": "4",
+    "five": "5",
+    "six": "6",
+    "seven": "7",
+    "eight": "8", "ate": "8",
+    "nine": "9",
+}
+
+
+def _convert_word_digits(utterance: str) -> str:
+    """Replace spoken/misheard number words with digit characters."""
+    import re
+    words = re.split(r"(\s+)", utterance.lower())
+    result = []
+    for w in words:
+        stripped = re.sub(r"[^a-z]", "", w)
+        if stripped in _WORD_TO_DIGIT:
+            result.append(_WORD_TO_DIGIT[stripped])
+        else:
+            result.append(w)
+    return "".join(result)
 
 
 def _extract_expiry(utterance: str) -> str:
