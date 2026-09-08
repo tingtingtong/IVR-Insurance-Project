@@ -197,7 +197,43 @@ async def router_node(state: CNOState) -> dict:
     # ── Auth in progress: route back to the active service node ──────────────
     # Covers PII utterances (phone, DOB, policy number, name) during multi-turn
     # auth so they reach the service node's auth guard, not the LLM classifier.
+    #
+    # BUG-015 fix: Before blindly returning, run LLM classification on the FIRST
+    # utterance (when pending_intents is empty and no auth_step progress yet) to
+    # capture multi-intent requests like "check my policy and make a payment".
+    # The primary intent routes through auth as usual; extras are queued in
+    # pending_intents for dequeue after auth + first flow complete.
     if active_flow and (not authenticated or not caller_persona):
+        existing_pending = list(state.get("pending_intents", []))
+        auth_just_started = auth_step == "collecting_phone"
+        # Only classify if this looks like the initial multi-intent utterance:
+        # no pending intents yet, auth hasn't progressed, and the text is long
+        # enough to plausibly contain multiple intents (>15 chars filters out
+        # short PII answers like "1234567890" or "January 5th 1990").
+        if not existing_pending and auth_just_started and len(last_human) > 15:
+            try:
+                import time as _time_auth
+                prompt = ROUTER_PROMPT.format(utterance=last_human)
+                t0 = _time_auth.time()
+                response = await _invoke_llm_with_retry([
+                    SystemMessage(content="You are a call intent classifier. Reply with the intent label(s), comma-separated if multiple."),
+                    HumanMessage(content=prompt),
+                ])
+                raw = response.content.strip().lower().replace(" ", "_")
+                raw_intents = [r.strip().replace(" ", "_") for r in raw.replace(",_", ",").split(",")]
+                classified = [r for r in raw_intents if r in VALID_INTENTS]
+                log_event(call_sid, "multi_intent_pre_auth", raw=raw[:60],
+                          classified=classified,
+                          latency_ms=int((_time_auth.time() - t0) * 1000))
+                if len(classified) > 1:
+                    # Queue extras — first intent is handled by auth flow
+                    return {
+                        "current_intent": _FLOW_TO_INTENT.get(active_flow, "faq"),
+                        "current_node": "router",
+                        "pending_intents": classified[1:],
+                    }
+            except Exception:
+                pass  # LLM failed — fall through to normal auth redirect
         return {"current_intent": _FLOW_TO_INTENT.get(active_flow, "faq"), "current_node": "router"}
 
     # ── Context switch enforcement ─────────────────────────────────────────────
