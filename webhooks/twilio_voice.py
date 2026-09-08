@@ -251,8 +251,10 @@ async def gather_speech(request: Request):
 @router.post("/webhook/gather-payment", dependencies=[Depends(validate_twilio_webhook)])
 async def gather_payment(request: Request):
     """BUG-016: Handle DTMF or speech input for card/account number collection.
-    Merges the collected number into graph state and continues the OTP flow."""
+    Merges the collected number into graph state and continues the OTP flow.
+    BUG-024: Uses robust card extractor for all STT variations."""
     import re
+    from utils.card_extractor import extract_card_digits
     form = await request.form()
     call_sid   = form.get("CallSid", "")
     digits     = form.get("Digits", "").strip()
@@ -265,8 +267,8 @@ async def gather_payment(request: Request):
     if digits:
         collected_number = re.sub(r"\D", "", digits)
     elif speech:
-        # Extract digits from spoken numbers (Twilio often transcribes "4 1 1 1" etc.)
-        collected_number = re.sub(r"\D", "", speech)
+        # BUG-024: Robust extraction handles word numbers, commas, dots, homophones
+        collected_number = extract_card_digits(speech)
 
     if not collected_number:
         # Nothing received — re-prompt

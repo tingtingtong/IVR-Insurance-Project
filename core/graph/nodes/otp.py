@@ -20,15 +20,21 @@ from utils.call_logger import log_event
 # "start"                   → ask card or bank
 # "choosing_method"         → detect card vs bank
 # "collecting_card_dtmf"    → card number via DTMF or voice (webhook/stream handles input)
+# "confirming_card"         → FEAT-005: confirm card number with caller
 # "collecting_card_expiry"  → expiry via normal STT/TTS
+# "confirming_expiry"       → FEAT-005: confirm expiry with caller
 # "collecting_card_cvv"     → CVV via normal STT/TTS
+# "confirming_cvv"          → FEAT-005: confirm CVV with caller
 # "collecting_card_amount"  → payment amount via normal STT/TTS
+# "confirming_amount"       → FEAT-005: confirm amount with caller
 # "ach_auth_script"         → read ACH authorization, wait for "I authorize"
 # "collecting_bank_dtmf"    → account number via DTMF or voice
+# "confirming_bank_account" → FEAT-005: confirm account number with caller
 # "collecting_bank_routing" → routing number via normal STT/TTS
+# "confirming_routing"      → FEAT-005: confirm routing with caller
 # "collecting_bank_amount"  → payment amount via normal STT/TTS
+# "confirming_bank_amount"  → FEAT-005: confirm bank amount with caller
 # "dtmf_complete"           → sensitive number collected, validate + proceed
-# "confirming"              → confirm all details
 # "processing"              → call payment API
 # "complete"                → done
 
@@ -116,6 +122,28 @@ async def otp_node(state: CNOState) -> dict:
                 "current_node": "otp", "active_flow": "otp",
             }
 
+    # ── Step: Collecting card/bank number via DTMF or voice ───────────────────
+    # BUG-024: Handle text input (webchat) — extract digits and proceed to validation
+    if otp_step in ("collecting_card_dtmf", "collecting_bank_dtmf"):
+        from utils.card_extractor import extract_card_digits
+        collected = extract_card_digits(last_human)
+        if not collected:
+            prompt = ("I'm sorry, I didn't catch that. Could you please provide the full card number?"
+                      if otp_data.get("payment_type") == "card"
+                      else "I'm sorry, I didn't catch that. Could you please provide your account number?")
+            return {
+                "otp_step":    otp_step,
+                "otp_data":    otp_data,
+                "tts_text":    prompt,
+                "current_node": "otp", "active_flow": "otp",
+            }
+        if otp_data.get("payment_type") == "card":
+            otp_data["card_number"] = collected
+        else:
+            otp_data["account_number"] = collected
+        # Fall through to dtmf_complete validation
+        otp_step = "dtmf_complete"
+
     # ── Step: DTMF/voice collection complete — sensitive number captured ──────
     # BUG-016: Only the card/account number is collected via DTMF or voice.
     # Remaining fields are collected via normal STT/TTS below.
@@ -129,20 +157,49 @@ async def otp_node(state: CNOState) -> dict:
             if validation_result is not None:
                 return validation_result
             last4 = card_number[-4:]
+            # FEAT-005: Confirm card number with caller before proceeding
             return {
-                "otp_step": "collecting_card_expiry",
+                "otp_step": "confirming_card",
                 "otp_data": otp_data,
-                "tts_text": f"Thank you. Card ending in {last4}. Now, what is the expiry date? Please say the month and year, like June 2028.",
+                "tts_text": f"I have your card number ending in {_spell_digits(last4)}. Is that correct?",
                 "current_node": "otp", "active_flow": "otp",
             }
         else:
-            # Bank account number collected — now ask for routing
+            # FEAT-005: Confirm bank account number before proceeding
+            acct = otp_data.get("account_number", "")
+            last4 = acct[-4:] if len(acct) >= 4 else acct
             return {
-                "otp_step": "collecting_bank_routing",
+                "otp_step": "confirming_bank_account",
                 "otp_data": otp_data,
-                "tts_text": "Thank you. Now, what is your 9-digit routing number?",
+                "tts_text": f"I have your account number ending in {_spell_digits(last4)}. Is that correct?",
                 "current_node": "otp", "active_flow": "otp",
             }
+
+    # ── Step: Confirm card number ──────────────────────────────────────────
+    # FEAT-005: Per-field confirmation
+    if otp_step == "confirming_card":
+        if _is_yes(last_human):
+            return {
+                "otp_step": "collecting_card_expiry",
+                "otp_data": otp_data,
+                "tts_text": "Great. What is the expiry date? Please say the month and year, like June 2028.",
+                "current_node": "otp", "active_flow": "otp",
+            }
+        elif _is_no(last_human):
+            otp_data.pop("card_number", None)
+            otp_data.pop("card_retry_count", None)
+            return {
+                "otp_step": "collecting_card_dtmf",
+                "otp_data": otp_data,
+                "tts_text": "No problem. Please enter your 16-digit card number again.",
+                "current_node": "otp", "active_flow": "otp",
+            }
+        return {
+            "otp_step": "confirming_card",
+            "otp_data": otp_data,
+            "tts_text": "Please say yes if the card number is correct, or no to re-enter it.",
+            "current_node": "otp", "active_flow": "otp",
+        }
 
     # ── Step: Collect card expiry via normal STT ───────────────────────────
     if otp_step == "collecting_card_expiry":
@@ -164,10 +221,35 @@ async def otp_node(state: CNOState) -> dict:
                 "current_node": "otp", "active_flow": "otp",
             }
         otp_data["expiry"] = expiry
+        # FEAT-005: Confirm expiry
         return {
-            "otp_step": "collecting_card_cvv",
+            "otp_step": "confirming_expiry",
             "otp_data": otp_data,
-            "tts_text": "What is the 3-digit security code on the back of your card?",
+            "tts_text": f"Expiry date {_format_expiry_spoken(expiry)}. Is that correct?",
+            "current_node": "otp", "active_flow": "otp",
+        }
+
+    # ── Step: Confirm expiry ───────────────────────────────────────────────
+    if otp_step == "confirming_expiry":
+        if _is_yes(last_human):
+            return {
+                "otp_step": "collecting_card_cvv",
+                "otp_data": otp_data,
+                "tts_text": "What is the 3-digit security code on the back of your card?",
+                "current_node": "otp", "active_flow": "otp",
+            }
+        elif _is_no(last_human):
+            otp_data.pop("expiry", None)
+            return {
+                "otp_step": "collecting_card_expiry",
+                "otp_data": otp_data,
+                "tts_text": "No problem. What is the expiry date? Please say the month and year, like June 2028.",
+                "current_node": "otp", "active_flow": "otp",
+            }
+        return {
+            "otp_step": "confirming_expiry",
+            "otp_data": otp_data,
+            "tts_text": "Please say yes if the expiry date is correct, or no to re-enter it.",
             "current_node": "otp", "active_flow": "otp",
         }
 
@@ -184,10 +266,35 @@ async def otp_node(state: CNOState) -> dict:
                 "current_node": "otp", "active_flow": "otp",
             }
         otp_data["cvv"] = cvv
+        # FEAT-005: Confirm CVV
         return {
-            "otp_step": "collecting_card_amount",
+            "otp_step": "confirming_cvv",
             "otp_data": otp_data,
-            "tts_text": "How much would you like to pay today?",
+            "tts_text": f"Security code {_spell_digits(cvv)}. Is that correct?",
+            "current_node": "otp", "active_flow": "otp",
+        }
+
+    # ── Step: Confirm CVV ──────────────────────────────────────────────────
+    if otp_step == "confirming_cvv":
+        if _is_yes(last_human):
+            return {
+                "otp_step": "collecting_card_amount",
+                "otp_data": otp_data,
+                "tts_text": "How much would you like to pay today?",
+                "current_node": "otp", "active_flow": "otp",
+            }
+        elif _is_no(last_human):
+            otp_data.pop("cvv", None)
+            return {
+                "otp_step": "collecting_card_cvv",
+                "otp_data": otp_data,
+                "tts_text": "No problem. What is the 3-digit security code on the back of your card?",
+                "current_node": "otp", "active_flow": "otp",
+            }
+        return {
+            "otp_step": "confirming_cvv",
+            "otp_data": otp_data,
+            "tts_text": "Please say yes if the security code is correct, or no to re-enter it.",
             "current_node": "otp", "active_flow": "otp",
         }
 
@@ -202,11 +309,61 @@ async def otp_node(state: CNOState) -> dict:
                 "current_node": "otp", "active_flow": "otp",
             }
         otp_data["amount"] = amount
-        last4 = otp_data.get("card_number", "")[-4:]
+        # FEAT-005: Confirm amount before processing
         return {
-            "otp_step": "confirming",
+            "otp_step": "confirming_amount",
             "otp_data": otp_data,
-            "tts_text": f"I have a card payment of ${amount:.2f} for policy {policy_number}, card ending in {last4}. Is that correct?",
+            "tts_text": f"Payment amount ${amount:.2f}. Is that correct?",
+            "current_node": "otp", "active_flow": "otp",
+        }
+
+    # ── Step: Confirm amount (card) ────────────────────────────────────────
+    if otp_step == "confirming_amount":
+        if _is_yes(last_human):
+            last4 = otp_data.get("card_number", "")[-4:]
+            amt = otp_data.get("amount", 0)
+            return {
+                "otp_step": "processing",
+                "otp_data": otp_data,
+                "tts_text": f"Processing card payment of ${amt:.2f}, card ending in {last4}. Please hold.",
+                "current_node": "otp", "active_flow": "otp",
+            }
+        elif _is_no(last_human):
+            otp_data.pop("amount", None)
+            return {
+                "otp_step": "collecting_card_amount",
+                "otp_data": otp_data,
+                "tts_text": "No problem. How much would you like to pay?",
+                "current_node": "otp", "active_flow": "otp",
+            }
+        return {
+            "otp_step": "confirming_amount",
+            "otp_data": otp_data,
+            "tts_text": "Please say yes to confirm the amount, or no to change it.",
+            "current_node": "otp", "active_flow": "otp",
+        }
+
+    # ── Step: Confirm bank account number ──────────────────────────────────
+    if otp_step == "confirming_bank_account":
+        if _is_yes(last_human):
+            return {
+                "otp_step": "collecting_bank_routing",
+                "otp_data": otp_data,
+                "tts_text": "Great. Now, what is your 9-digit routing number?",
+                "current_node": "otp", "active_flow": "otp",
+            }
+        elif _is_no(last_human):
+            otp_data.pop("account_number", None)
+            return {
+                "otp_step": "collecting_bank_dtmf",
+                "otp_data": otp_data,
+                "tts_text": "No problem. Please enter your account number again.",
+                "current_node": "otp", "active_flow": "otp",
+            }
+        return {
+            "otp_step": "confirming_bank_account",
+            "otp_data": otp_data,
+            "tts_text": "Please say yes if the account number is correct, or no to re-enter it.",
             "current_node": "otp", "active_flow": "otp",
         }
 
@@ -223,10 +380,35 @@ async def otp_node(state: CNOState) -> dict:
                 "current_node": "otp", "active_flow": "otp",
             }
         otp_data["routing_number"] = routing
+        # FEAT-005: Confirm routing number
         return {
-            "otp_step": "collecting_bank_amount",
+            "otp_step": "confirming_routing",
             "otp_data": otp_data,
-            "tts_text": "How much would you like to pay today?",
+            "tts_text": f"Routing number {_spell_digits(routing)}. Is that correct?",
+            "current_node": "otp", "active_flow": "otp",
+        }
+
+    # ── Step: Confirm routing number ───────────────────────────────────────
+    if otp_step == "confirming_routing":
+        if _is_yes(last_human):
+            return {
+                "otp_step": "collecting_bank_amount",
+                "otp_data": otp_data,
+                "tts_text": "How much would you like to pay today?",
+                "current_node": "otp", "active_flow": "otp",
+            }
+        elif _is_no(last_human):
+            otp_data.pop("routing_number", None)
+            return {
+                "otp_step": "collecting_bank_routing",
+                "otp_data": otp_data,
+                "tts_text": "No problem. What is your 9-digit routing number?",
+                "current_node": "otp", "active_flow": "otp",
+            }
+        return {
+            "otp_step": "confirming_routing",
+            "otp_data": otp_data,
+            "tts_text": "Please say yes if the routing number is correct, or no to re-enter it.",
             "current_node": "otp", "active_flow": "otp",
         }
 
@@ -241,32 +423,36 @@ async def otp_node(state: CNOState) -> dict:
                 "current_node": "otp", "active_flow": "otp",
             }
         otp_data["amount"] = amount
+        # FEAT-005: Confirm bank amount
         return {
-            "otp_step": "confirming",
+            "otp_step": "confirming_bank_amount",
             "otp_data": otp_data,
-            "tts_text": f"I have a bank payment of ${amount:.2f} for policy {policy_number}. Is that correct?",
+            "tts_text": f"Payment amount ${amount:.2f}. Is that correct?",
             "current_node": "otp", "active_flow": "otp",
         }
 
-    # ── Step: Confirming ──────────────────────────────────────────────────────
-    if otp_step == "confirming":
+    # ── Step: Confirm bank amount ──────────────────────────────────────────
+    if otp_step == "confirming_bank_amount":
         if _is_yes(last_human):
+            amt = otp_data.get("amount", 0)
             return {
-                "otp_step":   "processing",
-                "otp_data":   otp_data,
-                "tts_text":   "Please hold while I process your payment.",
+                "otp_step": "processing",
+                "otp_data": otp_data,
+                "tts_text": f"Processing bank payment of ${amt:.2f}. Please hold.",
                 "current_node": "otp", "active_flow": "otp",
             }
         elif _is_no(last_human):
+            otp_data.pop("amount", None)
             return {
-                "otp_step":   "start",
-                "otp_data":   {},
-                "tts_text":   "No problem. Let's start over. Would you like to pay by card or bank account?",
+                "otp_step": "collecting_bank_amount",
+                "otp_data": otp_data,
+                "tts_text": "No problem. How much would you like to pay?",
                 "current_node": "otp", "active_flow": "otp",
             }
         return {
-            "otp_step":   "confirming",
-            "tts_text":   "I'm sorry, please say yes to confirm or no to cancel.",
+            "otp_step": "confirming_bank_amount",
+            "otp_data": otp_data,
+            "tts_text": "Please say yes to confirm the amount, or no to change it.",
             "current_node": "otp", "active_flow": "otp",
         }
 
@@ -276,9 +462,14 @@ async def otp_node(state: CNOState) -> dict:
         if result["success"]:
             confirmation = result.get("confirmation", "")
             payment_id = result.get("payment_id", "")
-            # BUG-018: Include payment ID so callers can reference it later
-            id_part = f" Your payment reference ID is {payment_id}." if payment_id else ""
-            tts = f"Your payment has been processed. Confirmation number: {confirmation}.{id_part} {PROMPTS['payment_disclosure']}"
+            # FEAT-005: Always read back confirmation number and payment ID clearly
+            tts = "Your payment has been processed successfully."
+            if confirmation:
+                tts += f" Your confirmation number is {_spell_alphanumeric(confirmation)}."
+            if payment_id:
+                tts += f" Your payment reference ID is {_spell_alphanumeric(payment_id)}."
+            tts += " Please save these numbers for your records."
+            tts += f" {PROMPTS['payment_disclosure']}"
         else:
             tts = f"I'm sorry, the payment could not be processed. {result.get('error', '')} Please try again or call back."
         return {
@@ -323,20 +514,34 @@ MAX_CARD_RETRIES = 3
 def _validate_card_with_feedback(card_number: str, otp_data: dict) -> dict | None:
     """
     BUG-017: Validate card number with intelligent self-correction.
+    FEAT-005: Smart 17→16 digit correction — try removing each duplicate digit.
     Returns a state dict to send back to the caller if validation fails,
     or None if the card is valid.
     """
     import re
-    from utils.payment_validator import validate_card_number
+    from utils.payment_validator import validate_card_number, luhn_check
 
     digits = re.sub(r"\D", "", card_number)
     retry_count = otp_data.get("card_retry_count", 0)
 
     ok, err = validate_card_number(card_number)
     if ok:
-        # Reset retry count on success
         otp_data.pop("card_retry_count", None)
         return None
+
+    # FEAT-005: Smart correction for 17 digits (1 extra) — try removing each digit
+    if len(digits) == 17:
+        corrected = _try_correct_extra_digit(digits)
+        if corrected:
+            otp_data["card_number"] = corrected
+            last4 = corrected[-4:]
+            # Ask caller to confirm the corrected number
+            return {
+                "otp_step": "confirming_card",
+                "otp_data": otp_data,
+                "tts_text": f"I received 17 digits. I think you meant the card ending in {_spell_digits(last4)}. Is that correct?",
+                "current_node": "otp", "active_flow": "otp",
+            }
 
     # Max retries exceeded — escalate to agent
     if retry_count >= MAX_CARD_RETRIES:
@@ -359,10 +564,8 @@ def _validate_card_with_feedback(card_number: str, otp_data: dict) -> dict | Non
     elif len(digits) > 16:
         hint = f"I received {len(digits)} digits, but a card number should be 16 digits."
     else:
-        # 16 digits but failed Luhn — one or more digits are wrong
         hint = f"The number ending in {digits[-4:]} didn't pass verification. One or more digits may be incorrect."
 
-    # On 2nd+ retry, explicitly mention DTMF option
     if retry_count >= 1:
         hint += " You can also enter the number using your keypad."
 
@@ -372,6 +575,34 @@ def _validate_card_with_feedback(card_number: str, otp_data: dict) -> dict | Non
         "tts_text": f"{hint} Please try entering your 16-digit card number again.",
         "current_node": "otp", "active_flow": "otp",
     }
+
+
+def _try_correct_extra_digit(digits_17: str) -> str:
+    """FEAT-005: Try removing one extra digit from a 17-digit string to get valid 16.
+
+    Strategy: find consecutive duplicate digits and try removing one.
+    If exactly one removal passes Luhn, return the corrected number.
+    """
+    from utils.payment_validator import luhn_check
+    candidates = set()
+    for i in range(len(digits_17)):
+        # Only try removing a digit if it's the same as its neighbor (likely STT double-tap)
+        if i > 0 and digits_17[i] == digits_17[i - 1]:
+            candidate = digits_17[:i] + digits_17[i + 1:]
+            if luhn_check(candidate):
+                candidates.add(candidate)
+        elif i < len(digits_17) - 1 and digits_17[i] == digits_17[i + 1]:
+            candidate = digits_17[:i] + digits_17[i + 1:]
+            if luhn_check(candidate):
+                candidates.add(candidate)
+    if len(candidates) == 1:
+        return candidates.pop()
+    return ""
+
+
+def _spell_digits(digits: str) -> str:
+    """Spell out digits for TTS clarity: '4444' → '4, 4, 4, 4'."""
+    return ", ".join(digits)
 
 
 def _extract_digits(utterance: str) -> str:
@@ -507,6 +738,38 @@ def _extract_amount(utterance: str) -> float | None:
         return float(total) if total > 0 else None
 
     return None
+
+
+def _format_expiry_spoken(expiry: str) -> str:
+    """Convert MM/YY to spoken form: '06/28' → 'June 2028'."""
+    import re
+    m = re.match(r"(\d{1,2})/(\d{2,4})", expiry)
+    if not m:
+        return expiry
+    month_num = int(m.group(1))
+    year = m.group(2)
+    if len(year) == 2:
+        year = f"20{year}"
+    months = ["", "January", "February", "March", "April", "May", "June",
+              "July", "August", "September", "October", "November", "December"]
+    if 1 <= month_num <= 12:
+        return f"{months[month_num]} {year}"
+    return expiry
+
+
+def _spell_alphanumeric(code: str) -> str:
+    """Spell out a confirmation code for TTS clarity: 'CNF-ABC123' → 'C N F dash A B C 1 2 3'."""
+    parts = []
+    for ch in code:
+        if ch == "-":
+            parts.append("dash")
+        elif ch.isalpha():
+            parts.append(ch.upper())
+        elif ch.isdigit():
+            parts.append(ch)
+        else:
+            parts.append(ch)
+    return " ".join(parts)
 
 
 def _detect_payment_method(utterance: str) -> str:
