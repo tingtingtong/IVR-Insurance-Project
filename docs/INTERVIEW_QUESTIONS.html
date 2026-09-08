@@ -1,0 +1,1283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UIC IVR — 30 Architect Interview Questions</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --surface: #1e293b;
+    --surface2: #334155;
+    --border: #475569;
+    --text: #e2e8f0;
+    --text-dim: #94a3b8;
+    --accent: #f97316;
+    --accent2: #38bdf8;
+    --green: #4ade80;
+    --red: #f87171;
+    --yellow: #fbbf24;
+    --purple: #a78bfa;
+    --pink: #f472b6;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg); color: var(--text); line-height:1.7; padding:0;
+  }
+
+  /* Header */
+  .header {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    border-bottom: 2px solid var(--accent);
+    padding: 3rem 2rem; text-align: center;
+  }
+  .header h1 {
+    font-size:2.2rem; font-weight:700;
+    background: linear-gradient(135deg, var(--accent), var(--yellow));
+    -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+    background-clip:text; margin-bottom:0.5rem;
+  }
+  .header p { color:var(--text-dim); font-size:1.1rem; }
+  .header .stats {
+    display:flex; justify-content:center; gap:2rem; margin-top:1.2rem; flex-wrap:wrap;
+  }
+  .header .stat {
+    background: rgba(249,115,22,0.1); border:1px solid rgba(249,115,22,0.3);
+    border-radius:8px; padding:0.5rem 1.2rem; text-align:center;
+  }
+  .header .stat .num {
+    font-size:1.6rem; font-weight:800; color:var(--accent);
+    display:block; line-height:1.2;
+  }
+  .header .stat .label { font-size:0.75rem; color:var(--text-dim); text-transform:uppercase; letter-spacing:1px; }
+
+  .container { max-width:1100px; margin:0 auto; padding:2rem; }
+
+  /* TOC */
+  .toc {
+    background:var(--surface); border:1px solid var(--border);
+    border-radius:12px; padding:1.5rem 2rem; margin-bottom:2.5rem;
+  }
+  .toc h2 { font-size:1.2rem; color:var(--accent); margin-bottom:1rem; }
+  .toc-grid {
+    display:grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap:0.5rem;
+  }
+  .toc a {
+    color:var(--accent2); text-decoration:none; font-size:0.9rem;
+    padding:0.3rem 0; display:block;
+  }
+  .toc a:hover { text-decoration:underline; color:var(--accent); }
+  .toc .cat-label {
+    color:var(--yellow); font-weight:700; font-size:0.8rem; text-transform:uppercase;
+    letter-spacing:1px; margin-top:0.8rem; margin-bottom:0.3rem;
+    border-bottom:1px solid var(--surface2); padding-bottom:0.2rem;
+  }
+
+  /* Section */
+  .section-title {
+    font-size:1.5rem; color:var(--accent); font-weight:700;
+    border-bottom:2px solid var(--border); padding-bottom:0.5rem;
+    margin: 2.5rem 0 1.5rem 0;
+    display:flex; align-items:center; gap:0.6rem;
+  }
+  .section-icon {
+    width:36px; height:36px; border-radius:50%;
+    background: linear-gradient(135deg, var(--accent), var(--yellow));
+    display:inline-flex; align-items:center; justify-content:center;
+    font-size:1rem; color:#0f172a; font-weight:800; flex-shrink:0;
+  }
+
+  /* Q&A Cards */
+  .qa-card {
+    background:var(--surface); border:1px solid var(--border);
+    border-radius:12px; margin-bottom:1.5rem;
+    transition: border-color 0.2s ease;
+    overflow:hidden;
+  }
+  .qa-card:hover { border-color: var(--accent); }
+  .qa-header {
+    padding:1.2rem 1.5rem; cursor:pointer; display:flex; align-items:flex-start; gap:1rem;
+    user-select:none;
+  }
+  .qa-header:hover { background: rgba(249,115,22,0.05); }
+  .qa-num {
+    background: linear-gradient(135deg, var(--accent), var(--yellow));
+    color:#0f172a; font-weight:800; font-size:0.85rem;
+    min-width:32px; height:32px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center; flex-shrink:0;
+    margin-top:2px;
+  }
+  .qa-question {
+    font-size:1.05rem; font-weight:600; color:var(--accent2); flex:1;
+  }
+  .qa-toggle {
+    color:var(--text-dim); font-size:1.2rem; transition: transform 0.3s;
+    flex-shrink:0; margin-top:4px;
+  }
+  .qa-card.open .qa-toggle { transform: rotate(180deg); }
+  .qa-body {
+    max-height:0; overflow:hidden; transition: max-height 0.4s ease;
+  }
+  .qa-card.open .qa-body { max-height:3000px; }
+  .qa-content {
+    padding:0 1.5rem 1.5rem 3.5rem;
+    border-top:1px solid var(--surface2);
+  }
+  .qa-content p { margin-bottom:0.8rem; color:var(--text); font-size:0.95rem; }
+  .qa-content ul, .qa-content ol { padding-left:1.5rem; margin-bottom:0.8rem; }
+  .qa-content li { margin-bottom:0.4rem; font-size:0.93rem; }
+  .qa-content code {
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+    background:var(--surface2); padding:2px 6px; border-radius:4px;
+    color:var(--accent2); font-size:0.88rem;
+  }
+  .qa-content pre {
+    background:#0f172a; border:1px solid var(--border); border-radius:8px;
+    padding:1rem 1.2rem; overflow-x:auto; font-size:0.85rem; line-height:1.6;
+    color:var(--text-dim); font-family:'Cascadia Code','Fira Code',monospace;
+    margin:0.8rem 0;
+  }
+  .qa-content pre code { background:none; padding:0; color:inherit; font-size:inherit; }
+
+  /* Labels */
+  .diff-label {
+    display:inline-block; font-size:0.7rem; font-weight:700; text-transform:uppercase;
+    padding:0.15rem 0.55rem; border-radius:4px; letter-spacing:0.5px;
+    margin-left:0.5rem; vertical-align:middle;
+  }
+  .diff-basic { background:rgba(74,222,128,0.15); color:var(--green); }
+  .diff-inter { background:rgba(251,191,36,0.15); color:var(--yellow); }
+  .diff-adv   { background:rgba(248,113,113,0.15); color:var(--red); }
+
+  /* Expand/Collapse All */
+  .controls {
+    display:flex; gap:1rem; margin-bottom:1.5rem; justify-content:flex-end;
+  }
+  .ctrl-btn {
+    background:var(--surface); border:1px solid var(--border); color:var(--accent2);
+    padding:0.5rem 1rem; border-radius:8px; cursor:pointer; font-size:0.85rem;
+    font-weight:600; transition: all 0.2s;
+  }
+  .ctrl-btn:hover { background:var(--surface2); border-color:var(--accent); color:var(--accent); }
+
+  /* Print */
+  @media print {
+    body { background:#fff; color:#222; }
+    .header { background:#f5f5f5; border-bottom:2px solid #f97316; }
+    .header h1 { -webkit-text-fill-color:#f97316; color:#f97316; }
+    .header p, .header .label { color:#666; }
+    .qa-card { border:1px solid #ddd; break-inside:avoid; }
+    .qa-body { max-height:none !important; }
+    .qa-content { border-top:1px solid #eee; }
+    .qa-toggle, .controls { display:none; }
+    .toc { break-after:page; }
+    .section-title { color:#f97316; border-bottom-color:#ddd; }
+    .qa-question { color:#1a56db; }
+    pre { border-color:#ddd; }
+    code { background:#f3f4f6; color:#1a56db; }
+  }
+
+  @media (max-width:700px) {
+    .header h1 { font-size:1.5rem; }
+    .container { padding:1rem; }
+    .qa-content { padding-left:1.5rem; }
+    .toc-grid { grid-template-columns:1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>UIC IVR — Architect Interview Questions</h1>
+  <p>30 Questions Covering System Design, LLM Strategy, Infrastructure & Security</p>
+  <div class="stats">
+    <div class="stat"><span class="num">30</span><span class="label">Questions</span></div>
+    <div class="stat"><span class="num">6</span><span class="label">Categories</span></div>
+    <div class="stat"><span class="num">3</span><span class="label">Difficulty Levels</span></div>
+  </div>
+</div>
+
+<div class="container">
+
+<!-- TOC -->
+<div class="toc">
+  <h2>Table of Contents</h2>
+  <div class="toc-grid">
+    <div>
+      <div class="cat-label">System Design & LangGraph</div>
+      <a href="#q1">Q1. Why LangGraph over traditional IVR?</a>
+      <a href="#q2">Q2. Graph topology (nodes, edges, routing)</a>
+      <a href="#q3">Q3. State management (CNOState)</a>
+      <a href="#q4">Q4. Checkpointing & session recovery</a>
+      <a href="#q5">Q5. Context switching enforcement</a>
+    </div>
+    <div>
+      <div class="cat-label">LLM Strategy & Voice AI</div>
+      <a href="#q6">Q6. Dual-LLM tier approach</a>
+      <a href="#q7">Q7. LLM provider failover</a>
+      <a href="#q8">Q8. STT pipeline (Deepgram + Realtime)</a>
+      <a href="#q9">Q9. TTS strategy & latency</a>
+      <a href="#q10">Q10. Voice latency budget breakdown</a>
+    </div>
+    <div>
+      <div class="cat-label">Authentication & Security</div>
+      <a href="#q11">Q11. Auth guard pattern (not a node)</a>
+      <a href="#q12">Q12. Multi-factor PII verification</a>
+      <a href="#q13">Q13. Caller persona identification</a>
+      <a href="#q14">Q14. PCI compliance (DTMF, JWT)</a>
+      <a href="#q15">Q15. PII redaction & data protection</a>
+    </div>
+    <div>
+      <div class="cat-label">AWS Infrastructure & DevOps</div>
+      <a href="#q16">Q16. ECS Fargate vs Lambda</a>
+      <a href="#q17">Q17. Auto-scaling strategy</a>
+      <a href="#q18">Q18. CloudFront for HTTPS termination</a>
+      <a href="#q19">Q19. Terraform state management</a>
+      <a href="#q20">Q20. CI/CD pipeline design</a>
+    </div>
+    <div>
+      <div class="cat-label">Integration & Resilience</div>
+      <a href="#q21">Q21. Twilio Media Stream architecture</a>
+      <a href="#q22">Q22. API integration pattern</a>
+      <a href="#q23">Q23. Avaya PBX SIP trunk integration</a>
+      <a href="#q24">Q24. Graceful degradation strategy</a>
+      <a href="#q25">Q25. Redis & PostgreSQL roles</a>
+    </div>
+    <div>
+      <div class="cat-label">Production Readiness & Tradeoffs</div>
+      <a href="#q26">Q26. Testing strategy (unit → E2E)</a>
+      <a href="#q27">Q27. LangSmith + MLflow dual observability</a>
+      <a href="#q28">Q28. Multi-tenancy & scaling to prod</a>
+      <a href="#q29">Q29. Key tradeoffs you'd revisit</a>
+      <a href="#q30">Q30. Walk through a complete call flow</a>
+    </div>
+  </div>
+</div>
+
+<div class="controls">
+  <button class="ctrl-btn" onclick="toggleAll(true)">Expand All</button>
+  <button class="ctrl-btn" onclick="toggleAll(false)">Collapse All</button>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SECTION 1: System Design & LangGraph -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 class="section-title" id="s1"><span class="section-icon">1</span> System Design & LangGraph</h2>
+
+<!-- Q1 -->
+<div class="qa-card" id="q1">
+  <div class="qa-header" onclick="toggle(this)">
+    <span class="qa-num">1</span>
+    <span class="qa-question">Why did you choose LangGraph as the orchestration layer instead of a traditional IVR platform like Avaya Experience Portal or Dialogflow CX?<span class="diff-label diff-basic">Foundational</span></span>
+    <span class="qa-toggle">&#9660;</span>
+  </div>
+  <div class="qa-body"><div class="qa-content">
+    <p><strong>Key points to cover:</strong></p>
+    <ul>
+      <li><strong>Full control over graph structure</strong> — LangGraph gives us a directed stateful graph where every node, edge, and conditional transition is explicit Python code. Traditional IVR platforms use proprietary visual builders that hide routing logic and limit customization.</li>
+      <li><strong>First-class state management</strong> — <code>CNOState</code> is a TypedDict with 20+ fields (auth state, PII collected, current intent, slot attempts, etc.). LangGraph's state reducers (like <code>add_messages</code>) handle conversation history natively. Traditional IVRs use session variables with limited nesting.</li>
+      <li><strong>LLM-native</strong> — Every node can call different LLMs (Groq for routing, OpenAI Realtime for PII collection) without adapter layers. DFCX requires you to stay within Google's ecosystem.</li>
+      <li><strong>Composability</strong> — Nodes are async Python functions. We can call external APIs (party search, holding inquiry), run fuzzy matching, and do multi-step auth logic inside a single node without framework constraints.</li>
+      <li><strong>PostgreSQL checkpointing</strong> — Built-in checkpoint support persists conversation state. On crash or reconnection, the graph resumes from the last checkpoint without re-running prior nodes.</li>
+    </ul>
+    <p><strong>Tradeoff acknowledged:</strong> Steeper learning curve than visual IVR builders; requires explicit error handling (no built-in retry/fallback patterns); debugging requires understanding graph traversal rather than looking at a visual flow.</p>
+  </div></div>
+</div>
+
+<!-- Q2 -->
+<div class="qa-card" id="q2">
+  <div class="qa-header" onclick="toggle(this)">
+    <span class="qa-num">2</span>
+    <span class="qa-question">Describe the graph topology. How many nodes do you have, how are edges defined, and how does the router dispatch to service nodes?<span class="diff-label diff-inter">Intermediate</span></span>
+    <span class="qa-toggle">&#9660;</span>
+  </div>
+  <div class="qa-body"><div class="qa-content">
+    <p><strong>Topology:</strong></p>
+    <pre><code>START → router → [conditional edges] → {policy, payment, otp, loan, beneficiary,
+                                         contact, document, privacy, faq,
+                                         escalation, goodbye, auth} → END</code></pre>
+    <ul>
+      <li><strong>Single entry point:</strong> Every user turn enters at <code>START → router</code>.</li>
+      <li><strong>Router node:</strong> Calls the fast-tier LLM (Groq) with a minimal prompt to classify intent into one of 12 categories. Output is a string like <code>"policy_info"</code> or <code>"payment,loan"</code> (multi-intent).</li>
+      <li><strong>Conditional edges:</strong> <code>add_conditional_edges("router", route_intent)</code> — a Python function reads <code>state["current_intent"]</code> and returns the target node name.</li>
+      <li><strong>All service nodes → END:</strong> Flat topology — no cycles or loops in the graph. Each turn produces one response. Multi-turn conversations are achieved via checkpointing (the graph re-enters at <code>START</code> each turn with full prior state).</li>
+      <li><strong>Multi-intent queuing:</strong> If the router returns <code>"policy_info,payment"</code>, the first intent is dispatched immediately, and <code>"payment"</code> is pushed to <code>state["pending_intents"]</code>. After the first flow completes, the router dequeues the next intent.</li>
+    </ul>
+  </div></div>
+</div>
+
+<!-- Q3 -->
+<div class="qa-card" id="q3">
+  <div class="qa-header" onclick="toggle(this)">
+    <span class="qa-num">3</span>
+    <span class="qa-question">Walk me through the CNOState TypedDict. What are the key state fields, and why is separating conversation, auth, and flow-control state important?<span class="diff-label diff-inter">Intermediate</span></span>
+    <span class="qa-toggle">&#9660;</span>
+  </div>
+  <div class="qa-body"><div class="qa-content">
+    <p><strong>Three logical layers in CNOState:</strong></p>
+    <p><strong>1. Conversation layer:</strong></p>
+    <ul>
+      <li><code>messages</code> — Full LangChain message history with <code>add_messages</code> reducer (appends, never overwrites)</li>
+      <li><code>call_sid</code>, <code>stream_sid</code> — Twilio call identifiers for correlating logs and managing WebSocket streams</li>
+    </ul>
+    <p><strong>2. Authentication layer:</strong></p>
+    <ul>
+      <li><code>authenticated</code> (bool), <code>auth_step</code> (string like "collecting_phone", "verifying_dob"), <code>auth_attempts</code> (int)</li>
+      <li><code>pii_collected</code> (dict) — What the caller has given us so far: phone, policy, DOB, name</li>
+      <li><code>candidate_party</code> — The API record we're matching against</li>
+      <li><code>customer</code> — Final verified identity (populated only after auth success)</li>
+      <li><code>caller_persona</code> — "payor", "insured", "owner", "other" — determines data access rights</li>
+    </ul>
+    <p><strong>3. Flow control layer:</strong></p>
+    <ul>
+      <li><code>current_intent</code>, <code>current_node</code>, <code>active_flow</code> — Track which service node owns the conversation</li>
+      <li><code>pending_intents</code> — Queue for multi-intent utterances</li>
+      <li><code>slot_attempts</code> — Per-field retry counters (prevents infinite loops on bad input)</li>
+    </ul>
+    <p><strong>Why separate?</strong> Auth state must persist across intent changes (caller authenticates for policy, then asks about payment — they shouldn't re-auth). Flow control resets per intent, but auth and conversation layers carry forward. This separation makes each layer independently testable.</p>
+  </div></div>
+</div>
+
+<!-- Q4 -->
+<div class="qa-card" id="q4">
+  <div class="qa-header" onclick="toggle(this)">
+    <span class="qa-num">4</span>
+    <span class="qa-question">How does checkpointing work? What happens if the ECS task crashes mid-call — can the conversation resume?<span class="diff-label diff-adv">Advanced</span></span>
+    <span class="qa-toggle">&#9660;</span>
+  </div>
+  <div class="qa-body"><div class="qa-content">
+    <p><strong>Checkpoint mechanism:</strong></p>
+    <ul>
+      <li>LangGraph's <code>PostgresSaver</code> writes the full <code>CNOState</code> to PostgreSQL after every node execution.</li>
+      <li>The checkpoint key is <code>call_sid</code> (Twilio's unique call identifier), so each call has its own checkpoint chain.</li>
+      <li>On the next turn, the graph loads the latest checkpoint for that <code>call_sid</code> and resumes from <code>START → router</code> with full prior state.</li>
+    </ul>
+    <p><strong>Crash recovery scenario:</strong></p>
+    <ol>
+      <li>ECS task crashes during the payment node (after auth was completed).</li>
+      <li>Twilio detects WebSocket disconnect and can retry the connection (if configured with <code>&lt;Connect&gt;</code> retry).</li>
+      <li>New ECS task picks up the call. The graph loads the last checkpoint from PostgreSQL.</li>
+      <li>State shows <code>authenticated=true</code>, <code>customer={...}</code>, <code>active_flow="payment"</code>.</li>
+      <li>The caller doesn't need to re-authenticate — the conversation continues from where it left off.</li>
+    </ol>
+    <p><strong>Fallback:</strong> If PostgreSQL is unreachable, the system falls back to an in-memory checkpointer (no persistence across restarts, but still works within a single task lifecycle).</p>
+    <p><strong>Tradeoff:</strong> Every node transition incurs a DB write (~5-10ms). For a voice IVR where we target sub-second response times, this is acceptable but not free.</p>
+  </div></div>
+</div>
+
+<!-- Q5 -->
+<div class="qa-card" id="q5">
+  <div class="qa-header" onclick="toggle(this)">
+    <span class="qa-num">5</span>
+    <span class="qa-question">Explain the context-switch enforcement strategy. What are the "locked", "escalate_only", and "open" modes, and why are they needed?<span class="diff-label diff-adv">Advanced</span></span>
+    <span class="qa-toggle">&#9660;</span>
+  </div>
+  <div class="qa-body"><div class="qa-content">
+    <p>Context switching is critical because callers can say anything at any time, and the LLM might try to pivot to a new intent mid-flow. We need guardrails:</p>
+    <pre><code>CONTEXT_SWITCH_CONFIG = {
+    "otp":       "locked",         # PCI DTMF entry — NO interruption
+    "payment":   "escalate_only",  # Only agent transfer allowed
+    "policy":    "escalate_only",
+    "loan":      "escalate_only",
+    "faq":       "open",           # Full pivoting allowed
+    "escalation":"open",
+}</code></pre>
+    <p><strong>Locked mode (OTP):</strong> During card number DTMF collection, the caller's speech is ignored entirely. The router forces the turn back to the OTP node without even calling the LLM. This prevents PCI-sensitive flows from being interrupted.</p>
+    <p><strong>Escalate-only mode:</strong> The router calls the LLM for intent classification, but if the result is anything other than "escalate" or "goodbye", it's suppressed — the turn goes back to the active flow. This allows callers to say "transfer me to an agent" (safety exit) but prevents random topic pivots mid-transaction.</p>
+    <p><strong>Open mode:</strong> Full LLM classification; the caller can pivot to any intent. Used for FAQ and escalation flows where there's no stateful transaction to protect.</p>
+    <p><strong>Special bypasses (always honored regardless of mode):</strong></p>
+    <ul>
+      <li><strong>Goodbye</strong> — keyword detection ("bye", "that's all"), never blocked</li>
+      <li><strong>Escalation</strong> — keyword detection ("agent", "representative"), always honored as a safety exit</li>
+    </ul>
+  </div></div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SECTION 2: LLM Strategy & Voice AI -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 class="section-title" id="s2"><span class="section-icon">2</span> LLM Strategy & Voice AI</h2>
+
+<!-- Q6 -->
+<div class="qa-card" id="q6">
+  <div class="qa-header" onclick="toggle(this)">
+    <span class="qa-num">6</span>
+    <span class="qa-question">Why a dual-LLM tier architecture? Why not use a single model for everything?<span class="diff-label diff-basic">Foundational</span></span>
+    <span class="qa-toggle">&#9660;</span>
+  </div>
+  <div class="qa-body"><div class="qa-content">
+    <p><strong>Two tiers optimized for different concerns:</strong></p>
+    <p><strong>Tier 1 — Router LLM (Groq, Qwen 27B):</strong></p>
+    <ul>
+      <li>Purpose: Single-turn intent classification</li>
+      <li>Config: <code>temperature=0</code>, <code>max_tokens=20</code></li>
+      <li>Latency: Sub-200ms (Groq's custom LPU hardware)</li>
+      <li>Cost: Minimal (tiny output per call)</li>
+      <li>Why Groq? Traditional cloud LLM APIs (OpenAI, Bedrock) have 400-800ms inference. For voice, every 100ms matters because the caller is waiting in silence. Groq delivers 10x faster inference.</li>
+    </ul>
+    <p><strong>Tier 2 — Service LLM (same Groq model, higher token budget):</strong></p>
+    <ul>
+      <li>Purpose: Generate natural voice responses from API data</li>
+      <li>Config: <code>temperature=0.3</code>, <code>max_tokens=200</code></li>
+      <li>Uses the full system prompt with voice IVR rules (speak naturally, use contractions, etc.)</li>
+    </ul>
+    <p><strong>Why not one model?</strong> The router is called on every single turn. If we used a large model (GPT-4, Claude) with the full system prompt for routing, we'd add 500ms+ to every turn just for intent classification. The dual-tier approach lets us use a fast/cheap model for the frequent routing decision and a slightly richer call for response generation.</p>
+    <p><strong>Provider toggle:</strong> <code>LLM_PROVIDER</code> env var switches both tiers between Groq and Amazon Bedrock (Nova Micro). Bedrock is the fallback for production if Groq has availability issues.</p>
+  </div></div>
+</div>
+
+<!-- Q7 -->
+<div class="qa-card" id="q7">
+  <div class="qa-header" onclick="toggle(this)">
+    <span class="qa-num">7</span>
+    <span class="qa-question">What happens when the Groq API returns a 503 or 429 mid-call? Describe the failover strategy.<span class="diff-label diff-inter">Intermediate</span></span>
+    <span class="qa-toggle">&#9660;</span>
+  </div>
+  <div class="qa-body"><div class="qa-content">
+    <p><strong>Multi-layer failover:</strong></p>
+    <ol>
+      <li><strong>Retry with exponential backoff:</strong> On 503/429, the router retries up to 2 times with delays of 1s and 2s. For a voice call, waiting 3s total is the maximum acceptable — beyond that, the caller perceives a "dead line."</li>
+      <li><strong>Provider fallback:</strong> If all retries fail, the system can switch to the Bedrock provider (<code>amazon.nova-micro-v1:0</code>). This is configured at the <code>LLM_PROVIDER</code> level — currently a manual environment variable change, but could be automated with a circuit breaker.</li>
+      <li><strong>Graceful degradation:</strong> If both LLM providers fail, the router falls back to keyword matching (escalation keywords, goodbye keywords) and routes to escalation node with a message like "I'm having trouble right now. Let me connect you with an agent."</li>
+    </ol>
+    <p><strong>What we don't do:</strong> We never play silence. If the LLM is slow, we play a filler prompt ("One moment please") before the response arrives, so the caller always hears something.</p>
+  </div></div>
+</div>
+
+<!-- Q8 -->
+<div class="qa-card" id="q8">
+  <div class="qa-header" onclick="toggle(this)">
+    <span class="qa-num">8</span>
+    <span class="qa-question">You use both Deepgram and OpenAI Realtime API for speech-to-text. Why two STT engines, and when does each one activate?<span class="diff-label diff-inter">Intermediate</span></span>
+    <span class="qa-toggle">&#9660;</span>
+  </div>
+  <div class="qa-body"><div class="qa-content">
+    <p><strong>Dual STT strategy for accuracy vs. latency optimization:</strong></p>
+    <p><strong>Deepgram (primary, all general conversation):</strong></p>
+    <ul>
+      <li>Model: <code>nova-2</code> (streaming, real-time)</li>
+      <li>Encoding: <code>mulaw</code> 8kHz (native Twilio codec — no transcoding needed)</li>
+      <li>Endpointing: 300ms silence detection to finalize utterances</li>
+      <li>Smart formatting: Auto-formats dates, phone numbers, currency values</li>
+      <li>Strength: Fast (sub-300ms), cost-effective, good general accuracy</li>
+    </ul>
+    <p><strong>OpenAI Realtime API (optional, PII collection only):</strong></p>
+    <ul>
+      <li>Activates when <code>auth_mode: "realtime"</code> is configured</li>
+      <li>Raw audio → OpenAI Realtime (STT + LLM + TTS in one pipeline)</li>
+      <li>Eliminates the intermediate STT→text→LLM pipeline, so the model directly "hears" the audio</li>
+      <li>Strength: Better accuracy for PII (phone numbers, dates of birth, names) because the model can use audio context (prosody, spelling pace) to disambiguate</li>
+      <li>Audio resampling required: mulaw 8kHz (Twilio) ↔ PCM16 24kHz (OpenAI)</li>
+    </ul>
+    <p><strong>Why not Realtime for everything?</strong> Cost (Realtime API is significantly more expensive per minute), latency on session creation (~500ms setup), and we don't need audio-level understanding for general conversation. Deepgram handles "What's my policy status?" perfectly; Realtime helps when the caller says "My date of birth is February twenty... no, twenty-third, nineteen sixty-five."</p>
+  </div></div>
+</div>
+
+<!-- Q9 -->
+<div class="qa-card" id="q9">
+  <div class="qa-header" onclick="toggle(this)">
+    <span class="qa-num">9</span>
+    <span class="qa-question">Describe the TTS pipeline. How do you minimize time-to-first-byte for voice output?<span class="diff-label diff-inter">Intermediate</span></span>
+    <span class="qa-toggle">&#9660;</span>
+  </div>
+  <div class="qa-body"><div class="qa-content">
+    <p><strong>Primary TTS: ElevenLabs (streaming WebSocket)</strong></p>
+    <ul>
+      <li>Voice: "Rachel" (voice ID: <code>21m00Tcm4TlvDq8ikWAM</code>)</li>
+      <li>Model: <code>eleven_monolingual_v1</code></li>
+      <li>Optimize streaming latency: <code>3</code> (scale 0-4, where 4 is max speed, lower quality)</li>
+      <li>Stability: 0.5, Similarity boost: 0.75 — balanced for natural-sounding IVR</li>
+    </ul>
+    <p><strong>Latency minimization techniques:</strong></p>
+    <ol>
+      <li><strong>Streaming:</strong> ElevenLabs returns audio chunks via WebSocket as soon as the first few words are synthesized — we don't wait for the full response. First audio byte arrives in ~200ms.</li>
+      <li><strong>Sentence-level streaming:</strong> The LLM's response is streamed token-by-token. As soon as a complete sentence is formed, it's sent to TTS. The caller starts hearing the response before the LLM finishes generating.</li>
+      <li><strong>Codec match:</strong> Output is mulaw 8kHz — the same codec Twilio expects. No transcoding delay.</li>
+      <li><strong>Connection reuse:</strong> The ElevenLabs WebSocket stays open for the duration of the call, avoiding per-turn connection overhead.</li>
+    </ol>
+    <p><strong>Fallback TTS: OpenAI TTS</strong> (<code>tts-1</code>, voice: <code>nova</code>) — activated if ElevenLabs is unreachable. Uses the lower-quality but faster <code>tts-1</code> model, not <code>tts-1-hd</code>.</p>
+  </div></div>
+</div>
+
+<!-- Q10 -->
+<div class="qa-card" id="q10">
+  <div class="qa-header" onclick="toggle(this)">
+    <span class="qa-num">10</span>
+    <span class="qa-question">Walk me through the end-to-end latency budget of a single voice turn. Where does time go, and how did you optimize each segment?<span class="diff-label diff-adv">Advanced</span></span>
+    <span class="qa-toggle">&#9660;</span>
+  </div>
+  <div class="qa-body"><div class="qa-content">
+    <p><strong>Target: &lt; 1.5 seconds from end of caller speech to first audio byte of response.</strong></p>
+    <pre><code>Caller speaks              →  0ms (start)
+Twilio Media Stream relay  →  ~50ms (network, mulaw packets)
+Deepgram STT (streaming)   →  ~200-400ms (endpointing + final transcript)
+Router LLM (Groq)          →  ~100-200ms (intent classification, 20 tokens)
+Service LLM (Groq)         →  ~200-400ms (response generation, 200 tokens)
+  ↳ First sentence ready   →  ~100ms into generation (streaming)
+ElevenLabs TTS (streaming) →  ~200-300ms (time to first audio chunk)
+Twilio relay to caller     →  ~50ms (network)
+─────────────────────────────────────────────────
+Total (first audio byte)   →  ~800-1400ms</code></pre>
+    <p><strong>Optimizations applied:</strong></p>
+    <ul>
+      <li><strong>Groq over GPT-4/Claude:</strong> Saves 400-600ms on LLM inference alone</li>
+      <li><strong>Streaming at every layer:</strong> STT streams partials, LLM streams tokens, TTS streams audio — nothing waits for a complete result</li>
+      <li><strong>Router + Service split:</strong> Router uses 20-token budget (vs. 200 for service), cutting classification time</li>
+      <li><strong>Persistent connections:</strong> WebSocket to Deepgram, ElevenLabs, and Twilio stays open — no per-turn handshake</li>
+      <li><strong>Checkpoint async:</strong> PostgreSQL checkpoint write happens in parallel with TTS generation</li>
+    </ul>
+  </div></div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SECTION 3: Authentication & Security -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 class="section-title" id="s3"><span class="section-icon">3</span> Authentication & Security</h2>
+
+<!-- Q11 -->
+<div class="qa-card" id="q11">
+  <div class="qa-header" onclick="toggle(this)">
+    <span class="qa-num">11</span>
+    <span class="qa-question">Authentication is implemented as a guard pattern, not a separate graph node. Why this design decision?<span class="diff-label diff-inter">Intermediate</span></span>
+    <span class="qa-toggle">&#9660;</span>
+  </div>
+  <div class="qa-body"><div class="qa-content">
+    <p><strong>The auth guard pattern (<code>ensure_authenticated()</code>):</strong></p>
+    <pre><code># Inside policy_node:
+async def policy_node(state):
+    auth_ok, auth_state = await ensure_authenticated(state, "policy")
+    if not auth_ok:
+        return auth_state  # Returns auth prompt, sets active_flow="policy"
+    # Auth complete — proceed with policy lookup
+    ...</code></pre>
+    <p><strong>Why not a separate auth node in the graph?</strong></p>
+    <ul>
+      <li><strong>Intent preservation:</strong> If auth were a separate node, the flow would be: <code>router → auth → ???</code>. After auth completes, the system would need to ask "Now what did you want?" or maintain a redirect stack. With the guard pattern, the original intent ("policy") is preserved in <code>active_flow</code>, and the caller seamlessly continues.</li>
+      <li><strong>Multi-turn continuity:</strong> When auth needs multiple turns (collect phone → verify DOB), each turn re-enters <code>router → policy_node → ensure_authenticated()</code>. The router knows to redirect PII utterances back to the active flow, so the caller's "January 15th 1965" goes straight to the policy node's auth guard.</li>
+      <li><strong>Shared auth, different triggers:</strong> Every restricted node calls the same <code>ensure_authenticated()</code>. If the caller is already authenticated from a prior intent, the guard returns <code>(True, state)</code> immediately — zero overhead. No need for explicit "skip auth" edges in the graph.</li>
+      <li><strong>Clean separation:</strong> Auth logic lives in <code>auth_guard.py</code> and <code>nodes/auth.py</code>, not scattered across edge conditions. Service nodes don't know auth details — they just call the guard.</li>
+    </ul>
+  </div></div>
+</div>
+
+<!-- Q12 -->
+<div class="qa-card" id="q12">
+  <div class="qa-header" onclick="toggle(this)">
+    <span class="qa-num">12</span>
+    <span class="qa-question">Describe the multi-factor PII verification flow. What are the valid 2-factor combinations, and how do you handle verification failures?<span class="diff-label diff-inter">Intermediate</span></span>
+    <span class="qa-toggle">&#9660;</span>
+  </div>
+  <div class="qa-body"><div class="qa-content">
+    <p><strong>Valid 2-factor combinations (any one = authenticated):</strong></p>
+    <ul>
+      <li>Phone number + Date of birth</li>
+      <li>Phone number + Insured name (fuzzy match)</li>
+      <li>Policy number + Date of birth</li>
+      <li>Policy number + Insured name (fuzzy match)</li>
+    </ul>
+    <p><strong>Collection sequence:</strong></p>
+    <ol>
+      <li><strong>Phone number</strong> (10 digits) → Call <code>party_search(phone=digits)</code>. If found, proceed to DOB. If not found, pivot to policy number.</li>
+      <li><strong>Policy number</strong> (fallback) → Only asked if phone lookup failed. Call <code>party_search(policy_number=parsed)</code>.</li>
+      <li><strong>Date of birth</strong> → <code>normalize_dob(utterance)</code> handles natural language ("January fifteenth nineteen sixty-five"). Match against the candidate party record. If match: auth success.</li>
+      <li><strong>Insured name</strong> (fallback if DOB fails twice) → Fuzzy matching with 80% SequenceMatcher threshold to handle STT errors ("Smith" vs. "Smithe").</li>
+    </ol>
+    <p><strong>Failure handling:</strong></p>
+    <ul>
+      <li>Each field gets <code>slot_attempts</code> counter (max 2-3 retries per field)</li>
+      <li>Two consecutive blanks on any field → escalate to agent</li>
+      <li>Both DOB and name fail → escalate to agent</li>
+      <li>Max overall auth attempts (3) exceeded → escalate to agent</li>
+      <li>Policy number not found in system → escalate to agent</li>
+    </ul>
+  </div></div>
+</div>
+
+<!-- Q13 -->
+<div class="qa-card" id="q13">
+  <div class="qa-header" onclick="toggle(this)">
+    <span class="qa-num">13</span>
+    <span class="qa-question">What is caller persona identification, and why is it a separate step from authentication?<span class="diff-label diff-inter">Intermediate</span></span>
+    <span class="qa-toggle">&#9660;</span>
+  </div>
+  <div class="qa-body"><div class="qa-content">
+    <p><strong>Authentication ≠ Authorization.</strong> Auth verifies the caller can access the account. Persona identification determines <em>what</em> they can access.</p>
+    <p><strong>Post-auth sub-step:</strong></p>
+    <ol>
+      <li>Auth completes (2-factor PII verified).</li>
+      <li>System asks: "May I ask your name please?"</li>
+      <li>Match caller's answer against the <code>Personas</code> list in the party record (payor, insured, owner, etc.).</li>
+    </ol>
+    <p><strong>Matching strategies (in order):</strong></p>
+    <ol>
+      <li>Exact word match (first name or last name matches a persona name)</li>
+      <li>Substring / starts-with match (handles STT truncation)</li>
+      <li>Fuzzy match (SequenceMatcher, 75%+ threshold)</li>
+    </ol>
+    <p><strong>Persona outcomes:</strong></p>
+    <ul>
+      <li><code>"payor"</code> / <code>"insured"</code> / <code>"owner"</code> → Full access to policy data, payments, loans, beneficiary info</li>
+      <li><code>"other"</code> → Restricted. Cannot access policy details, payments, or sensitive data. Router's persona gate blocks these intents and offers agent transfer. FAQ and goodbye still work.</li>
+    </ul>
+    <p><strong>Why separate?</strong> A caller might verify identity using the insured person's info (phone + DOB) but actually be calling on behalf of someone else (e.g., a spouse handling billing). Persona identification catches this — you can prove you know the account details but still not be the policyholder.</p>
+  </div></div>
+</div>
+
+<!-- Q14 -->
+<div class="qa-card" id="q14">
+  <div class="qa-header" onclick="toggle(this)">
+    <span class="qa-num">14</span>
+    <span class="qa-question">How do you handle PCI compliance for payment card data in a voice IVR?<span class="diff-label diff-adv">Advanced</span></span>
+    <span class="qa-toggle">&#9660;</span>
+  </div>
+  <div class="qa-body"><div class="qa-content">
+    <p><strong>Core principle: Card data NEVER passes through the LLM or is stored in conversation logs.</strong></p>
+    <p><strong>DTMF-only card collection:</strong></p>
+    <ul>
+      <li>When the OTP (one-time payment) node reaches card collection, it switches to DTMF mode.</li>
+      <li>The caller presses digits on their phone keypad (not speaking the number).</li>
+      <li>Twilio collects DTMF digits and sends them as structured data, bypassing STT entirely.</li>
+      <li>Context switch is "locked" — the caller's speech is ignored during DTMF entry to prevent accidental card number capture by STT.</li>
+    </ul>
+    <p><strong>Ephemeral JWT for payment API:</strong></p>
+    <ul>
+      <li>Before calling the payment API, a JWT is generated with <code>{ policyNumber, amount, iat, exp(5min) }</code>.</li>
+      <li>The JWT is sent as <code>X-Payment-JWT</code> header — the payment API validates it independently.</li>
+      <li>5-minute expiry ensures the token can't be reused after the call.</li>
+    </ul>
+    <p><strong>ACH authorization (Dodd-Frank):</strong></p>
+    <ul>
+      <li>Before processing ACH payments, the system reads a verbatim authorization script (regulatory requirement).</li>
+      <li>Caller must confirm consent ("I authorize...") before the transaction proceeds.</li>
+    </ul>
+    <p><strong>What's NOT stored:</strong> Card numbers, CVV, bank account numbers are never written to PostgreSQL checkpoints, Redis, CloudWatch logs, or conversation history. The <code>otp_data</code> state field holding these values is ephemeral (in-memory only during the payment flow).</p>
+  </div></div>
+</div>
+
+<!-- Q15 -->
+<div class="qa-card" id="q15">
+  <div class="qa-header" onclick="toggle(this)">
+    <span class="qa-num">15</span>
+    <span class="qa-question">What PII protection measures exist beyond PCI? How do you handle data in logs, LLM prompts, and storage?<span class="diff-label diff-inter">Intermediate</span></span>
+    <span class="qa-toggle">&#9660;</span>
+  </div>
+  <div class="qa-body"><div class="qa-content">
+    <p><strong>Defense in depth for PII:</strong></p>
+    <p><strong>1. Log redaction:</strong></p>
+    <ul>
+      <li><code>pii_redactor.py</code> masks sensitive data patterns (SSN, phone numbers, DOB, card numbers) in all log output.</li>
+      <li>API response logs truncate to first 100 characters and redact known PII fields.</li>
+    </ul>
+    <p><strong>2. LLM prompt guardrails:</strong></p>
+    <ul>
+      <li>The system prompt explicitly instructs the LLM: "Never reveal, repeat, or hint at internal customer data in your responses."</li>
+      <li>PII fields in state (phone, DOB, name) are used for API calls and matching but never injected into the LLM's response generation prompt.</li>
+    </ul>
+    <p><strong>3. Twilio signature validation:</strong></p>
+    <ul>
+      <li><code>VALIDATE_TWILIO_SIGNATURE=true</code> verifies the X-Twilio-Signature header on incoming webhooks, preventing spoofed requests.</li>
+    </ul>
+    <p><strong>4. WebSocket authentication:</strong></p>
+    <ul>
+      <li>Media Stream WebSocket requires a <code>?token=WS_AUTH_TOKEN</code> query parameter, preventing unauthorized connections.</li>
+    </ul>
+    <p><strong>5. Network isolation:</strong></p>
+    <ul>
+      <li>RDS and Redis are in private VPC subnets — no public endpoints.</li>
+      <li>Security groups restrict RDS ingress to the ECS task security group only.</li>
+    </ul>
+    <p><strong>6. Secrets management:</strong></p>
+    <ul>
+      <li>API keys (Groq, OpenAI, Deepgram, ElevenLabs, Twilio) stored in AWS Secrets Manager, encrypted with KMS.</li>
+      <li>ECS tasks read secrets at startup as environment variables — no keys in code or Docker images.</li>
+    </ul>
+  </div></div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SECTION 4: AWS Infrastructure & DevOps -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 class="section-title" id="s4"><span class="section-icon">4</span> AWS Infrastructure & DevOps</h2>
+
+<!-- Q16 -->
+<div class="qa-card" id="q16">
+  <div class="qa-header" onclick="toggle(this)">
+    <span class="qa-num">16</span>
+    <span class="qa-question">Why ECS Fargate instead of AWS Lambda for a voice IVR application?<span class="diff-label diff-basic">Foundational</span></span>
+    <span class="qa-toggle">&#9660;</span>
+  </div>
+  <div class="qa-body"><div class="qa-content">
+    <p><strong>ECS Fargate wins for voice workloads because of WebSockets and statefulness:</strong></p>
+    <p><strong>Why ECS:</strong></p>
+    <ul>
+      <li><strong>No cold start:</strong> Lambda cold starts (1-5s) are unacceptable for voice. ECS tasks are always warm — the WebSocket connection is established instantly.</li>
+      <li><strong>WebSocket support:</strong> Twilio Media Streams require a persistent WebSocket connection for the entire call duration (minutes). Lambda has a 15-minute max timeout and doesn't natively support WebSocket servers.</li>
+      <li><strong>Stateful sessions:</strong> Each ECS task maintains persistent connections to PostgreSQL, Redis, Deepgram, and ElevenLabs. Lambda would need to re-establish these connections per invocation.</li>
+      <li><strong>Container flexibility:</strong> We run 2 containers per task (main app + mock API). Lambda doesn't support sidecar containers.</li>
+    </ul>
+    <p><strong>Why Fargate (not EC2-backed ECS):</strong></p>
+    <ul>
+      <li>No server management — AWS handles patching, scaling the underlying infrastructure</li>
+      <li>Pay-per-task (no idle EC2 instances during off-hours)</li>
+      <li>Simpler auto-scaling (no cluster capacity providers needed)</li>
+    </ul>
+    <p><strong>Tradeoff:</strong> Always-on cost — minimum 1 task running even with zero calls (dev: ~$15/month for 512 CPU / 1024 MB). Lambda would be $0 with no calls. But the first call on Lambda would take 5+ seconds to respond, which is a dead conversation.</p>
+  </div></div>
+</div>
+
+<!-- Q17 -->
+<div class="qa-card" id="q17">
+  <div class="qa-header" onclick="toggle(this)">
+    <span class="qa-num">17</span>
+    <span class="qa-question">Describe the auto-scaling strategy. Why three scaling policies instead of one?<span class="diff-label diff-inter">Intermediate</span></span>
+    <span class="qa-toggle">&#9660;</span>
+  </div>
+  <div class="qa-body"><div class="qa-content">
+    <p><strong>Three independent scaling policies on the ECS service:</strong></p>
+    <ol>
+      <li><strong>CPU utilization (target: 60%):</strong> Catches compute-bound spikes (LLM response processing, audio transcoding). Scale-out cooldown: 60s, scale-in: 120s.</li>
+      <li><strong>Memory utilization (target: 70%):</strong> Catches memory-bound growth (conversation state accumulation, WebSocket buffers, Redis connection pools). Same cooldowns.</li>
+      <li><strong>ALB request count per target (target: 10 requests/task):</strong> This is the most important for voice — each concurrent call is a persistent WebSocket connection. 10 concurrent calls per task is the practical limit before latency degrades.</li>
+    </ol>
+    <p><strong>Why three?</strong> Voice workloads have different bottleneck profiles:</p>
+    <ul>
+      <li>During low-traffic hours: 1 task handles all calls (CPU-bound scaling is irrelevant)</li>
+      <li>During traffic spikes: ALB request count triggers first (10 new calls = new task), even if CPU/memory are fine</li>
+      <li>During long calls with heavy API usage: Memory can spike without CPU being high (holding many conversation states in memory)</li>
+    </ul>
+    <p><strong>Asymmetric cooldowns:</strong> Scale-out is fast (60s) because we want to respond quickly to traffic. Scale-in is slow (120s) because we don't want to kill a task that's handling an active call — a 2-minute cooldown ensures calls finish naturally.</p>
+    <p><strong>Capacity:</strong> Dev: 1-2 tasks. Prod: 3-5 tasks (handles ~30-50 concurrent calls).</p>
+  </div></div>
+</div>
+
+<!-- Q18 -->
+<div class="qa-card" id="q18">
+  <div class="qa-header" onclick="toggle(this)">
+    <span class="qa-num">18</span>
+    <span class="qa-question">Why did you add CloudFront in front of the ALB? What problem did it solve?<span class="diff-label diff-inter">Intermediate</span></span>
+    <span class="qa-toggle">&#9660;</span>
+  </div>
+  <div class="qa-body"><div class="qa-content">
+    <p><strong>Problem: Browser microphone access requires HTTPS.</strong></p>
+    <p>The system includes a web-based softphone (Twilio Client SDK in the browser) for testing and agent use. Modern browsers block <code>getUserMedia()</code> (microphone access) on non-HTTPS origins. The ALB was HTTP-only (no SSL certificate configured).</p>
+    <p><strong>Solution: CloudFront as an HTTPS termination layer.</strong></p>
+    <ul>
+      <li>CloudFront provides a <code>https://*.cloudfront.net</code> URL with AWS-managed TLS certificate (free).</li>
+      <li>CloudFront → ALB communication is HTTP (internal, VPC). This is acceptable because the ALB is not publicly exposed for direct HTTP access.</li>
+      <li>The Twilio TwiML app webhook is pointed to the CloudFront HTTPS URL, so the softphone gets HTTPS and microphone access works.</li>
+    </ul>
+    <p><strong>Why not ALB HTTPS directly?</strong></p>
+    <ul>
+      <li>ALB HTTPS requires an ACM certificate, which requires a custom domain. For a dev environment, <code>*.cloudfront.net</code> is faster to set up and costs nothing extra.</li>
+      <li>CloudFront also adds edge caching (useful for static dashboard assets) and DDoS protection (AWS Shield Standard).</li>
+    </ul>
+    <p><strong>Fallback:</strong> For local development, Chrome's <code>--unsafely-treat-insecure-origin-as-secure</code> flag bypasses the HTTPS requirement.</p>
+  </div></div>
+</div>
+
+<!-- Q19 -->
+<div class="qa-card" id="q19">
+  <div class="qa-header" onclick="toggle(this)">
+    <span class="qa-num">19</span>
+    <span class="qa-question">How is Terraform state managed? What safeguards prevent state corruption or concurrent modifications?<span class="diff-label diff-inter">Intermediate</span></span>
+    <span class="qa-toggle">&#9660;</span>
+  </div>
+  <div class="qa-body"><div class="qa-content">
+    <p><strong>Remote state backend:</strong></p>
+    <ul>
+      <li><strong>S3 bucket:</strong> <code>ivr-terraform-state-{account_id}</code> with versioning enabled (can roll back to previous state).</li>
+      <li><strong>State key:</strong> <code>ivr/terraform.tfstate</code></li>
+      <li><strong>Encryption:</strong> S3 server-side encryption (SSE-S3) at rest.</li>
+    </ul>
+    <p><strong>State locking:</strong></p>
+    <ul>
+      <li><strong>DynamoDB table:</strong> <code>ivr-terraform-locks</code></li>
+      <li>When <code>terraform apply</code> starts, it acquires a lock in DynamoDB. If another apply is running (e.g., GitHub Actions and a developer simultaneously), the second one fails with a lock error instead of corrupting state.</li>
+      <li>Lock is released on completion (or can be force-unlocked in emergencies).</li>
+    </ul>
+    <p><strong>Pipeline safeguards:</strong></p>
+    <ul>
+      <li>GitHub Actions <code>infra.yml</code> is manual-trigger only (no auto-apply on push).</li>
+      <li>Three operations: <code>plan</code> (read-only), <code>apply</code> (creates/updates), <code>destroy</code> (teardown).</li>
+      <li>Environment selection: <code>dev</code> or <code>prod</code> — separate variable files, same state backend (different workspace or key prefix in production).</li>
+    </ul>
+    <p><strong>ECR exception:</strong> The ECR repository is managed outside Terraform to prevent image loss on <code>terraform destroy</code>. Pre-pushed images (<code>latest</code>, <code>mock-api</code>) persist across infrastructure cycles.</p>
+  </div></div>
+</div>
+
+<!-- Q20 -->
+<div class="qa-card" id="q20">
+  <div class="qa-header" onclick="toggle(this)">
+    <span class="qa-num">20</span>
+    <span class="qa-question">Walk me through the CI/CD pipeline. How does a code change go from PR to production?<span class="diff-label diff-inter">Intermediate</span></span>
+    <span class="qa-toggle">&#9660;</span>
+  </div>
+  <div class="qa-body"><div class="qa-content">
+    <p><strong>Three GitHub Actions workflows:</strong></p>
+    <p><strong>1. CI (<code>ci.yml</code>) — triggered on push/PR to master:</strong></p>
+    <pre><code>Stage 1: Unit tests (no API keys)
+  → pytest tests/test_utils.py (PII validators, name extraction, IDK detection)
+
+Stage 2: Eval tests (needs Groq key)
+  → eval_slots.py (PII extraction accuracy — dates, phones)
+  → eval_intents.py (intent classification accuracy vs. labeled dataset)
+
+Stage 3: E2E Twilio tests (master only, all secrets)
+  → eval_e2e_twilio.py (full call via Twilio sandbox)</code></pre>
+    <p><strong>2. Deploy (<code>deploy.yml</code>) — triggered on push to master or manual:</strong></p>
+    <pre><code>Build:
+  → Docker build → push to ECR (tags: sha-{commit}, latest)
+
+Deploy Dev:
+  → aws ecs update-service --force-new-deployment
+  → Wait for service stable (health check: GET /health → 200)
+  → Run E2E test against deployed dev environment
+
+Deploy Prod:
+  → Manual approval gate (GitHub environment protection rule)
+  → Same ECS update + health check + E2E validation</code></pre>
+    <p><strong>3. Infrastructure (<code>infra.yml</code>) — manual trigger only:</strong></p>
+    <pre><code>Inputs: action (plan/apply/destroy), environment (dev/prod)
+  → terraform init → terraform {action}
+  → Outputs: ALB URL, CloudFront URL, RDS endpoint</code></pre>
+    <p><strong>Key design decisions:</strong></p>
+    <ul>
+      <li>No auto-deploy to prod — manual gate prevents accidental production changes</li>
+      <li>E2E tests run against deployed dev (not just in CI) — catches infrastructure issues</li>
+      <li>Infrastructure changes are never auto-applied — always manual trigger with explicit environment selection</li>
+    </ul>
+  </div></div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SECTION 5: Integration & Resilience -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 class="section-title" id="s5"><span class="section-icon">5</span> Integration & Resilience</h2>
+
+<!-- Q21 -->
+<div class="qa-card" id="q21">
+  <div class="qa-header" onclick="toggle(this)">
+    <span class="qa-num">21</span>
+    <span class="qa-question">Describe the Twilio Media Stream architecture. How does audio flow from the caller's phone to your LangGraph nodes and back?<span class="diff-label diff-basic">Foundational</span></span>
+    <span class="qa-toggle">&#9660;</span>
+  </div>
+  <div class="qa-body"><div class="qa-content">
+    <p><strong>End-to-end audio flow:</strong></p>
+    <pre><code>Caller's phone
+  ↓ PSTN / SIP
+Twilio (voice gateway)
+  ↓ TwiML: &lt;Connect&gt;&lt;Stream url="wss://our-alb/stream"/&gt;
+  ↓ WebSocket (mulaw 8kHz audio packets, 20ms chunks)
+ALB → ECS Task (FastAPI WebSocket endpoint: /stream)
+  ↓ Forward raw audio bytes
+Deepgram STT (streaming WebSocket)
+  ↓ Partial + final transcriptions (JSON events)
+LangGraph (router → service node)
+  ↓ tts_text response
+ElevenLabs TTS (streaming WebSocket)
+  ↓ mulaw 8kHz audio chunks
+  ↓ Back through same WebSocket to Twilio
+Twilio → Caller's phone</code></pre>
+    <p><strong>Key implementation details:</strong></p>
+    <ul>
+      <li><strong>Bidirectional WebSocket:</strong> The same WebSocket connection carries audio in both directions (Twilio → us for STT, us → Twilio for TTS).</li>
+      <li><strong>Twilio message types:</strong> <code>connected</code> (stream started), <code>media</code> (audio chunk), <code>stop</code> (call ended). We send <code>media</code> messages back with synthesized audio.</li>
+      <li><strong>Concurrent processing:</strong> STT, LLM, and TTS run as async Python coroutines. While the caller is still speaking (STT streaming), we can pre-warm connections for the response path.</li>
+      <li><strong>Call control:</strong> For actions like <code>&lt;Dial&gt;</code> (transfer) or <code>&lt;Hangup&gt;</code>, we return TwiML responses to a separate REST endpoint. Twilio executes these and optionally keeps the media stream alive.</li>
+    </ul>
+  </div></div>
+</div>
+
+<!-- Q22 -->
+<div class="qa-card" id="q22">
+  <div class="qa-header" onclick="toggle(this)">
+    <span class="qa-num">22</span>
+    <span class="qa-question">How are backend API integrations structured? What's the pattern for party search, holding inquiry, and payment APIs?<span class="diff-label diff-inter">Intermediate</span></span>
+    <span class="qa-toggle">&#9660;</span>
+  </div>
+  <div class="qa-body"><div class="qa-content">
+    <p><strong>Centralized in <code>/core/tools/</code> — each API has an async wrapper function:</strong></p>
+    <pre><code>core/tools/
+  ├── party_search.py      # POST /party/search (phone/policy lookup)
+  ├── holding_inquiry.py   # POST /holding/inquiry, /payment/history, /loan/inquiry
+  ├── payment_api.py       # POST /payment/card, /payment/ach
+  └── auth_token.py        # POST /auth/token (JWT acquisition)</code></pre>
+    <p><strong>Common pattern across all API wrappers:</strong></p>
+    <ol>
+      <li><strong>Async (aiohttp):</strong> All calls are non-blocking. Multiple API calls can run concurrently (e.g., policy lookup + payment history in parallel).</li>
+      <li><strong>Timeout:</strong> 10-15s per call. Voice calls can't wait longer.</li>
+      <li><strong>Structured response:</strong> Every wrapper returns <code>{ success: bool, data/error: ... }</code>. Service nodes check <code>success</code> and escalate to agent on failure.</li>
+      <li><strong>Structured logging:</strong> Every call logs <code>api_name</code>, <code>status_code</code>, <code>latency_ms</code>, and <code>error</code> (first 100 chars, PII-redacted).</li>
+      <li><strong>Bearer token auth:</strong> Holding inquiry and payment APIs require <code>Authorization: Bearer {access_token}</code> (acquired during auth via <code>auth_token.py</code>).</li>
+    </ol>
+    <p><strong>Resilience:</strong> If the party search API is down during auth, the system doesn't block — it advances to the next collection step (manual policy entry). If a holding inquiry fails, the service node responds with "I'm having trouble accessing that right now. Let me transfer you to an agent."</p>
+  </div></div>
+</div>
+
+<!-- Q23 -->
+<div class="qa-card" id="q23">
+  <div class="qa-header" onclick="toggle(this)">
+    <span class="qa-num">23</span>
+    <span class="qa-question">How would the IVR integrate with an existing Avaya PBX? Describe the SIP trunk architecture and the handoff flow.<span class="diff-label diff-adv">Advanced</span></span>
+    <span class="qa-toggle">&#9660;</span>
+  </div>
+  <div class="qa-body"><div class="qa-content">
+    <p><strong>Integration via Twilio Elastic SIP Trunking:</strong></p>
+    <pre><code>Caller → Avaya PBX → IVR Menu ("Press 3 for AI assistant")
+  → SIP INVITE (with UUI headers) → Twilio SIP Trunk
+  → Twilio → ALB/CloudFront → ECS (our LangGraph IVR)
+
+Escalation (reverse):
+  AI IVR → Twilio &lt;Dial&gt; SIP URI → Avaya PBX queue
+  → Agent answers → CRM screen pop (session ID → conversation summary)</code></pre>
+    <p><strong>UUI (User-to-User Information) headers:</strong></p>
+    <ul>
+      <li>Avaya passes context in SIP INVITE: ANI (caller phone), account number, auth status, queue origin.</li>
+      <li>If UUI indicates the caller already authenticated in Avaya IVR, our system can skip re-authentication (<code>authenticated=true</code> from start).</li>
+      <li>ANI is checked first against party records — if we find a match, we skip the phone collection step entirely.</li>
+    </ul>
+    <p><strong>Escalation back to Avaya:</strong></p>
+    <ul>
+      <li>Transfer via SIP URI with session ID in UUI headers.</li>
+      <li>Agent CRM pulls conversation summary from our API (Redis + PostgreSQL) using the session ID.</li>
+      <li>"Warm transfer" — agent sees everything the AI discussed before picking up.</li>
+    </ul>
+    <p><strong>High availability:</strong> Dual SIP trunks (primary + backup). If ALB health check fails, Avaya routes to the traditional IVR as fallback — callers never hit a dead end.</p>
+  </div></div>
+</div>
+
+<!-- Q24 -->
+<div class="qa-card" id="q24">
+  <div class="qa-header" onclick="toggle(this)">
+    <span class="qa-num">24</span>
+    <span class="qa-question">How does the system handle partial failures? What if Deepgram goes down mid-call, or the payment API times out?<span class="diff-label diff-adv">Advanced</span></span>
+    <span class="qa-toggle">&#9660;</span>
+  </div>
+  <div class="qa-body"><div class="qa-content">
+    <p><strong>Every component has a degradation path — the system never drops a call silently:</strong></p>
+    <table style="width:100%; border-collapse:collapse; margin:1rem 0;">
+      <tr><th style="background:var(--surface2); padding:8px 12px; border:1px solid var(--border); color:var(--accent);">Component Failure</th><th style="background:var(--surface2); padding:8px 12px; border:1px solid var(--border); color:var(--accent);">Degradation Strategy</th></tr>
+      <tr><td style="padding:8px 12px; border:1px solid var(--border);">Deepgram STT down</td><td style="padding:8px 12px; border:1px solid var(--border);">Switch to OpenAI Realtime (if configured) or Twilio's built-in <code>&lt;Gather&gt;</code> STT as last resort</td></tr>
+      <tr><td style="padding:8px 12px; border:1px solid var(--border);">Groq LLM 503/429</td><td style="padding:8px 12px; border:1px solid var(--border);">Retry 2x with exponential backoff → fall back to Bedrock → keyword matching → escalate</td></tr>
+      <tr><td style="padding:8px 12px; border:1px solid var(--border);">ElevenLabs TTS down</td><td style="padding:8px 12px; border:1px solid var(--border);">Switch to OpenAI TTS (<code>tts-1</code>, voice: <code>nova</code>)</td></tr>
+      <tr><td style="padding:8px 12px; border:1px solid var(--border);">Party Search API timeout</td><td style="padding:8px 12px; border:1px solid var(--border);">Skip ANI lookup, ask caller to provide phone/policy manually</td></tr>
+      <tr><td style="padding:8px 12px; border:1px solid var(--border);">Payment API timeout</td><td style="padding:8px 12px; border:1px solid var(--border);">"I'm having trouble processing that right now. Let me connect you with an agent."</td></tr>
+      <tr><td style="padding:8px 12px; border:1px solid var(--border);">PostgreSQL down</td><td style="padding:8px 12px; border:1px solid var(--border);">Fall back to in-memory checkpointer (no persistence, but call continues)</td></tr>
+      <tr><td style="padding:8px 12px; border:1px solid var(--border);">Redis down</td><td style="padding:8px 12px; border:1px solid var(--border);">Session state managed in-process only (no cross-task sharing)</td></tr>
+    </table>
+    <p><strong>Design principle:</strong> The caller should always hear a response — even if it's "I'm having trouble, let me transfer you." Silent failures (dead air) are the worst outcome in voice.</p>
+  </div></div>
+</div>
+
+<!-- Q25 -->
+<div class="qa-card" id="q25">
+  <div class="qa-header" onclick="toggle(this)">
+    <span class="qa-num">25</span>
+    <span class="qa-question">What are the distinct roles of PostgreSQL and Redis in this architecture? Why both?<span class="diff-label diff-basic">Foundational</span></span>
+    <span class="qa-toggle">&#9660;</span>
+  </div>
+  <div class="qa-body"><div class="qa-content">
+    <p><strong>PostgreSQL (durable, relational):</strong></p>
+    <ul>
+      <li><strong>LangGraph checkpoints:</strong> Full conversation state snapshots after every node execution. Enables session recovery on crash and historical replay.</li>
+      <li><strong>Conversation store:</strong> Call history, transcripts, and metadata for the dashboard and analytics.</li>
+      <li><strong>pgvector embeddings:</strong> RAG (Retrieval-Augmented Generation) support for FAQ node — insurance policy documents are embedded and queried for relevant answers.</li>
+      <li><strong>Durability:</strong> Data survives ECS task restarts, deployments, and even infrastructure teardown (RDS snapshots).</li>
+    </ul>
+    <p><strong>Redis (fast, ephemeral):</strong></p>
+    <ul>
+      <li><strong>Session state:</strong> Active call state with 30-minute TTL. Abandoned calls auto-expire.</li>
+      <li><strong>Conversation buffering:</strong> Intermediate turn data (partial transcriptions, pending responses) that don't need persistence.</li>
+      <li><strong>Cross-task sharing:</strong> If a call is handed between ECS tasks (auto-scaling), Redis provides the shared session layer.</li>
+      <li><strong>Speed:</strong> Sub-millisecond reads — no point hitting PostgreSQL for ephemeral session data.</li>
+    </ul>
+    <p><strong>Why both?</strong> PostgreSQL for data that matters after the call (analytics, audit, recovery). Redis for data that matters during the call (session state, buffering). Using PostgreSQL for everything would add 5-10ms per session read; using Redis for everything would risk data loss on node failure.</p>
+    <p><strong>Environment isolation:</strong> Separate databases in PostgreSQL (<code>ivr_dev</code>, <code>ivr_prod</code>), separate Redis DB slots (0=dev, 1=prod).</p>
+  </div></div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SECTION 6: Production Readiness & Tradeoffs -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 class="section-title" id="s6"><span class="section-icon">6</span> Production Readiness & Tradeoffs</h2>
+
+<!-- Q26 -->
+<div class="qa-card" id="q26">
+  <div class="qa-header" onclick="toggle(this)">
+    <span class="qa-num">26</span>
+    <span class="qa-question">Describe your testing strategy. How do you test an AI-powered voice IVR end-to-end?<span class="diff-label diff-inter">Intermediate</span></span>
+    <span class="qa-toggle">&#9660;</span>
+  </div>
+  <div class="qa-body"><div class="qa-content">
+    <p><strong>Four-layer testing pyramid:</strong></p>
+    <p><strong>Layer 1 — Unit tests (<code>test_utils.py</code>):</strong></p>
+    <ul>
+      <li>PII validators: phone number parsing, policy number format, DOB normalization</li>
+      <li>Name extraction from LLM responses</li>
+      <li>IDK (I don't know) detection heuristics</li>
+      <li>No API dependencies, no LLM calls — fast and deterministic</li>
+    </ul>
+    <p><strong>Layer 2 — Eval tests (LLM accuracy):</strong></p>
+    <ul>
+      <li><code>eval_intents.py</code>: Labeled dataset of utterances → expected intents. Runs against live Groq API. Measures classification accuracy (target: 95%+).</li>
+      <li><code>eval_slots.py</code>: PII extraction accuracy — dates in various formats, phone numbers with/without formatting, policy numbers with OCR-like errors.</li>
+    </ul>
+    <p><strong>Layer 3 — Graph integration tests (<code>test_graph.py</code>):</strong></p>
+    <ul>
+      <li>Simulates full call as text turns (no audio) against the LangGraph flow</li>
+      <li>Auth flow scenarios: happy path, phone not found, DOB mismatch, name fuzzy match, max attempts</li>
+      <li>Context switching scenarios: locked mode, escalation from payment, multi-intent queuing</li>
+      <li>Requires mock API server running on port 8001</li>
+    </ul>
+    <p><strong>Layer 4 — E2E Twilio tests (<code>eval_e2e_twilio.py</code>):</strong></p>
+    <ul>
+      <li>Full call via Twilio sandbox — real audio, real STT/TTS pipeline</li>
+      <li>Runs against the deployed dev environment (not local)</li>
+      <li>Verifies the complete chain: Twilio → WebSocket → Deepgram → LangGraph → ElevenLabs → Twilio</li>
+      <li>Only runs on master branch (expensive, slow)</li>
+    </ul>
+  </div></div>
+</div>
+
+<!-- Q27 -->
+<div class="qa-card" id="q27">
+  <div class="qa-header" onclick="toggle(this)">
+    <span class="qa-num">27</span>
+    <span class="qa-question">How do you monitor the system in production? Describe the dual observability stack — LangSmith for LLM tracing and MLflow for call-level analytics.<span class="diff-label diff-inter">Intermediate</span></span>
+    <span class="qa-toggle">&#9660;</span>
+  </div>
+  <div class="qa-body"><div class="qa-content">
+    <p>We use a <strong>dual observability stack</strong> — each tool serves a distinct purpose:</p>
+
+    <p><strong>1. LangSmith — LLM & Graph Tracing (real-time, per-turn)</strong></p>
+    <p>Since the project uses LangChain + LangGraph, LangSmith auto-instruments every LLM call and graph invocation with <strong>zero code changes</strong> — just environment variables:</p>
+    <pre><code>LANGCHAIN_TRACING_V2=true
+LANGCHAIN_API_KEY=lsv2_pt_xxxxx
+LANGCHAIN_PROJECT=uic-ivr-dev</code></pre>
+    <p><strong>What LangSmith captures automatically:</strong></p>
+    <ul>
+      <li><strong>Full graph execution trace:</strong> START → router → policy_node → END, with state snapshots at each node transition</li>
+      <li><strong>Every LLM call:</strong> Input prompt, output tokens, model name, latency, token count, cost — for both router (Groq) and service tier</li>
+      <li><strong>Latency waterfall:</strong> Per-node, per-LLM breakdown showing exactly where time is spent in each turn</li>
+      <li><strong>Error drill-down:</strong> Click any failed call → see exact state, prompt, and LLM response at the point of failure</li>
+      <li><strong>Token usage &amp; cost tracking:</strong> Automatic per-call cost across Groq, Bedrock, and OpenAI providers</li>
+    </ul>
+    <p><strong>How to view results in LangSmith:</strong></p>
+    <ol>
+      <li>Go to <code>smith.langchain.com</code> → select project (<code>uic-ivr-dev</code> or <code>uic-ivr-prod</code>)</li>
+      <li><strong>Runs tab:</strong> Every graph invocation (turn) appears as a run. Click to see the full trace tree — router LLM call → service LLM call → API tool calls</li>
+      <li><strong>Filter by metadata:</strong> Filter runs by <code>call_sid</code>, latency range, error status, or model name</li>
+      <li><strong>Monitor tab:</strong> Dashboards showing LLM latency P50/P95/P99, token usage over time, error rates, and cost trends</li>
+      <li><strong>Datasets &amp; Evals:</strong> Create eval datasets from production runs — annotate good/bad responses, then run automated scoring to catch regressions</li>
+      <li><strong>Prompt Playground:</strong> Test router and service prompts against real examples without deploying — iterate on prompt changes safely</li>
+    </ol>
+
+    <p><strong>2. MLflow — Call-Level Analytics (post-call, aggregate)</strong></p>
+    <p>MLflow tracks <strong>completed call records</strong> as individual runs. Called automatically from <code>conversation_store.end_call()</code> when a call ends:</p>
+    <pre><code># Local tracking — no external server needed
+Tracking URI: sqlite:///mlflow.db
+UI command:   mlflow ui --port 5000 --backend-store-uri sqlite:///mlflow.db</code></pre>
+    <p><strong>What MLflow captures per call:</strong></p>
+    <ul>
+      <li><strong>Parameters:</strong> LLM model, STT engine, auth mode, Groq model version, max auth attempts</li>
+      <li><strong>Metrics:</strong> call duration, turn count, auth attempts, authenticated (0/1), escalated (0/1), unique intents, per-node latency (ms), P95 STT/TTS/turn latencies</li>
+      <li><strong>Tags:</strong> call_sid, from_number, caller_persona, auth_result, intent_path (e.g., "policy_info → payment → goodbye"), environment</li>
+      <li><strong>Artifacts:</strong> Full call transcript (<code>transcript.txt</code>) and event log (<code>events.json</code>) attached to each run</li>
+    </ul>
+    <p><strong>How to view results in MLflow:</strong></p>
+    <ol>
+      <li>Start the UI: <code>mlflow ui --port 5000 --backend-store-uri sqlite:///mlflow.db</code></li>
+      <li><strong>Experiments page:</strong> Select the <code>CNO_IVR</code> experiment to see all call runs</li>
+      <li><strong>Compare runs:</strong> Select multiple calls → "Compare" → see metric charts side-by-side (e.g., auth_attempts across calls, latency trends)</li>
+      <li><strong>Filter &amp; search:</strong> Filter by tags (<code>auth_result="failed"</code>, <code>caller_persona="other"</code>) or metric ranges (<code>duration_seconds > 120</code>)</li>
+      <li><strong>Artifacts:</strong> Click any run → Artifacts tab → download <code>transcript.txt</code> to read the full conversation or <code>events.json</code> for the raw event log</li>
+      <li><strong>Charts:</strong> Use the Chart view to plot <code>avg_turn_complete_ms</code> over time or compare <code>auth_attempts</code> distribution across model versions</li>
+    </ol>
+
+    <p><strong>3. Infrastructure Monitoring — CloudWatch + Dashboard SSE</strong></p>
+    <ul>
+      <li><strong>CloudWatch Logs:</strong> Structured JSON logs from every node and API call. Log groups per environment, 7-day retention.</li>
+      <li><strong>ECS metrics:</strong> CPU, memory, active task count (built-in CloudWatch).</li>
+      <li><strong>ALB metrics:</strong> Healthy/unhealthy targets, request count, latency percentiles.</li>
+      <li><strong>Real-time log streaming:</strong> SSE endpoint <code>/client/logs/stream</code> via <code>log_bus.py</code> — live call monitoring in the dashboard.</li>
+    </ul>
+
+    <p><strong>Why two tools (LangSmith + MLflow)?</strong></p>
+    <table style="width:100%; border-collapse:collapse; margin:1rem 0;">
+      <tr>
+        <th style="background:var(--surface2); padding:8px 12px; border:1px solid var(--border); color:var(--accent);">Dimension</th>
+        <th style="background:var(--surface2); padding:8px 12px; border:1px solid var(--border); color:var(--accent);">LangSmith</th>
+        <th style="background:var(--surface2); padding:8px 12px; border:1px solid var(--border); color:var(--accent);">MLflow</th>
+      </tr>
+      <tr><td style="padding:8px 12px; border:1px solid var(--border);">Granularity</td><td style="padding:8px 12px; border:1px solid var(--border);">Per-turn, per-LLM-call</td><td style="padding:8px 12px; border:1px solid var(--border);">Per-call (entire conversation)</td></tr>
+      <tr><td style="padding:8px 12px; border:1px solid var(--border);">When logged</td><td style="padding:8px 12px; border:1px solid var(--border);">Real-time (during call)</td><td style="padding:8px 12px; border:1px solid var(--border);">Post-call (on hang-up)</td></tr>
+      <tr><td style="padding:8px 12px; border:1px solid var(--border);">Best for</td><td style="padding:8px 12px; border:1px solid var(--border);">Debugging prompts, LLM latency, token costs, graph traces</td><td style="padding:8px 12px; border:1px solid var(--border);">Auth success rates, call duration trends, intent distribution, model comparison</td></tr>
+      <tr><td style="padding:8px 12px; border:1px solid var(--border);">Storage</td><td style="padding:8px 12px; border:1px solid var(--border);">Cloud (smith.langchain.com)</td><td style="padding:8px 12px; border:1px solid var(--border);">Local SQLite (mlflow.db) or remote server</td></tr>
+      <tr><td style="padding:8px 12px; border:1px solid var(--border);">Code changes</td><td style="padding:8px 12px; border:1px solid var(--border);">Zero — env vars only</td><td style="padding:8px 12px; border:1px solid var(--border);">Already integrated in <code>mlflow_tracker.py</code></td></tr>
+      <tr><td style="padding:8px 12px; border:1px solid var(--border);">Prod sampling</td><td style="padding:8px 12px; border:1px solid var(--border);">Sample 10-20% of traces to control cost</td><td style="padding:8px 12px; border:1px solid var(--border);">Every call logged (lightweight)</td></tr>
+    </table>
+
+    <p><strong>Recommended production alerts (CloudWatch):</strong></p>
+    <ul>
+      <li>End-to-end response latency &gt; 2s (P95) — voice degradation</li>
+      <li>Auth failure rate &gt; 30% in 5-minute window — possible API issue or STT degradation</li>
+      <li>ECS unhealthy task count &gt; 0 — deployment issue or container crash</li>
+      <li>Groq API error rate &gt; 5% — trigger Bedrock failover</li>
+      <li>Active WebSocket connections approaching task limit — scale out</li>
+    </ul>
+  </div></div>
+</div>
+
+<!-- Q28 -->
+<div class="qa-card" id="q28">
+  <div class="qa-header" onclick="toggle(this)">
+    <span class="qa-num">28</span>
+    <span class="qa-question">If this system needed to serve 10x the current call volume across multiple insurance brands, what architectural changes would you make?<span class="diff-label diff-adv">Advanced</span></span>
+    <span class="qa-toggle">&#9660;</span>
+  </div>
+  <div class="qa-body"><div class="qa-content">
+    <p><strong>Scaling from single-brand dev to multi-tenant production:</strong></p>
+    <p><strong>1. Multi-tenancy:</strong></p>
+    <ul>
+      <li>Tenant-aware state: Add <code>tenant_id</code> to <code>CNOState</code>. Route to tenant-specific system prompts, API endpoints, and phone numbers.</li>
+      <li>Per-tenant system prompts: Insurance brand voice, compliance rules, and product catalog differ per tenant.</li>
+      <li>Database isolation: Schema-per-tenant in PostgreSQL (or separate databases for strict isolation).</li>
+    </ul>
+    <p><strong>2. Compute scaling:</strong></p>
+    <ul>
+      <li>Increase ECS max tasks: 5 → 50+ (or move to EKS for finer-grained pod scaling).</li>
+      <li>Horizontal scaling of WebSocket handlers with sticky sessions (ALB target group stickiness by <code>call_sid</code>).</li>
+      <li>Consider AWS App Runner or Kubernetes with KEDA for event-driven scaling.</li>
+    </ul>
+    <p><strong>3. LLM tier:</strong></p>
+    <ul>
+      <li>Move from single Groq account to provisioned throughput (dedicated capacity).</li>
+      <li>Add a model routing layer: simple intents → smaller model, complex responses → larger model.</li>
+      <li>Cache common responses (FAQ, greeting) to skip LLM entirely.</li>
+    </ul>
+    <p><strong>4. Data tier:</strong></p>
+    <ul>
+      <li>PostgreSQL → Aurora Serverless v2 (auto-scales storage and compute).</li>
+      <li>Redis → ElastiCache Global Datastore (cross-region replication for DR).</li>
+      <li>Add read replicas for analytics queries (don't query the primary during peak hours).</li>
+    </ul>
+    <p><strong>5. Observability:</strong></p>
+    <ul>
+      <li>Move from CloudWatch to a dedicated observability stack (Datadog, Grafana Cloud) for cross-service correlation.</li>
+      <li>Distributed tracing (OpenTelemetry) across Twilio → ECS → LLM → APIs.</li>
+    </ul>
+  </div></div>
+</div>
+
+<!-- Q29 -->
+<div class="qa-card" id="q29">
+  <div class="qa-header" onclick="toggle(this)">
+    <span class="qa-num">29</span>
+    <span class="qa-question">What are the top 3 architectural tradeoffs you made, and what would you do differently with hindsight?<span class="diff-label diff-adv">Advanced</span></span>
+    <span class="qa-toggle">&#9660;</span>
+  </div>
+  <div class="qa-body"><div class="qa-content">
+    <p><strong>Tradeoff 1: Groq (fast, less reliable) vs. OpenAI/Claude (slower, more reliable)</strong></p>
+    <ul>
+      <li><strong>Decision:</strong> Groq for sub-200ms inference, critical for voice.</li>
+      <li><strong>Cost:</strong> Groq has occasional 503s and rate limits. Required building retry + fallback logic.</li>
+      <li><strong>Hindsight:</strong> Would add an automatic circuit breaker (not just retry) that switches provider after N consecutive failures in a time window. Currently the failover is manual (env var change).</li>
+    </ul>
+    <p><strong>Tradeoff 2: Flat graph topology (all nodes → END) vs. cyclic graph</strong></p>
+    <ul>
+      <li><strong>Decision:</strong> No loops in the graph. Multi-turn is achieved via checkpointing + re-entry at START.</li>
+      <li><strong>Cost:</strong> Every turn re-runs the router, even during auth where the next node is obvious. Adds ~150ms per turn unnecessarily.</li>
+      <li><strong>Hindsight:</strong> Would add a "fast path" that bypasses the router when <code>active_flow</code> is set and the caller is mid-auth. The router already does this check, but it still invokes the LLM before deciding. Could be pure logic.</li>
+    </ul>
+    <p><strong>Tradeoff 3: Auth as guard pattern vs. dedicated auth node</strong></p>
+    <ul>
+      <li><strong>Decision:</strong> Auth guard inside service nodes preserves intent.</li>
+      <li><strong>Cost:</strong> Complex control flow — auth state machine lives across multiple files (<code>auth_guard.py</code>, <code>nodes/auth.py</code>, router redirect logic). Harder for new developers to trace.</li>
+      <li><strong>Hindsight:</strong> The pattern works well, but would add a state machine diagram to the docs and explicit auth state transition tests. The complexity is justified by the UX benefit (callers don't re-state intent after auth).</li>
+    </ul>
+  </div></div>
+</div>
+
+<!-- Q30 -->
+<div class="qa-card" id="q30">
+  <div class="qa-header" onclick="toggle(this)">
+    <span class="qa-num">30</span>
+    <span class="qa-question">Walk me through an entire call flow: a caller dials in, asks about their policy, authenticates, gets their policy status, then makes a payment. Trace every component involved.<span class="diff-label diff-adv">Advanced</span></span>
+    <span class="qa-toggle">&#9660;</span>
+  </div>
+  <div class="qa-body"><div class="qa-content">
+    <p><strong>Complete end-to-end trace:</strong></p>
+
+    <p><strong>Phase 1: Call Setup</strong></p>
+    <ol>
+      <li>Caller dials <code>+19087425347</code> → Twilio receives the call.</li>
+      <li>Twilio sends POST to <code>/twilio/voice</code> → TwiML response: <code>&lt;Connect&gt;&lt;Stream url="wss://cloudfront-url/stream?token=WS_AUTH_TOKEN"/&gt;</code></li>
+      <li>WebSocket established. Twilio sends <code>connected</code> event with <code>call_sid</code> and <code>stream_sid</code>.</li>
+      <li>ECS task opens persistent connections to Deepgram STT and ElevenLabs TTS.</li>
+      <li>LangGraph initializes <code>CNOState</code> with <code>call_sid</code>, loads checkpoint (empty for new call).</li>
+      <li>Greeting plays: "Thank you for calling US Insurance Company. How can I help you today?"</li>
+    </ol>
+
+    <p><strong>Phase 2: Intent Classification</strong></p>
+    <ol start="7">
+      <li>Caller says: "I'd like to check my policy status."</li>
+      <li>Twilio sends mulaw audio packets → Deepgram STT → transcript: "I'd like to check my policy status"</li>
+      <li>LangGraph: <code>START → router</code>. Router LLM (Groq, ~150ms): classifies as <code>"policy_info"</code>.</li>
+      <li>Conditional edge dispatches to <code>policy_node</code>.</li>
+    </ol>
+
+    <p><strong>Phase 3: Authentication (multi-turn)</strong></p>
+    <ol start="11">
+      <li><code>policy_node</code> calls <code>ensure_authenticated(state, "policy")</code>. Auth guard sees <code>authenticated=false</code>.</li>
+      <li>Auth step: <code>"collecting_phone"</code>. Response: "I'd be happy to help. For security, could you please provide your phone number?"</li>
+      <li><code>active_flow="policy"</code> set. State checkpointed to PostgreSQL.</li>
+      <li>Caller says: "555-123-4567" → Deepgram transcribes → Router sees <code>active_flow="policy"</code>, redirects back to policy_node without LLM call.</li>
+      <li>Auth guard: <code>party_search(phone="5551234567")</code> → API returns party record. <code>candidate_party</code> stored.</li>
+      <li>Auth step: <code>"verifying_dob"</code>. Response: "Thank you. And what is your date of birth?"</li>
+      <li>Caller says: "January 15th, 1965" → <code>normalize_dob()</code> → "1965-01-15" → matches <code>candidate_party.DOB</code>.</li>
+      <li><code>authenticated=true</code>. Auth step: <code>"collecting_caller_name"</code>. "May I ask your name please?"</li>
+      <li>Caller says: "John Smith" → fuzzy match against <code>Personas</code> → <code>caller_persona="insured"</code>.</li>
+      <li><code>auth_token.py</code>: <code>POST /auth/token</code> → <code>access_token</code> acquired.</li>
+    </ol>
+
+    <p><strong>Phase 4: Policy Inquiry</strong></p>
+    <ol start="21">
+      <li><code>ensure_authenticated()</code> returns <code>(True, state)</code>. Policy node proceeds.</li>
+      <li><code>holding_inquiry(policy_number, access_token)</code> → API returns policy details.</li>
+      <li>Service LLM (Groq, ~300ms): Generates natural response from API data.</li>
+      <li>Response: "Your policy XYZ1234567 is active. Your premium is $125 per month, paid through October 2026. Your coverage amount is $250,000."</li>
+      <li>ElevenLabs streams TTS audio → Twilio → Caller hears the response.</li>
+    </ol>
+
+    <p><strong>Phase 5: Payment (context switch)</strong></p>
+    <ol start="26">
+      <li>Caller says: "I'd like to make a payment."</li>
+      <li>Router LLM classifies: <code>"payment"</code>. Context switch allowed (policy flow was complete, no "locked" or "escalate_only" blocking).</li>
+      <li><code>payment_node</code>: Already authenticated (reuses <code>customer</code> and <code>access_token</code> from state). No re-auth needed.</li>
+      <li>Payment flow begins: amount confirmation → OTP node → DTMF card collection (locked mode) → payment JWT → <code>POST /payment/card</code> → confirmation number.</li>
+      <li>Response: "Your payment of $125 has been processed. Your confirmation number is PAY-789456. Is there anything else I can help with?"</li>
+      <li>Caller: "No, that's all. Thank you." → Router: <code>"goodbye"</code> → Goodbye node → "Thank you for calling. Have a great day!" → <code>&lt;Hangup&gt;</code>.</li>
+    </ol>
+
+    <p><strong>Components touched:</strong> Twilio (voice gateway), CloudFront (HTTPS), ALB (routing), ECS Fargate (compute), Deepgram (STT), Groq (LLM x2), ElevenLabs (TTS), Party Search API, Auth Token API, Holding Inquiry API, Payment API, PostgreSQL (checkpoints x12+), Redis (session state).</p>
+  </div></div>
+</div>
+
+</div><!-- /container -->
+
+<script>
+function toggle(header) {
+  header.closest('.qa-card').classList.toggle('open');
+}
+function toggleAll(open) {
+  document.querySelectorAll('.qa-card').forEach(c => {
+    if (open) c.classList.add('open');
+    else c.classList.remove('open');
+  });
+}
+</script>
+
+</body>
+</html>
