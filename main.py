@@ -60,6 +60,17 @@ async def lifespan(app: FastAPI):
 
     log.info("cno_ivr_started", environment=settings.environment, port=settings.app_port)
 
+    # LangSmith auto-tracing — env vars are picked up by LangChain/LangGraph automatically
+    if settings.langchain_tracing_v2 and settings.langchain_api_key:
+        import os
+        os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
+        os.environ.setdefault("LANGCHAIN_API_KEY", settings.langchain_api_key)
+        os.environ.setdefault("LANGCHAIN_PROJECT", settings.langchain_project)
+        os.environ.setdefault("LANGCHAIN_ENDPOINT", settings.langchain_endpoint)
+        log.info("langsmith_tracing_enabled", project=settings.langchain_project)
+    else:
+        log.info("langsmith_tracing_disabled")
+
     checkpointer = None
     try:
         import socket
@@ -104,6 +115,10 @@ async def lifespan(app: FastAPI):
     from services.conversation_store import init_from_db
     init_from_db()
     log.info("conversation_store_loaded_from_db")
+
+    # Auto-sync Twilio webhooks to current base URL (ngrok or ALB/CloudFront)
+    from services.twilio_webhook_sync import sync_webhooks
+    sync_webhooks(settings)
 
     yield  # server runs here
 

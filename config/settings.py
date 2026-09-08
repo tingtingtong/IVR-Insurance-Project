@@ -73,6 +73,12 @@ class Settings(BaseSettings):
     cno_api_key: str = ""
     cno_jwt_secret: str = ""
 
+    # LangSmith observability (auto-instruments LangChain/LangGraph — zero code changes)
+    langchain_tracing_v2: bool = False
+    langchain_api_key: str = ""
+    langchain_project: str = "uic-ivr-dev"
+    langchain_endpoint: str = "https://api.smith.langchain.com"
+
     # Auth mode — "standard" (Deepgram STT + LangGraph) or "realtime" (OpenAI Realtime API)
     auth_mode: str = "standard"
 
@@ -86,6 +92,12 @@ class Settings(BaseSettings):
     # Set VALIDATE_TWILIO_SIGNATURE=true and TWILIO_BASE_URL=https://your-host.ngrok.io in prod.
     validate_twilio_signature: bool = False
     twilio_base_url: str = ""
+
+    # Auto-sync Twilio webhooks on startup
+    # When true, updates TwiML app + phone number webhooks to TWILIO_BASE_URL automatically.
+    # Local dev: TWILIO_BASE_URL is auto-detected from ngrok if empty.
+    # AWS: set TWILIO_BASE_URL to your ALB/CloudFront URL.
+    sync_twilio_webhooks: bool = True
 
     # WebSocket /stream auth token
     # Add ?token=<WS_AUTH_TOKEN> to the Media Stream URL in your TwiML.
