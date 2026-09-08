@@ -54,6 +54,13 @@ class CNOState(TypedDict):
     otp_step:        str   # collecting_card | collecting_bank | confirming | processing
     otp_data:        dict  # { payment_type, amount, ... }
 
+    # ── Beneficiary management state ─────────────────────────────────────────
+    beneficiary_step: str   # listing | asking_action | collecting_name
+                            # collecting_relationship | collecting_percentage
+                            # confirming_add | selecting_remove | confirming_remove
+                            # confirming_update | complete
+    beneficiary_edit: dict  # pending edit: { action, name, relationship, percentage, ... }
+
     # ── Metrics ───────────────────────────────────────────────────────────────
     metric_data: dict
     # { intentList: [...], apiCallsList: [...], piiSuccessList: [...] }

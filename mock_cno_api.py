@@ -9,6 +9,9 @@ Endpoints implemented (all POST):
   /payment/history     — last 3 transactions
   /loan/inquiry        — loan balance, interest, payoff
   /beneficiary/inquiry — beneficiary list
+  /beneficiary/add     — add a beneficiary (validates total=100%, max 5)
+  /beneficiary/remove  — remove a beneficiary (validates min 1, total=100%)
+  /beneficiary/update  — update beneficiary percentages (validates total=100%)
   /contact/update      — address / phone update (always succeeds)
   /document/request    — document mail/fax request (always succeeds)
   /payment/card        — card payment processing
@@ -403,6 +406,104 @@ async def beneficiary_inquiry(request: Request):
     )
 
 
+MAX_BENEFICIARIES = 5
+
+
+@app.post("/beneficiary/add")
+async def beneficiary_add(request: Request):
+    body = await request.json()
+    _log_request("beneficiary/add", body)
+
+    policy_num = body.get("PolicyNumber", "").strip().upper()
+    if policy_num not in POLICY_DETAIL:
+        return _error(f"Policy {policy_num} not found")
+
+    benes = BENEFICIARY_DATA.get(policy_num, [])
+    if len(benes) >= MAX_BENEFICIARIES:
+        return _error(f"Cannot exceed {MAX_BENEFICIARIES} beneficiaries per policy", status=422)
+
+    new_bene = body.get("Beneficiary", {})
+    new_list = body.get("UpdatedBeneficiaries", [])
+    if not new_list:
+        return _error("UpdatedBeneficiaries list is required", status=422)
+
+    # Validate total = 100%
+    total = sum(b.get("Percentage", 0) for b in new_list)
+    if abs(total - 100) > 0.01:
+        return _error(f"Percentages must total 100% (got {total:.1f}%)", status=422)
+
+    BENEFICIARY_DATA[policy_num] = new_list
+    log.info("mock_beneficiary_added", policy=policy_num, new=new_bene.get("LastName", ""))
+
+    return JSONResponse(status_code=200, content={
+        "PolicyNumber": policy_num,
+        "Status": "Added",
+        "ConfirmationNumber": _confirmation_number("BEN"),
+        "Beneficiaries": new_list,
+    })
+
+
+@app.post("/beneficiary/remove")
+async def beneficiary_remove(request: Request):
+    body = await request.json()
+    _log_request("beneficiary/remove", body)
+
+    policy_num = body.get("PolicyNumber", "").strip().upper()
+    if policy_num not in POLICY_DETAIL:
+        return _error(f"Policy {policy_num} not found")
+
+    benes = BENEFICIARY_DATA.get(policy_num, [])
+    if len(benes) <= 1:
+        return _error("Cannot remove the last beneficiary — policy must have at least one", status=422)
+
+    new_list = body.get("UpdatedBeneficiaries", [])
+    if not new_list:
+        return _error("UpdatedBeneficiaries list is required", status=422)
+
+    total = sum(b.get("Percentage", 0) for b in new_list)
+    if abs(total - 100) > 0.01:
+        return _error(f"Percentages must total 100% (got {total:.1f}%)", status=422)
+
+    removed_name = body.get("RemovedName", "")
+    BENEFICIARY_DATA[policy_num] = new_list
+    log.info("mock_beneficiary_removed", policy=policy_num, removed=removed_name)
+
+    return JSONResponse(status_code=200, content={
+        "PolicyNumber": policy_num,
+        "Status": "Removed",
+        "ConfirmationNumber": _confirmation_number("BEN"),
+        "Beneficiaries": new_list,
+    })
+
+
+@app.post("/beneficiary/update")
+async def beneficiary_update(request: Request):
+    body = await request.json()
+    _log_request("beneficiary/update", body)
+
+    policy_num = body.get("PolicyNumber", "").strip().upper()
+    if policy_num not in POLICY_DETAIL:
+        return _error(f"Policy {policy_num} not found")
+
+    new_list = body.get("UpdatedBeneficiaries", [])
+    if not new_list:
+        return _error("UpdatedBeneficiaries list is required", status=422)
+
+    total = sum(b.get("Percentage", 0) for b in new_list)
+    if abs(total - 100) > 0.01:
+        return _error(f"Percentages must total 100% (got {total:.1f}%)", status=422)
+
+    BENEFICIARY_DATA[policy_num] = new_list
+    log.info("mock_beneficiary_updated", policy=policy_num, count=len(new_list))
+
+    return JSONResponse(status_code=200, content={
+        "PolicyNumber": policy_num,
+        "Status": "Updated",
+        "ConfirmationNumber": _confirmation_number("BEN"),
+        "Beneficiaries": new_list,
+    })
+
+
 @app.post("/contact/update")
 async def contact_update(request: Request):
     body = await request.json()
@@ -616,6 +717,7 @@ async def index():
       for ep in [
           "/party/search", "/auth/token", "/holding/inquiry",
           "/payment/history", "/loan/inquiry", "/beneficiary/inquiry",
+          "/beneficiary/add", "/beneficiary/remove", "/beneficiary/update",
           "/contact/update", "/document/request", "/payment/card", "/payment/ach",
       ]
   )}
