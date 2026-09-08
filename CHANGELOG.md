@@ -5,6 +5,15 @@ Each version is tagged in git and deployed as a Docker image to ECR.
 
 ---
 
+## v1.8.0 — 2026-09-08
+**Beneficiary management**
+
+| ID | Issue | Root Cause | Fix | Files |
+|----|-------|-----------|-----|-------|
+| BUG-020 | Beneficiary flow is read-only — no ability to add, remove, or update percentages | Node only fetched and recited beneficiary list; no state machine, no write-back API | Full state machine (list → action → collect → confirm → submit). Auto-redistributes percentages proportionally. Fuzzy name matching for STT. Edge cases: max 5, min 1, cancel mid-flow. Mock API: `/beneficiary/add`, `/beneficiary/remove`, `/beneficiary/update` | `core/graph/nodes/beneficiary.py`, `core/graph/state.py`, `mock_cno_api.py` |
+
+---
+
 ## v1.7.1 — 2026-09-08
 **Pending intent UX hint**
 
