@@ -87,6 +87,15 @@ class SessionService:
             **state,
             "messages": [_serialize_msg(m) for m in state.get("messages", [])],
         }
+        # BUG-029: Mask sensitive payment fields before persisting to Redis
+        if "otp_data" in serializable and isinstance(serializable["otp_data"], dict):
+            otp = dict(serializable["otp_data"])
+            for key in ("card_number", "account_number"):
+                if key in otp and len(otp[key]) >= 4:
+                    otp[key] = "****" + otp[key][-4:]
+            if "cvv" in otp:
+                otp["cvv"] = "***"
+            serializable["otp_data"] = otp
         await r.setex(self._key(call_sid), SESSION_TTL, json.dumps(serializable))
 
     async def set_transfer(self, call_sid: str, phone_number: str) -> None:

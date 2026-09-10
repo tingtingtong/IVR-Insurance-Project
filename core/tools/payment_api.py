@@ -8,7 +8,7 @@ _log = structlog.get_logger()
 
 ACH_AUTHORIZATION_SCRIPT = (
     "I'm now recording your authorization. "
-    "By saying 'I authorize', you are authorizing insuranceCompany "
+    "By saying 'I authorize', you are authorizing US Insurance Company "
     "to initiate a one-time electronic funds transfer from the bank account you provided. "
     "This authorization will remain in effect until you revoke it. "
     "Do you authorize this transaction?"
@@ -16,13 +16,17 @@ ACH_AUTHORIZATION_SCRIPT = (
 
 
 def _generate_jwt(policy_number: str, amount: float) -> str:
+    secret = settings.cno_jwt_secret
+    if not secret:
+        _log.warning("jwt_secret_not_set", msg="CNO_JWT_SECRET is empty — using fallback dev secret")
+        secret = "dev-fallback-secret-do-not-use-in-prod"
     payload = {
         "policyNumber": policy_number,
         "amount": amount,
         "iat": int(time.time()),
         "exp": int(time.time()) + 300,  # 5-minute expiry
     }
-    return jwt.encode(payload, settings.cno_jwt_secret, algorithm="HS256")
+    return jwt.encode(payload, secret, algorithm="HS256")
 
 
 async def process_card_payment(

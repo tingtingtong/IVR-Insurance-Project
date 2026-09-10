@@ -60,6 +60,16 @@ async def otp_node(state: CNOState) -> dict:
     log_event(call_sid, "node_enter", node="otp", step=otp_step,
               input=last_human[:40] if last_human else "")
 
+    # ── BUG-028: Cancel/exit from OTP flow at any step ─────────────────────
+    if otp_step not in ("start", "complete") and last_human and _wants_cancel(last_human):
+        log_event(call_sid, "otp_cancelled", step=otp_step)
+        return merge_auth_state(auth_state, {
+            "otp_step": "start",
+            "otp_data": {},
+            "tts_text": "No problem, I've cancelled the payment. Is there anything else I can help you with?",
+            "current_node": "otp", "active_flow": "",
+        })
+
     # ── Step: Start — ask payment type ───────────────────────────────────────
     if otp_step == "start":
         return merge_auth_state(auth_state, {
@@ -416,14 +426,9 @@ async def otp_node(state: CNOState) -> dict:
     # ── Step: Confirm amount (card) ────────────────────────────────────────
     if otp_step == "confirming_amount":
         if _is_yes(last_human):
-            last4 = otp_data.get("card_number", "")[-4:]
-            amt = otp_data.get("amount", 0)
-            return {
-                "otp_step": "processing",
-                "otp_data": otp_data,
-                "tts_text": f"Processing card payment of ${amt:.2f}, card ending in {last4}. Please hold.",
-                "current_node": "otp", "active_flow": "otp",
-            }
+            # BUG-025: Process payment inline — don't wait for next turn
+            result = await _process_payment(otp_data, policy_number, access_token)
+            return _build_payment_result(result, otp_data)
         elif _is_no(last_human):
             otp_data.pop("amount", None)
             return {
@@ -530,13 +535,9 @@ async def otp_node(state: CNOState) -> dict:
     # ── Step: Confirm bank amount ──────────────────────────────────────────
     if otp_step == "confirming_bank_amount":
         if _is_yes(last_human):
-            amt = otp_data.get("amount", 0)
-            return {
-                "otp_step": "processing",
-                "otp_data": otp_data,
-                "tts_text": f"Processing bank payment of ${amt:.2f}. Please hold.",
-                "current_node": "otp", "active_flow": "otp",
-            }
+            # BUG-025: Process payment inline — don't wait for next turn
+            result = await _process_payment(otp_data, policy_number, access_token)
+            return _build_payment_result(result, otp_data)
         elif _is_no(last_human):
             otp_data.pop("amount", None)
             return {
@@ -552,26 +553,24 @@ async def otp_node(state: CNOState) -> dict:
             "current_node": "otp", "active_flow": "otp",
         }
 
-    # ── Step: Processing ──────────────────────────────────────────────────────
-    if otp_step == "processing":
-        result = await _process_payment(otp_data, policy_number, access_token)
-        if result["success"]:
-            confirmation = result.get("confirmation", "")
-            payment_id = result.get("payment_id", "")
-            # FEAT-005: Always read back confirmation number and payment ID clearly
-            tts = "Your payment has been processed successfully."
-            if confirmation:
-                tts += f" Your confirmation number is {_spell_alphanumeric(confirmation)}."
-            if payment_id:
-                tts += f" Your payment reference ID is {_spell_alphanumeric(payment_id)}."
-            tts += " Please save these numbers for your records."
-            tts += f" {PROMPTS['payment_disclosure']}"
-        else:
-            tts = f"I'm sorry, the payment could not be processed. {result.get('error', '')} Please try again or call back."
+    # ── Step: Complete — handle repeat/follow-up requests ────────────────────
+    if otp_step == "complete":
+        # Allow caller to ask for confirmation number again
+        lower = last_human.lower()
+        if any(w in lower for w in ["repeat", "again", "confirmation", "number", "reference", "save"]):
+            stored_tts = otp_data.get("last_confirmation_tts", "")
+            if stored_tts:
+                return {
+                    "otp_step": "complete",
+                    "otp_data": otp_data,
+                    "tts_text": f"Let me repeat that for you. {stored_tts}",
+                    "current_node": "otp", "active_flow": "otp",
+                }
+        # Anything else — clear flow and let router handle
         return {
-            "otp_step":   "complete",
-            "otp_data":   {},
-            "tts_text":   tts,
+            "otp_step": "start",
+            "otp_data": {},
+            "tts_text": "",
             "current_node": "otp", "active_flow": "",
         }
 
@@ -579,6 +578,35 @@ async def otp_node(state: CNOState) -> dict:
     log_event(call_sid, "node_exit", node="otp",
               latency_ms=int((time.time() - t0) * 1000), chars=len(tts_fallback))
     return merge_auth_state(auth_state, {"tts_text": tts_fallback, "current_node": "otp", "active_flow": ""})
+
+
+def _build_payment_result(result: dict, otp_data: dict) -> dict:
+    """BUG-025: Build the final payment result inline after processing."""
+    if result["success"]:
+        confirmation = result.get("confirmation", "")
+        payment_id = result.get("payment_id", "")
+        tts = "Your payment has been processed successfully."
+        if confirmation:
+            tts += f" Your confirmation number is {_spell_alphanumeric(confirmation)}."
+        if payment_id:
+            tts += f" Your payment reference ID is {_spell_alphanumeric(payment_id)}."
+        tts += " Please save these numbers for your records."
+        tts += f" {PROMPTS['payment_disclosure']}"
+        # Store confirmation text so caller can ask to repeat
+        return {
+            "otp_step": "complete",
+            "otp_data": {"last_confirmation_tts": tts},
+            "tts_text": tts,
+            "current_node": "otp", "active_flow": "otp",
+        }
+    else:
+        tts = f"I'm sorry, the payment could not be processed. {result.get('error', '')} Please try again or call back."
+        return {
+            "otp_step": "start",
+            "otp_data": {},
+            "tts_text": tts,
+            "current_node": "otp", "active_flow": "",
+        }
 
 
 async def _process_payment(otp_data: dict, policy_number: str, access_token: str) -> dict:
@@ -876,6 +904,19 @@ def _spell_alphanumeric(code: str) -> str:
         else:
             parts.append(ch)
     return " ".join(parts)
+
+
+def _wants_cancel(utterance: str) -> bool:
+    """BUG-028: Detect if caller wants to cancel/exit the payment flow."""
+    import re
+    words = set(re.findall(r"[a-z]+", utterance.lower()))
+    cancel_words = {"cancel", "stop", "exit", "quit", "nevermind", "abort"}
+    if words & cancel_words:
+        return True
+    lower = utterance.lower()
+    if "never mind" in lower or "don't want" in lower or "forget it" in lower:
+        return True
+    return False
 
 
 def _detect_payment_method(utterance: str) -> str:
