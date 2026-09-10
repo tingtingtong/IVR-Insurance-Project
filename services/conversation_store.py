@@ -196,7 +196,7 @@ def add_chat_turn(
     _chats[session_id]["turns"].append({
         "ts":     datetime.now().isoformat(timespec="seconds"),
         "role":   role,
-        "text":   text,
+        "text":   redact_turn(role, text),
         "intent": intent,
         "node":   node,
     })

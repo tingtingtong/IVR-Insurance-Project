@@ -68,8 +68,8 @@ class Settings(BaseSettings):
     # PostgreSQL
     database_url: str = "postgresql://insuranceCompany:cno_pass@localhost:5432/cno_ivr"
 
-    # insuranceCompany Backend APIs
-    cno_api_base_url: str = "https://api.insuranceCompany.example.com"
+    # UIC Backend APIs
+    cno_api_base_url: str = "https://api.uic.example.com"
     cno_api_key: str = ""
     cno_jwt_secret: str = ""
 
