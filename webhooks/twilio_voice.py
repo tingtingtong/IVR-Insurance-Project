@@ -107,7 +107,7 @@ async def incoming_call(request: Request):
                     state = await session.get_state(call_sid)
                     state["pii_collected"] = {"phoneNumber": digits}
                     state["candidate_party"] = result["parties"][0]
-                    state["auth_step"] = "collecting_dob"
+                    state["auth_step"] = "confirming_ani"
                     await session.save_state(call_sid, state)
                     log_event(call_sid, "ani_match", phone=digits[:3] + "***" + digits[7:])
                 else:
