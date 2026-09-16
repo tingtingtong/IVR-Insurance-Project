@@ -124,13 +124,21 @@ def _is_unrecognizable(text: str) -> bool:
 
     # Mostly digits — likely a phone number, DOB, or policy number said out of context
     digit_ratio = sum(c.isdigit() for c in stripped) / max(len(stripped), 1)
-    if digit_ratio > 0.5:
+    if digit_ratio > 0.3:
         return True
 
-    # Very short utterances (1-2 words) that aren't FAQ keywords
-    _FAQ_SIGNAL_WORDS = {"what", "how", "why", "when", "where", "can", "do", "does",
-                         "is", "are", "explain", "tell", "help", "question"}
-    if len(words) <= 2 and not any(w in _FAQ_SIGNAL_WORDS for w in words):
+    # Date-like patterns — months or ordinals mixed with numbers (DOB said out of context)
+    _MONTH_WORDS = {"january", "february", "march", "april", "may", "june",
+                    "july", "august", "september", "october", "november", "december",
+                    "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "oct", "nov", "dec"}
+    if any(w in _MONTH_WORDS for w in words) and any(c.isdigit() for c in stripped):
+        return True
+
+    # Very short utterances (1-3 words) that don't contain question/request signal words
+    _FAQ_SIGNAL_WORDS = {"what", "how", "why", "when", "where", "can", "could", "do", "does",
+                         "is", "are", "explain", "tell", "help", "question", "know", "check",
+                         "want", "need", "would", "like", "please", "about", "my"}
+    if len(words) <= 3 and not any(w in _FAQ_SIGNAL_WORDS for w in words):
         return True
 
     return False
