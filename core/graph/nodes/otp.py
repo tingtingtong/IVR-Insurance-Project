@@ -362,8 +362,16 @@ async def otp_node(state: CNOState) -> dict:
     # ── Step: Collect CVV via normal STT ───────────────────────────────────
     if otp_step == "collecting_card_cvv":
         cvv = _extract_digits(last_human)
-        from utils.payment_validator import validate_cvv
+        from utils.payment_validator import validate_cvv, try_trim_extra_digits
         ok, err = validate_cvv(cvv)
+        if not ok and len(cvv) in (5, 6):
+            # Try trimming STT duplicates → 3 or 4 digits
+            for target in (3, 4):
+                corrected = try_trim_extra_digits(cvv, expected_len=target, max_extra=3)
+                if corrected:
+                    cvv = corrected
+                    ok = True
+                    break
         if not ok:
             return {
                 "otp_step": "collecting_card_cvv",
@@ -471,13 +479,19 @@ async def otp_node(state: CNOState) -> dict:
     # ── Step: Collect routing number (bank) via normal STT ─────────────────
     if otp_step == "collecting_bank_routing":
         routing = _extract_digits(last_human)
-        from utils.payment_validator import validate_routing_number
+        from utils.payment_validator import validate_routing_number, try_trim_extra_digits
         ok, err = validate_routing_number(routing)
+        if not ok and 10 <= len(routing) <= 11:
+            # Try removing STT duplicate digits
+            corrected = try_trim_extra_digits(routing, expected_len=9)
+            if corrected:
+                routing = corrected
+                ok, err = validate_routing_number(routing)
         if not ok:
             return {
                 "otp_step": "collecting_bank_routing",
                 "otp_data": otp_data,
-                "tts_text": "I need a 9-digit routing number. Please try again.",
+                "tts_text": f"I need a 9-digit routing number, but I heard {len(routing)} digits. Please try again.",
                 "current_node": "otp", "active_flow": "otp",
             }
         otp_data["routing_number"] = routing
@@ -638,7 +652,8 @@ MAX_CARD_RETRIES = 3
 def _validate_card_with_feedback(card_number: str, otp_data: dict) -> dict | None:
     """
     BUG-017: Validate card number with intelligent self-correction.
-    FEAT-005: Smart 17→16 digit correction — try removing each duplicate digit.
+    FEAT-005: Smart 17-20→16 digit correction — recursively remove duplicate
+    digits (STT double-tap artifacts) and Luhn-check. Confirms with caller.
     Returns a state dict to send back to the caller if validation fails,
     or None if the card is valid.
     """
@@ -653,17 +668,18 @@ def _validate_card_with_feedback(card_number: str, otp_data: dict) -> dict | Non
         otp_data.pop("card_retry_count", None)
         return None
 
-    # FEAT-005: Smart correction for 17 digits (1 extra) — try removing each digit
-    if len(digits) == 17:
-        corrected = _try_correct_extra_digit(digits)
+    # FEAT-005: Smart correction for 17-20 digits — try removing duplicate digits
+    if 17 <= len(digits) <= 20:
+        corrected = _try_correct_extra_digits(digits)
         if corrected:
             otp_data["card_number"] = corrected
             last4 = corrected[-4:]
-            # Ask caller to confirm the corrected number
+            extra = len(digits) - 16
             return {
                 "otp_step": "confirming_card",
                 "otp_data": otp_data,
-                "tts_text": f"I received 17 digits. I think you meant the card ending in {_spell_digits(last4)}. Is that correct?",
+                "tts_text": (f"I received {len(digits)} digits, {extra} more than expected. "
+                             f"I think you meant the card ending in {_spell_digits(last4)}. Is that correct?"),
                 "current_node": "otp", "active_flow": "otp",
             }
 
@@ -701,27 +717,13 @@ def _validate_card_with_feedback(card_number: str, otp_data: dict) -> dict | Non
     }
 
 
-def _try_correct_extra_digit(digits_17: str) -> str:
-    """FEAT-005: Try removing one extra digit from a 17-digit string to get valid 16.
+def _try_correct_extra_digits(digits: str) -> str:
+    """FEAT-005: Try removing extra digits from a 17-20 digit string to get valid 16.
 
-    Strategy: find consecutive duplicate digits and try removing one.
-    If exactly one removal passes Luhn, return the corrected number.
+    Delegates to shared try_trim_extra_digits utility with Luhn checksum.
     """
-    from utils.payment_validator import luhn_check
-    candidates = set()
-    for i in range(len(digits_17)):
-        # Only try removing a digit if it's the same as its neighbor (likely STT double-tap)
-        if i > 0 and digits_17[i] == digits_17[i - 1]:
-            candidate = digits_17[:i] + digits_17[i + 1:]
-            if luhn_check(candidate):
-                candidates.add(candidate)
-        elif i < len(digits_17) - 1 and digits_17[i] == digits_17[i + 1]:
-            candidate = digits_17[:i] + digits_17[i + 1:]
-            if luhn_check(candidate):
-                candidates.add(candidate)
-    if len(candidates) == 1:
-        return candidates.pop()
-    return ""
+    from utils.payment_validator import luhn_check, try_trim_extra_digits
+    return try_trim_extra_digits(digits, expected_len=16, checksum_fn=luhn_check)
 
 
 def _spell_digits(digits: str) -> str:
