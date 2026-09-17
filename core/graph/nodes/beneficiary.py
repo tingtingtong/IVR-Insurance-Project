@@ -15,7 +15,6 @@ State machine steps:
 """
 import time
 import re
-import aiohttp
 from difflib import SequenceMatcher
 from langchain_core.messages import AIMessage
 from core.graph.state import CNOState
@@ -349,18 +348,17 @@ async def _fetch_beneficiaries(policy_number: str, access_token: str, call_sid: 
     """Fetch beneficiary list from API. Returns list or None on error."""
     url = f"{settings.cno_api_base_url}/beneficiary/inquiry"
     headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
+    from core.tools.http import post_json
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, json={"PolicyNumber": policy_number},
-                                    headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                body = await resp.json()
-                if resp.status != 200:
-                    log_event(call_sid, "api_call", node="beneficiary", api="beneficiary_inquiry",
-                              success=False, error=str(body)[:60])
-                    return None
-                log_event(call_sid, "api_call", node="beneficiary", api="beneficiary_inquiry",
-                          success=True, count=len(body.get("Beneficiaries", [])))
-                return body.get("Beneficiaries", [])
+        status, body = await post_json(url, json={"PolicyNumber": policy_number},
+                                       headers=headers, timeout=5)
+        if status != 200:
+            log_event(call_sid, "api_call", node="beneficiary", api="beneficiary_inquiry",
+                      success=False, error=str(body)[:60])
+            return None
+        log_event(call_sid, "api_call", node="beneficiary", api="beneficiary_inquiry",
+                  success=True, count=len(body.get("Beneficiaries", [])))
+        return body.get("Beneficiaries", [])
     except Exception as exc:
         log_event(call_sid, "api_call", node="beneficiary", api="beneficiary_inquiry",
                   success=False, error=str(exc)[:60])
@@ -377,14 +375,12 @@ async def _submit_beneficiary_change(
     payload = {"PolicyNumber": policy_number, "UpdatedBeneficiaries": updated_list}
     if extra:
         payload.update(extra)
+    from core.tools.http import post_json
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=payload, headers=headers,
-                                    timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                body = await resp.json()
-                log_event(call_sid, "api_call", node="beneficiary", api=endpoint,
-                          success=resp.status == 200, status=resp.status)
-                return body if resp.status == 200 else None
+        status, body = await post_json(url, json=payload, headers=headers, timeout=5)
+        log_event(call_sid, "api_call", node="beneficiary", api=endpoint,
+                  success=status == 200, status=status)
+        return body if status == 200 else None
     except Exception as exc:
         log_event(call_sid, "api_call", node="beneficiary", api=endpoint,
                   success=False, error=str(exc)[:60])

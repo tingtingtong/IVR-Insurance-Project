@@ -1,5 +1,4 @@
 import time
-import aiohttp
 from langchain_core.messages import AIMessage
 from core.graph.state import CNOState
 from core.graph.auth_guard import ensure_authenticated, apply_auth_state, merge_auth_state
@@ -137,11 +136,10 @@ async def _request_document(customer: dict, data: dict, access_token: str) -> bo
         "DocumentType": data.get("doc_type", ""),
         "DeliveryMethod": data.get("delivery", "mail"),
     }
+    from core.tools.http import post_json
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=payload, headers=headers,
-                                    timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                return resp.status in (200, 201)
+        status, _body = await post_json(url, json=payload, headers=headers, timeout=5)
+        return status in (200, 201)
     except Exception:
         return False
 

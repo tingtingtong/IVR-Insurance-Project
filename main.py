@@ -111,6 +111,10 @@ async def lifespan(app: FastAPI):
     set_graph(compiled)
     log.info("graph_compiled", checkpointer=type(checkpointer).__name__)
 
+    from core.tools.http import init_http, close_http
+    await init_http()
+    log.info("http_client_ready")
+
     # Load call history from PostgreSQL so the dashboard is populated after restart
     from services.conversation_store import init_from_db
     init_from_db()
@@ -129,6 +133,8 @@ async def lifespan(app: FastAPI):
             log.info("checkpointer_postgres_closed")
         except Exception:
             pass
+    from core.tools.http import close_http
+    await close_http()
     log.info("cno_ivr_shutdown")
 
 

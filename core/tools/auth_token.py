@@ -1,6 +1,6 @@
-import aiohttp
 import structlog
 from config import settings
+from core.tools.http import post_json
 
 log = structlog.get_logger()
 
@@ -30,23 +30,13 @@ async def acquire_access_token(party_key: str, company_code: str) -> str:
         "CompanyCode":      company_code,
     }
 
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                url, json=payload, headers=headers,
-                timeout=aiohttp.ClientTimeout(total=10),
-            ) as resp:
-                body = await resp.json()
-                if resp.status == 200:
-                    token = body.get("AccessToken", "")
-                    if token:
-                        log.info("access_token_acquired", party_key=party_key)
-                    else:
-                        log.warning("access_token_empty_response")
-                    return token
-                log.warning("access_token_request_failed",
-                            status=resp.status, body=str(body)[:200])
-                return ""
-    except Exception as e:
-        log.error("access_token_exception", error=str(e))
-        return ""
+    status, body = await post_json(url, json=payload, headers=headers, timeout=5)
+    if status == 200:
+        token = body.get("AccessToken", "")
+        if token:
+            log.info("access_token_acquired", party_key=party_key)
+        else:
+            log.warning("access_token_empty_response")
+        return token
+    log.warning("access_token_request_failed", status=status, body=str(body)[:200])
+    return ""

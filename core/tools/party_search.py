@@ -1,8 +1,8 @@
 import time
 import difflib
-import aiohttp
 import structlog
 from config import settings
+from core.tools.http import post_json
 
 _log = structlog.get_logger()
 
@@ -35,26 +35,18 @@ async def party_search(
 
     t0 = time.time()
     search_by = "phone" if phone else "policy" if policy_number else "name" if first_name else "unknown"
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                body = await resp.json()
-                latency = int((time.time() - t0) * 1000)
-                if resp.status == 200:
-                    parties = body.get("SearchParties", [])
-                    _log.info("api_party_search", search_by=search_by, status=200,
-                              party_count=len(parties), latency_ms=latency)
-                    return {"success": True, "parties": parties, "error": ""}
-                else:
-                    error_block = body.get("ErrorBlock", [{}])
-                    error_msg = error_block[0].get("ErrorMessage", "Unknown error") if error_block else str(body)
-                    _log.warning("api_party_search_failed", search_by=search_by, status=resp.status,
-                                 error=error_msg[:100], latency_ms=latency)
-                    return {"success": False, "parties": [], "error": error_msg}
-    except Exception as e:
-        latency = int((time.time() - t0) * 1000)
-        _log.error("api_party_search_error", search_by=search_by, error=str(e)[:100], latency_ms=latency)
-        return {"success": False, "parties": [], "error": str(e)}
+    status, body = await post_json(url, json=payload, headers=headers, timeout=5)
+    latency = int((time.time() - t0) * 1000)
+    if status == 200:
+        parties = body.get("SearchParties", [])
+        _log.info("api_party_search", search_by=search_by, status=200,
+                  party_count=len(parties), latency_ms=latency)
+        return {"success": True, "parties": parties, "error": ""}
+    error_block = body.get("ErrorBlock", [{}])
+    error_msg = error_block[0].get("ErrorMessage", body.get("error", str(body))) if error_block else str(body)
+    _log.warning("api_party_search_failed", search_by=search_by, status=status,
+                 error=str(error_msg)[:100], latency_ms=latency)
+    return {"success": False, "parties": [], "error": str(error_msg)}
 
 
 def validate_pii_match(party: dict, pii_collected: dict) -> list[str]:

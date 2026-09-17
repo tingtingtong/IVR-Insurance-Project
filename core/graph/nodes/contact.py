@@ -1,6 +1,5 @@
 import re
 import time
-import aiohttp
 from langchain_core.messages import AIMessage
 from core.graph.state import CNOState
 from core.graph.auth_guard import ensure_authenticated, apply_auth_state, merge_auth_state
@@ -181,13 +180,12 @@ async def _submit_contact_change(customer: dict, data: dict, access_token: str) 
         "NewAddress":   data.get("new_address", ""),
         "NewPhone":     data.get("new_phone", ""),
     }
+    from core.tools.http import post_json
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=payload, headers=headers,
-                                    timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                success = resp.status in (200, 201)
-                _clog.info("api_contact_update", status=resp.status, success=success)
-                return success
+        status, _body = await post_json(url, json=payload, headers=headers, timeout=5)
+        success = status in (200, 201)
+        _clog.info("api_contact_update", status=status, success=success)
+        return success
     except Exception as exc:
         _clog.error("api_contact_update_error", error=str(exc)[:100])
         return False
