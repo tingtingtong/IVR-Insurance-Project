@@ -115,6 +115,10 @@ async def lifespan(app: FastAPI):
     await init_http()
     log.info("http_client_ready")
 
+    from services.rag import warm_store
+    warm_store()
+    log.info("rag_store_warmed")
+
     # Load call history from PostgreSQL so the dashboard is populated after restart
     from services.conversation_store import init_from_db
     init_from_db()
