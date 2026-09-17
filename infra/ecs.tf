@@ -138,8 +138,16 @@ resource "aws_ecs_service" "app" {
   name            = "${var.environment}-${var.project}-svc"
   cluster         = aws_ecs_cluster.main.id
   task_definition = aws_ecs_task_definition.app.arn
-  desired_count   = 1
+  desired_count   = var.min_tasks
   launch_type     = "FARGATE"
+
+  deployment_minimum_healthy_percent = 100
+  deployment_maximum_percent         = 200
+
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
 
   network_configuration {
     subnets          = aws_subnet.public[*].id
@@ -218,7 +226,7 @@ resource "aws_appautoscaling_policy" "alb_requests" {
       predefined_metric_type = "ALBRequestCountPerTarget"
       resource_label         = "${aws_lb.app.arn_suffix}/${aws_lb_target_group.app.arn_suffix}"
     }
-    target_value       = 10   # scale out when >10 active requests per task
+    target_value       = 20   # ~20 Media Stream calls per 2-vCPU task before scale-out
     scale_in_cooldown  = 120
     scale_out_cooldown = 60
   }
