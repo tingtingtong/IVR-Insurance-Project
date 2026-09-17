@@ -113,6 +113,9 @@ class Settings(BaseSettings):
     app_port: int = 8080
     log_level: str = "INFO"
 
+    # Cap concurrent LLM calls per process (80 parallel streams would otherwise stampede Groq)
+    llm_max_inflight: int = 20
+
     @property
     def is_prod(self) -> bool:
         return self.environment.lower() == "prod"

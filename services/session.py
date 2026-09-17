@@ -20,6 +20,9 @@ class SessionService:
                 await r.ping()
                 self._redis = r
             except Exception:
+                if settings.is_prod:
+                    log.error("redis_unavailable_fail_closed", url=settings.redis_url)
+                    raise
                 log.warning("redis_unavailable_using_fakeredis", url=settings.redis_url)
                 import fakeredis.aioredis as fakeredis
                 if not hasattr(SessionService, '_fake_redis_instance'):

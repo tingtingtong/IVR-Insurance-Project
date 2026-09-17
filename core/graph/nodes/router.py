@@ -2,7 +2,7 @@ import asyncio
 from langchain_core.messages import SystemMessage, HumanMessage
 from core.graph.state import CNOState
 from core.prompts.system_prompt import ROUTER_PROMPT
-from core.llm_factory import get_router_llm
+from core.llm_factory import get_router_llm, ainvoke_limited
 from config import settings
 from utils.call_logger import log_event
 
@@ -120,7 +120,7 @@ async def _invoke_llm_with_retry(messages: list, max_attempts: int = 3) -> objec
     last_exc = None
     for attempt in range(max_attempts):
         try:
-            return await _llm.ainvoke(messages)
+            return await ainvoke_limited(_llm, messages)
         except Exception as exc:
             err_str = str(exc).lower()
             err_type = type(exc).__name__
