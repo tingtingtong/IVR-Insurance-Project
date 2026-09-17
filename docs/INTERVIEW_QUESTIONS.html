@@ -215,7 +215,7 @@
     </div>
     <div>
       <div class="cat-label">LLM Strategy & Voice AI</div>
-      <a href="#q6">Q6. Dual-LLM tier approach</a>
+      <a href="#q6">Q6. Same model, dual config approach</a>
       <a href="#q7">Q7. LLM provider failover</a>
       <a href="#q8">Q8. STT pipeline (Deepgram + Realtime)</a>
       <a href="#q9">Q9. TTS strategy & latency</a>
@@ -420,27 +420,28 @@
 <div class="qa-card" id="q6">
   <div class="qa-header" onclick="toggle(this)">
     <span class="qa-num">6</span>
-    <span class="qa-question">Why a dual-LLM tier architecture? Why not use a single model for everything?<span class="diff-label diff-basic">Foundational</span></span>
+    <span class="qa-question">Why the same model for both router and service nodes? Why not a smaller model for one tier?<span class="diff-label diff-basic">Foundational</span></span>
     <span class="qa-toggle">&#9660;</span>
   </div>
   <div class="qa-body"><div class="qa-content">
-    <p><strong>Two tiers optimized for different concerns:</strong></p>
-    <p><strong>Tier 1 — Router LLM (Groq, Qwen 27B):</strong></p>
+    <p><strong>Same model (Groq Qwen 27B), different configurations optimized for different task profiles:</strong></p>
+    <p><strong>Router config (classification task):</strong></p>
     <ul>
-      <li>Purpose: Single-turn intent classification</li>
       <li>Config: <code>temperature=0</code>, <code>max_tokens=20</code></li>
-      <li>Latency: Sub-200ms (Groq's custom LPU hardware)</li>
-      <li>Cost: Minimal (tiny output per call)</li>
-      <li>Why Groq? Traditional cloud LLM APIs (OpenAI, Bedrock) have 400-800ms inference. For voice, every 100ms matters because the caller is waiting in silence. Groq delivers 10x faster inference.</li>
+      <li>Outputs a single word (<code>policy_info</code>, <code>payment</code>, etc.) &mdash; deterministic classification</li>
+      <li>Runs on <strong>every caller turn</strong> &mdash; latency-critical (sub-200ms on Groq LPU)</li>
+      <li>Routing is actually the <strong>harder NLU task</strong>: it must handle ambiguous utterances like "I wanna check if my premium went up and also change my beneficiary" and correctly classify multi-intent. A smaller model would risk misclassification, which derails the entire call.</li>
     </ul>
-    <p><strong>Tier 2 — Service LLM (same Groq model, higher token budget):</strong></p>
+    <p><strong>Service config (generation task):</strong></p>
     <ul>
-      <li>Purpose: Generate natural voice responses from API data</li>
       <li>Config: <code>temperature=0.3</code>, <code>max_tokens=200</code></li>
-      <li>Uses the full system prompt with voice IVR rules (speak naturally, use contractions, etc.)</li>
+      <li>Generates 1-3 natural sentences from structured API data</li>
+      <li>Runs <strong>once per resolved intent</strong> &mdash; less frequency-sensitive</li>
+      <li>This is actually the <strong>simpler task</strong>: formatting known data ("Your premium is $125/month, paid through October 2026") into natural speech. The slight temperature adds phrasing variety.</li>
     </ul>
-    <p><strong>Why not one model?</strong> The router is called on every single turn. If we used a large model (GPT-4, Claude) with the full system prompt for routing, we'd add 500ms+ to every turn just for intent classification. The dual-tier approach lets us use a fast/cheap model for the frequent routing decision and a slightly richer call for response generation.</p>
-    <p><strong>Provider toggle:</strong> <code>LLM_PROVIDER</code> env var switches both tiers between Groq and Amazon Bedrock (Nova Micro). Bedrock is the fallback for production if Groq has availability issues.</p>
+    <p><strong>Why the same model for both?</strong> The router needs the full 27B for accurate classification on ambiguous input. The service nodes could potentially use a smaller model (since they're just formatting data), but using the same model avoids operational overhead of managing two models. At scale, service nodes are the candidates for dropping to a cheaper/smaller model &mdash; not the router.</p>
+    <p><strong>Why not a single config?</strong> The router must be deterministic (temp=0) with minimal output (20 tokens). Service nodes need creativity (temp=0.3) and longer output (200 tokens). Sharing one config would either make routing non-deterministic or make service responses robotic.</p>
+    <p><strong>Provider toggle:</strong> <code>LLM_PROVIDER</code> env var switches both tiers between Groq (default, sub-200ms) and Amazon Bedrock (Nova Micro, AWS-native fallback for Groq outages).</p>
   </div></div>
 </div>
 
