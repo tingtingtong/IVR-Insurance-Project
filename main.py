@@ -177,6 +177,13 @@ app.include_router(chat_router)
 app.include_router(dashboard_router)
 
 
+@app.get("/metrics")
+async def metrics():
+    from fastapi.responses import PlainTextResponse
+    from services.metrics import prometheus_text
+    return PlainTextResponse(prometheus_text(), media_type="text/plain; version=0.0.4")
+
+
 @app.get("/health/live")
 async def health_live():
     return {"status": "ok"}

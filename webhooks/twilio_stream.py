@@ -155,6 +155,8 @@ class CallHandler:
         custom = start_data.get("customParameters", {})
         from_number = custom.get("from", custom.get("From", ""))
 
+        from services.metrics import inc
+        inc("calls_started")
         log.info("call_started", call_sid=self.call_sid, stream_sid=self.stream_sid,
                  auth_mode=settings.auth_mode, from_number=from_number)
 
@@ -236,6 +238,8 @@ class CallHandler:
                 config={"configurable": {"thread_id": self.call_sid}},
             )
         except Exception as e:
+            from services.metrics import inc
+            inc("graph_errors")
             log.error("graph_error", call_sid=self.call_sid, error=str(e))
             await self._speak(PROMPTS["escalation"]["error"])
             return
