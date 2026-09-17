@@ -32,7 +32,9 @@ jobs:
           ELEVENLABS_API_KEY: "el-dummy"
           TWILIO_ACCOUNT_SID: "ACdummy"
           TWILIO_AUTH_TOKEN: "dummy"
-        run: python tests/test_utils.py
+          ENVIRONMENT: "dev"
+        run: |
+          python -m unittest tests.test_utils tests.test_prod_security tests.test_payment_safety tests.test_nodes tests.test_card_capture tests.test_ws_stream
 
   # ── Stage 2: Intent & slot evals — needs LLM API key ─────────────────────
   eval-tests:
