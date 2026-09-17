@@ -142,3 +142,9 @@ variable "twilio_base_url" {
   type        = string
   default     = ""
 }
+
+variable "acm_certificate_arn" {
+  description = "ACM cert ARN for ALB HTTPS. Empty = HTTP only (dev). Set in prod so Twilio can use wss/https."
+  type        = string
+  default     = ""
+}
