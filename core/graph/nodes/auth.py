@@ -28,6 +28,7 @@ async def auth_node(state: CNOState) -> dict:
     Multi-turn authentication node.
 
     State machine:
+      confirming_ani         → yes → collecting_dob | no → collecting_phone
       collecting_phone       → phone captured → search by phone
                                found  → collecting_dob
                                not found → confirming_phone
@@ -85,6 +86,7 @@ async def auth_node(state: CNOState) -> dict:
     # Prevents parsing blank input when auth_step is already set (e.g. after
     # a timeout or empty utterance mid-flow). Each step maps to its ask prompt.
     _STEP_REPROMPT = {
+        "confirming_ani":            lambda: "Just to confirm — is this call about the policy linked to the phone number you're calling from?",
         "collecting_phone":          lambda: get_retry_prompt("phone", "ask"),
         "confirming_phone":          lambda: PROMPTS["confirming_phone"]["ask"].format(
             phone=_fmt_phone(pii_collected.get("phoneNumber", ""))),
@@ -120,7 +122,9 @@ async def auth_node(state: CNOState) -> dict:
             auth_step = "collecting_dob"
 
     # ── Dispatch ─────────────────────────────────────────────────────────────
-    if auth_step == "collecting_phone":
+    if auth_step == "confirming_ani":
+        result = _confirming_ani(state, last_human, pii_collected, auth_attempts, candidate_party)
+    elif auth_step == "collecting_phone":
         result = await _collecting_phone(state, last_human, pii_collected, auth_attempts, candidate_party)
     elif auth_step == "confirming_phone":
         result = _confirming_phone(state, last_human, pii_collected, auth_attempts, candidate_party)
@@ -195,6 +199,79 @@ async def auth_node(state: CNOState) -> dict:
 
 
 # ── Step handlers ─────────────────────────────────────────────────────────────
+
+def _confirming_ani(state, last_human, pii_collected, auth_attempts, candidate_party):
+    """ANI pre-check confirmation: ask the caller if the call is about the policy
+    found via their calling number before skipping phone collection."""
+    slot = "confirming_ani"
+    call_sid = state.get("call_sid", "unknown")
+
+    if not last_human:
+        tts = "I see a policy associated with the number you're calling from. Is this call regarding that policy?"
+        return _ask("confirming_ani", pii_collected, tts, candidate_party)
+
+    answer = _yes_no(last_human)
+
+    if answer == "yes":
+        log_event(call_sid, "auth_detail", step="confirming_ani", action="confirmed")
+        tts = "Great. " + get_retry_prompt("date_of_birth", "ask")
+        return {
+            "auth_step":       "collecting_dob",
+            "pii_collected":   pii_collected,
+            "candidate_party": candidate_party,
+            "tts_text":        tts,
+            "slot_attempts":   {},
+            "current_node":    "auth",
+            "active_flow":     "auth",
+        }
+
+    if answer == "no":
+        log_event(call_sid, "auth_detail", step="confirming_ani", action="declined")
+        tts = "No problem. " + get_retry_prompt("phone", "ask")
+        return {
+            "auth_step":       "collecting_phone",
+            "pii_collected":   {},
+            "candidate_party": {},
+            "tts_text":        tts,
+            "slot_attempts":   {},
+            "current_node":    "auth",
+            "active_flow":     "auth",
+        }
+
+    # Unclear response
+    blank_count  = _get_slot(state, slot, "blank")
+    asked_before = _get_slot(state, slot, "asked")
+
+    if blank_count >= 2:
+        # Too many unclear responses — fall back to phone collection
+        log_event(call_sid, "auth_detail", step="confirming_ani", action="unclear_fallback")
+        tts = get_retry_prompt("phone", "ask")
+        return {
+            "auth_step":       "collecting_phone",
+            "pii_collected":   {},
+            "candidate_party": {},
+            "tts_text":        tts,
+            "slot_attempts":   {},
+            "current_node":    "auth",
+            "active_flow":     "auth",
+        }
+
+    if not asked_before:
+        tts = "Just to confirm — is this call about the policy linked to the phone number you're calling from?"
+        return {**_ask("confirming_ani", pii_collected, tts, candidate_party),
+                "slot_attempts": _inc_slot(state, slot, "asked")}
+
+    tts = "I just need a yes or no — is this call about the policy on your calling number?"
+    return {
+        "auth_step":       "confirming_ani",
+        "pii_collected":   pii_collected,
+        "candidate_party": candidate_party,
+        "tts_text":        tts,
+        "slot_attempts":   _inc_slot(state, slot, "blank"),
+        "current_node":    "auth",
+        "active_flow":     "auth",
+    }
+
 
 async def _collecting_phone(state, last_human, pii_collected, auth_attempts, candidate_party):
     slot = "phone"

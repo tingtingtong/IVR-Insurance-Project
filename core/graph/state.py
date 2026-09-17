@@ -61,6 +61,9 @@ class CNOState(TypedDict):
                             # confirming_update | complete
     beneficiary_edit: dict  # pending edit: { action, name, relationship, percentage, ... }
 
+    # ── Unrecognized turn tracking ─────────────────────────────────────────────
+    unrecognized_count: int  # consecutive unrecognized utterances (0 = last was valid)
+
     # ── Metrics ───────────────────────────────────────────────────────────────
     metric_data: dict
     # { intentList: [...], apiCallsList: [...], piiSuccessList: [...] }

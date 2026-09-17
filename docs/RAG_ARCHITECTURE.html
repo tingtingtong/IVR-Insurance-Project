@@ -340,7 +340,7 @@ tests/eval_rag.py        -- LLM-as-judge evaluation (faithfulness, relevancy)</c
     <div class="flow-line"></div>
     <div class="flow-content">
       <div class="label">LLM Re-Ranker</div>
-      <div class="detail">Groq Llama-3.1-8B scores each candidate 0-10 in parallel &rarr; top-k selection</div>
+      <div class="detail">Groq Qwen 27B scores each candidate 0-10 in parallel &rarr; top-k selection</div>
     </div>
   </div>
   <div class="flow-step">
@@ -354,7 +354,7 @@ tests/eval_rag.py        -- LLM-as-judge evaluation (faithfulness, relevancy)</c
     <div class="flow-line"></div>
     <div class="flow-content">
       <div class="label">FAQ Node LLM</div>
-      <div class="detail">Groq Llama-3.3-70B generates grounded 1-2 sentence voice answer</div>
+      <div class="detail">Groq Qwen 27B generates grounded 1-2 sentence voice answer</div>
     </div>
   </div>
 </div>
@@ -541,7 +541,7 @@ Step 3: If filtered results &lt; k, fall back to unfiltered search</code></pre>
     <tr><th>Approach</th><th>Model</th><th>Latency</th><th>Cost</th><th>Deployment</th></tr>
     <tr>
       <td>LLM re-ranking <span class="badge badge-chosen">chosen</span></td>
-      <td>Groq Llama-3.1-8B</td><td>~200ms (parallel)</td><td>~$0.0001/query</td><td>No extra infra</td>
+      <td>Groq Qwen 27B</td><td>~200ms (parallel)</td><td>~$0.0001/query</td><td>No extra infra</td>
     </tr>
     <tr><td>Sentence-transformers</td><td>ms-marco-MiniLM-L-6-v2</td><td>~50ms (local)</td><td>$0 (GPU)</td><td>GPU instance, 400MB model</td></tr>
     <tr><td>Cohere Rerank API</td><td>rerank-english-v3.0</td><td>~150ms</td><td>$0.002/query</td><td>Third-party dependency</td></tr>

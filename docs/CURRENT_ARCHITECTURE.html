@@ -170,8 +170,7 @@
   <tr><th>Component</th><th>Technology</th><th>Role</th><th>Why Chosen</th></tr>
   <tr><td>Framework</td><td>FastAPI + Uvicorn</td><td>HTTP/WebSocket server</td><td>Async-native, WebSocket support, auto-docs</td></tr>
   <tr><td>Orchestration</td><td>LangGraph</td><td>Conversation state machine</td><td>Built-in checkpointing, conditional edges, typed state</td></tr>
-  <tr><td>LLM (Service)</td><td>Groq (Qwen 27B) or Bedrock (Nova Micro)</td><td>Response generation in service nodes</td><td>Dual-provider: Groq for speed/cost, Bedrock for AWS-native</td></tr>
-  <tr><td>LLM (Router)</td><td>Same, temp=0, max_tokens=20</td><td>Single-word intent classification</td><td>Fast, deterministic classification</td></tr>
+  <tr><td>LLM (Both tiers)</td><td>Groq (Qwen 27B) or Bedrock (Nova Micro)</td><td>Same model, different configs</td><td>Dual-provider: Groq for speed/cost, Bedrock for AWS-native fallback</td></tr>
   <tr><td>STT (General)</td><td>Deepgram Nova-2</td><td>Streaming speech-to-text</td><td>Low latency (~200ms), mulaw native, keyword boost</td></tr>
   <tr><td>STT (Auth PII)</td><td>OpenAI Realtime API</td><td>Audio-native PII extraction</td><td>Function calling on raw audio; no intermediate STT errors</td></tr>
   <tr><td>TTS</td><td>OpenAI TTS (tts-1 / nova)</td><td>Streaming text-to-speech</td><td>High quality, streaming PCM output, sub-200ms TTFB</td></tr>
@@ -562,15 +561,18 @@
 <pre><code><span class="hl-dim">System:</span> "You are a call intent classifier. Reply with ONE word only."
 <span class="hl-dim">Human:</span>  ROUTER_PROMPT.format(utterance=last_human)
 <span class="hl-dim">LLM config:</span> temperature=0, max_tokens=20</code></pre>
-<p>The prompt lists all 12 valid intents with descriptions and examples. The response is lowercased, underscored, and validated against <code>VALID_INTENTS</code>. Unrecognized outputs default to <code>"faq"</code>.</p>
+<p>The prompt lists all 12 valid intents with descriptions and examples. The response is lowercased, underscored, and validated against <code>VALID_INTENTS</code>. If the LLM output doesn't match a valid intent, the system checks the <code>_is_unrecognizable()</code> heuristic &mdash; noise/garbage re-asks the last question; genuine but unclassifiable utterances fall back to <code>"faq"</code>.</p>
 
-<h4>Dual Model Strategy</h4>
+<h4>Same Model, Dual Configuration</h4>
+<p>Both the router and service nodes use the <strong>same underlying model</strong> (Groq Qwen 27B or Bedrock Nova Micro). The distinction is not model size &mdash; it is <strong>task profile</strong>:</p>
 <table>
-  <tr><th>Use</th><th>LLM</th><th>Config</th><th>Why</th></tr>
-  <tr><td>Intent Router</td><td><code>get_router_llm()</code></td><td>temp=0, max_tokens=20</td><td>Fast, deterministic single-word output; ~100ms response time</td></tr>
-  <tr><td>Service Nodes</td><td><code>get_llm()</code></td><td>temp=0.3, max_tokens=200</td><td>Natural conversational responses; slightly creative but controlled</td></tr>
+  <tr><th>Use</th><th>LLM</th><th>Config</th><th>Task Profile</th></tr>
+  <tr><td>Intent Router</td><td><code>get_router_llm()</code></td><td>temp=0, max_tokens=20</td><td>Classification &mdash; output one word; deterministic; runs every turn</td></tr>
+  <tr><td>Service Nodes</td><td><code>get_llm()</code></td><td>temp=0.3, max_tokens=200</td><td>Generation &mdash; 1-3 sentences from API data; runs once per intent</td></tr>
 </table>
-<p>Both can run on either Groq (Qwen 27B, default) or Bedrock (Nova Micro), toggled by <code>LLM_PROVIDER</code> env var. This dual-provider design means the system can run entirely on AWS (Bedrock) without any external API dependencies, or use Groq for faster/cheaper inference during development.</p>
+<p><strong>Why not different-sized models?</strong> Routing is actually the harder NLU task &mdash; it must handle ambiguous, multi-intent utterances and classify correctly. A smaller model would risk misclassification, which derails the entire call. Service nodes do simpler work (formatting structured API data into natural speech), but need a higher token budget and slight temperature for natural-sounding output. Using the same capable model for both, with different configs, gives accurate classification <em>and</em> natural responses without the operational overhead of managing two separate models.</p>
+<p><strong>Dual-provider toggle:</strong> <code>LLM_PROVIDER</code> env var switches both tiers between Groq (default, sub-200ms on custom LPU hardware) and Bedrock (Nova Micro, AWS-native fallback). This means the system can run entirely on AWS without external API dependencies.</p>
+<p><strong>Production scaling path:</strong> If cost optimization is needed at scale, service nodes (which are simpler generation tasks) could drop to a smaller/cheaper model, while the router stays on the full 27B for classification accuracy.</p>
 
 <h4>Context Switch Enforcement</h4>
 <p>When a caller is inside a multi-step flow (e.g., payment), the router enforces context switch rules <em>before</em> LLM classification to prevent accidental pivots:</p>
@@ -591,6 +593,22 @@
   <li><strong>Confirmation negation</strong> &mdash; "no, that is wrong" in escalate_only flows stays in flow (prevents LLM misclassification)</li>
 </ol>
 
+<h4>Unrecognized Utterance Handling</h4>
+<p>Before LLM classification, the router checks if the utterance is likely STT noise or an accidental input using <code>_is_unrecognizable()</code>. This prevents garbage transcripts from triggering FAQ fallback (which would give irrelevant answers).</p>
+<p>The heuristic catches:</p>
+<ul>
+  <li><strong>Digit-heavy input</strong> &mdash; more than 30% digits (likely a phone number or DOB spoken out of context)</li>
+  <li><strong>Date patterns</strong> &mdash; month names followed by digits, without any question or intent signal</li>
+  <li><strong>Very short phrases</strong> &mdash; 1&ndash;3 words with no recognized signal words (greetings, intents, questions)</li>
+</ul>
+<p>When an utterance is flagged as unrecognizable:</p>
+<ul>
+  <li>The <code>unrecognized_count</code> state counter increments</li>
+  <li>The system <strong>re-asks the last question</strong> instead of routing to FAQ</li>
+  <li>After <strong>3 consecutive</strong> unrecognized turns &rarr; escalate to a live agent</li>
+  <li>Any recognized utterance resets the counter to 0</li>
+</ul>
+
 <h4>Retry Logic</h4>
 <p>LLM invocation uses exponential backoff retry for transient errors (Groq 503/429, Bedrock throttling): 3 attempts with delays of 1s and 2s. If all retries fail, the router falls back to the active flow's intent or escalation.</p>
 </div>
@@ -605,6 +623,16 @@
 <div class="card">
 <h3>Auth State Machine</h3>
 <pre><code><span class="hl-orange">              Authentication State Machine</span>
+
+<span class="hl-green">ANI party_search(From)</span> on inbound call
+    |                    |
+    | found              | not found
+    v                    v
+<span class="hl-yellow">confirming_ani</span>     <span class="hl-blue">collecting_phone</span> (normal start)
+    |
+    | yes &rarr; <span class="hl-blue">collecting_dob</span> (skip phone)
+    | no  &rarr; <span class="hl-blue">collecting_phone</span> (reset)
+    | unclear x2 &rarr; <span class="hl-blue">collecting_phone</span>
 
 <span class="hl-blue">collecting_phone</span> ──phone parsed──&gt; <span class="hl-green">party_search(phone)</span>
     |                                  |            |
@@ -650,8 +678,16 @@
 </table>
 <p>Name matching uses <code>difflib.SequenceMatcher</code> with a 0.80 threshold on both first and last name independently, allowing for minor STT transcription errors.</p>
 
-<h4>ANI Check</h4>
-<p>While the architecture supports ANI (Automatic Number Identification) &mdash; the caller's phone number is captured in the webhook's <code>From</code> field and stored in session &mdash; the current implementation always starts by <em>asking</em> for the phone number rather than auto-matching ANI. This is a deliberate choice: many callers call from numbers not on their policy (spouse's phone, work phone, etc.).</p>
+<h4>ANI Pre-Check &amp; Confirmation</h4>
+<p>When an inbound call arrives, the Twilio webhook captures the caller's phone number (ANI) from the <code>From</code> field and immediately runs a <code>party_search(phone)</code>. If a matching policy is found, the system pre-populates <code>pii_collected</code> and <code>candidate_party</code> in session state and sets <code>auth_step = "confirming_ani"</code>.</p>
+<p>Rather than silently assuming the ANI match is correct (callers often call from a spouse's phone, work phone, etc.), the system explicitly confirms:</p>
+<blockquote><em>"I see your number is associated with a policy. Is this call about that policy?"</em></blockquote>
+<ul>
+  <li><strong>Yes</strong> &rarr; Phone PII is accepted, skip to <code>collecting_dob</code> (saves ~2 turns)</li>
+  <li><strong>No</strong> &rarr; Clear ANI match, reset to <code>collecting_phone</code> (start fresh)</li>
+  <li><strong>Unclear / no response</strong> &rarr; Re-ask up to 2 times, then fall back to <code>collecting_phone</code></li>
+</ul>
+<p>If the ANI does not match any policy, the system skips the confirmation step entirely and starts with <code>collecting_phone</code> as normal.</p>
 
 <h4>Retry Logic and Escalation</h4>
 <ul>

@@ -191,10 +191,10 @@
 
 <div class="header">
   <h1>UIC IVR — Architect Interview Questions</h1>
-  <p>30 Questions Covering System Design, LLM Strategy, Infrastructure & Security</p>
+  <p>40 Questions Covering System Design, LLM Strategy, Infrastructure & Security</p>
   <div class="stats">
-    <div class="stat"><span class="num">35</span><span class="label">Questions</span></div>
-    <div class="stat"><span class="num">7</span><span class="label">Categories</span></div>
+    <div class="stat"><span class="num">40</span><span class="label">Questions</span></div>
+    <div class="stat"><span class="num">8</span><span class="label">Categories</span></div>
     <div class="stat"><span class="num">3</span><span class="label">Difficulty Levels</span></div>
   </div>
 </div>
@@ -215,7 +215,7 @@
     </div>
     <div>
       <div class="cat-label">LLM Strategy & Voice AI</div>
-      <a href="#q6">Q6. Dual-LLM tier approach</a>
+      <a href="#q6">Q6. Same model, dual config approach</a>
       <a href="#q7">Q7. LLM provider failover</a>
       <a href="#q8">Q8. STT pipeline (Deepgram + Realtime)</a>
       <a href="#q9">Q9. TTS strategy & latency</a>
@@ -260,6 +260,14 @@
       <a href="#q33">Q33. Per-field confirmation & smart correction</a>
       <a href="#q34">Q34. Beneficiary management state machine</a>
       <a href="#q35">Q35. API failure escalation pattern</a>
+    </div>
+    <div>
+      <div class="cat-label">Integration, Testing & DevOps</div>
+      <a href="#q36">Q36. Twilio webhook auto-sync on startup</a>
+      <a href="#q37">Q37. RAG-powered FAQ with pgvector</a>
+      <a href="#q38">Q38. Beneficiary state machine design</a>
+      <a href="#q39">Q39. Webchat & browser softphone architecture</a>
+      <a href="#q40">Q40. Mock API & testing strategy</a>
     </div>
   </div>
 </div>
@@ -412,27 +420,28 @@
 <div class="qa-card" id="q6">
   <div class="qa-header" onclick="toggle(this)">
     <span class="qa-num">6</span>
-    <span class="qa-question">Why a dual-LLM tier architecture? Why not use a single model for everything?<span class="diff-label diff-basic">Foundational</span></span>
+    <span class="qa-question">Why the same model for both router and service nodes? Why not a smaller model for one tier?<span class="diff-label diff-basic">Foundational</span></span>
     <span class="qa-toggle">&#9660;</span>
   </div>
   <div class="qa-body"><div class="qa-content">
-    <p><strong>Two tiers optimized for different concerns:</strong></p>
-    <p><strong>Tier 1 — Router LLM (Groq, Qwen 27B):</strong></p>
+    <p><strong>Same model (Groq Qwen 27B), different configurations optimized for different task profiles:</strong></p>
+    <p><strong>Router config (classification task):</strong></p>
     <ul>
-      <li>Purpose: Single-turn intent classification</li>
       <li>Config: <code>temperature=0</code>, <code>max_tokens=20</code></li>
-      <li>Latency: Sub-200ms (Groq's custom LPU hardware)</li>
-      <li>Cost: Minimal (tiny output per call)</li>
-      <li>Why Groq? Traditional cloud LLM APIs (OpenAI, Bedrock) have 400-800ms inference. For voice, every 100ms matters because the caller is waiting in silence. Groq delivers 10x faster inference.</li>
+      <li>Outputs a single word (<code>policy_info</code>, <code>payment</code>, etc.) &mdash; deterministic classification</li>
+      <li>Runs on <strong>every caller turn</strong> &mdash; latency-critical (sub-200ms on Groq LPU)</li>
+      <li>Routing is actually the <strong>harder NLU task</strong>: it must handle ambiguous utterances like "I wanna check if my premium went up and also change my beneficiary" and correctly classify multi-intent. A smaller model would risk misclassification, which derails the entire call.</li>
     </ul>
-    <p><strong>Tier 2 — Service LLM (same Groq model, higher token budget):</strong></p>
+    <p><strong>Service config (generation task):</strong></p>
     <ul>
-      <li>Purpose: Generate natural voice responses from API data</li>
       <li>Config: <code>temperature=0.3</code>, <code>max_tokens=200</code></li>
-      <li>Uses the full system prompt with voice IVR rules (speak naturally, use contractions, etc.)</li>
+      <li>Generates 1-3 natural sentences from structured API data</li>
+      <li>Runs <strong>once per resolved intent</strong> &mdash; less frequency-sensitive</li>
+      <li>This is actually the <strong>simpler task</strong>: formatting known data ("Your premium is $125/month, paid through October 2026") into natural speech. The slight temperature adds phrasing variety.</li>
     </ul>
-    <p><strong>Why not one model?</strong> The router is called on every single turn. If we used a large model (GPT-4, Claude) with the full system prompt for routing, we'd add 500ms+ to every turn just for intent classification. The dual-tier approach lets us use a fast/cheap model for the frequent routing decision and a slightly richer call for response generation.</p>
-    <p><strong>Provider toggle:</strong> <code>LLM_PROVIDER</code> env var switches both tiers between Groq and Amazon Bedrock (Nova Micro). Bedrock is the fallback for production if Groq has availability issues.</p>
+    <p><strong>Why the same model for both?</strong> The router needs the full 27B for accurate classification on ambiguous input. The service nodes could potentially use a smaller model (since they're just formatting data), but using the same model avoids operational overhead of managing two models. At scale, service nodes are the candidates for dropping to a cheaper/smaller model &mdash; not the router.</p>
+    <p><strong>Why not a single config?</strong> The router must be deterministic (temp=0) with minimal output (20 tokens). Service nodes need creativity (temp=0.3) and longer output (200 tokens). Sharing one config would either make routing non-deterministic or make service responses robotic.</p>
+    <p><strong>Provider toggle:</strong> <code>LLM_PROVIDER</code> env var switches both tiers between Groq (default, sub-200ms) and Amazon Bedrock (Nova Micro, AWS-native fallback for Groq outages).</p>
   </div></div>
 </div>
 
@@ -1458,6 +1467,186 @@ if not result["success"]:
     </ol>
     <p><strong>Design principle:</strong> In a voice IVR, dead air is the worst possible outcome. The caller doesn't know if the system crashed, if they should hang up, or if something is loading. Every error path must either (a) retry with a clear re-prompt, or (b) escalate to a human. There is no acceptable third option.</p>
     <p><strong>The <code>&lt;Hangup&gt;</code> after <code>&lt;Dial&gt;</code>:</strong> After a <code>&lt;Dial&gt;</code> that fails (agent doesn't answer), Twilio continues to the next TwiML verb. Without an explicit <code>&lt;Hangup&gt;</code>, the call redirects back to the IVR — creating an infinite loop (BUG-013). The hangup ensures a clean end.</p>
+  </div></div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- SECTION 8: Integration, Testing & DevOps -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 class="section-title" id="s8"><span class="section-icon">8</span> Integration, Testing & DevOps</h2>
+
+<!-- Q36 -->
+<div class="qa-card" id="q36">
+  <div class="qa-header" onclick="toggle(this)">
+    <span class="qa-num">36</span>
+    <span class="qa-question">How does the system automatically sync Twilio webhooks on startup? What happens when you switch from local development (ngrok) to a deployed ALB?<span class="diff-label diff-basic">Foundational</span></span>
+    <span class="qa-toggle">&#9660;</span>
+  </div>
+  <div class="qa-body"><div class="qa-content">
+    <p><strong>The problem:</strong> Every time the application starts — locally, in Docker, or on ECS — the Twilio phone number and TwiML app webhooks must point to the correct URL. Manually updating these in the Twilio console after each deploy or ngrok restart is error-prone and slow.</p>
+    <p><strong>Solution: <code>services/twilio_webhook_sync.py</code></strong></p>
+    <p>On startup (controlled by <code>SYNC_TWILIO_WEBHOOKS=true</code>), the sync service:</p>
+    <ol>
+      <li><strong>Determine base URL:</strong>
+        <ul>
+          <li>If <code>TWILIO_BASE_URL</code> is set → use that (production/staging ALB URL)</li>
+          <li>If empty → auto-detect ngrok by querying <code>http://localhost:4040/api/tunnels</code> and extracting the HTTPS tunnel URL</li>
+        </ul>
+      </li>
+      <li><strong>Update phone number webhook:</strong> Sets the voice URL of phone <code>+19087425347</code> to <code>{BASE_URL}/twilio/voice</code></li>
+      <li><strong>Update TwiML app webhook:</strong> Sets the TwiML app <code>ivr-twiML</code> voice URL to <code>{BASE_URL}/webhook/voice</code></li>
+    </ol>
+    <pre><code># Simplified flow:
+base_url = settings.TWILIO_BASE_URL or detect_ngrok_url()
+twilio_client.incoming_phone_numbers(SID).update(voice_url=f"{base_url}/twilio/voice")
+twilio_client.applications(TWIML_SID).update(voice_url=f"{base_url}/webhook/voice")</code></pre>
+    <p><strong>Why two webhooks?</strong></p>
+    <ul>
+      <li><strong>Phone number webhook</strong> (<code>/twilio/voice</code>) — handles inbound PSTN calls via Media Streams (WebSocket mode)</li>
+      <li><strong>TwiML app webhook</strong> (<code>/webhook/voice</code>) — handles browser softphone calls via the Voice JS SDK (webhook mode)</li>
+    </ul>
+    <p><strong>Tradeoff:</strong> The ngrok auto-detection assumes ngrok is running locally on port 4040 (default). If using a different tunnel tool or custom port, <code>TWILIO_BASE_URL</code> must be set manually. In production (ECS), the ALB URL is always set explicitly.</p>
+  </div></div>
+</div>
+
+<!-- Q37 -->
+<div class="qa-card" id="q37">
+  <div class="qa-header" onclick="toggle(this)">
+    <span class="qa-num">37</span>
+    <span class="qa-question">Explain the RAG architecture for the FAQ node. How are documents embedded, stored, and retrieved — and what happens when the knowledge base has no relevant answer?<span class="diff-label diff-inter">Intermediate</span></span>
+    <span class="qa-toggle">&#9660;</span>
+  </div>
+  <div class="qa-body"><div class="qa-content">
+    <p><strong>RAG pipeline overview:</strong></p>
+    <ol>
+      <li><strong>Document ingestion:</strong> Insurance knowledge documents (policy terms, FAQs, procedures) are chunked and embedded using an embedding model, then stored in PostgreSQL with the <code>pgvector</code> extension.</li>
+      <li><strong>Retrieval:</strong> When the FAQ node is triggered, the caller's utterance is embedded and a cosine similarity search finds the top-K most relevant chunks from pgvector.</li>
+      <li><strong>Generation:</strong> Retrieved chunks are injected into the LLM prompt with a strict constraint: <em>"Use ONLY the following information to answer. Do not add information from your training data."</em> This prevents hallucination about insurance products.</li>
+    </ol>
+    <p><strong>Feature flags:</strong></p>
+    <pre><code>ENABLE_RAG = true          # Toggle RAG on/off (fallback: canned responses)
+FAQ_FALLBACK_TO_ESCALATE = false  # On RAG miss: false → "I don't have info on that"
+                                   #              true  → transfer to live agent</code></pre>
+    <p><strong>Fallback chain:</strong></p>
+    <ul>
+      <li><strong>RAG hit (similarity &gt; threshold):</strong> LLM generates answer grounded in retrieved context</li>
+      <li><strong>RAG miss + <code>FAQ_FALLBACK_TO_ESCALATE=false</code>:</strong> Return canned response: "I don't have information on that topic. Is there something else I can help with?"</li>
+      <li><strong>RAG miss + <code>FAQ_FALLBACK_TO_ESCALATE=true</code>:</strong> Set <code>transfer_to</code> and escalate to live agent — used when missing FAQ answers indicate a gap that needs human handling</li>
+      <li><strong>RAG disabled (<code>ENABLE_RAG=false</code>):</strong> Skip vector search entirely, use canned responses only</li>
+    </ul>
+    <p><strong>Auth override:</strong> The FAQ node calls <code>ensure_authenticated()</code> like all service nodes. If the caller is already authenticated, FAQ doesn't re-prompt for PII — it uses the existing auth state.</p>
+    <p><strong>Why pgvector over a dedicated vector DB (Pinecone, Weaviate)?</strong> We already have PostgreSQL for checkpointing and call history. pgvector lets us run vector similarity search in the same database — no additional infrastructure, no cross-service latency, and simpler operational overhead for a dev/early-production system.</p>
+  </div></div>
+</div>
+
+<!-- Q38 -->
+<div class="qa-card" id="q38">
+  <div class="qa-header" onclick="toggle(this)">
+    <span class="qa-num">38</span>
+    <span class="qa-question">The beneficiary management flow is described as a "full state machine." Walk through every state transition, and explain the business constraints around percentages, limits, and name matching.<span class="diff-label diff-adv">Advanced</span></span>
+    <span class="qa-toggle">&#9660;</span>
+  </div>
+  <div class="qa-body"><div class="qa-content">
+    <p><strong>State machine transitions (<code>beneficiary_step</code>):</strong></p>
+    <pre><code>listing → asking_action → [add | remove | update] → collecting → confirming → submitting → complete
+  ↑                                                                    │ (no)
+  └────────────────────────────────────────────────────────────────────┘</code></pre>
+    <ol>
+      <li><strong><code>listing</code>:</strong> Fetch current beneficiaries from API. Read each name + percentage: "Your current beneficiaries are: Jane Doe at 50%, John Doe at 50%."</li>
+      <li><strong><code>asking_action</code>:</strong> Ask "Would you like to add, remove, or update a beneficiary, or are you done?" Detect intent via keyword matching with <strong>word boundaries</strong> (<code>re.search(r'\badd\b')</code>, not substring <code>"add" in text</code> — BUG-023a prevents "address" from matching "add").</li>
+      <li><strong><code>collecting_name</code>:</strong> Collect new beneficiary name (add) or identify existing beneficiary (remove/update) via <strong>fuzzy matching</strong> — <code>difflib.SequenceMatcher</code> with threshold &ge; 0.80. If caller says "remove John" and beneficiaries include "John A. Doe", it matches.</li>
+      <li><strong><code>collecting_relationship</code>:</strong> Relationship type (spouse, child, parent, sibling, other).</li>
+      <li><strong><code>collecting_percentage</code>:</strong> Allocation percentage. System validates total across all beneficiaries = 100%.</li>
+      <li><strong><code>confirming_*</code>:</strong> Read back: "You'd like to add Jane Smith, spouse, at 25%. Is that correct?" If "no" → back to collecting.</li>
+      <li><strong><code>submitting</code>:</strong> Call beneficiary API. On success → show updated list. On failure → escalate (BUG-021 pattern).</li>
+      <li><strong><code>complete</code>:</strong> "Your beneficiaries have been updated." On re-entry, resets to <code>listing</code> (BUG-020 fix).</li>
+    </ol>
+    <p><strong>Business constraints:</strong></p>
+    <ul>
+      <li><strong>Maximum 5 beneficiaries</strong> — if at limit, reject add with: "You already have the maximum of 5 beneficiaries. Would you like to remove one first?"</li>
+      <li><strong>Minimum 1 beneficiary</strong> — cannot remove the last beneficiary: "You must have at least one beneficiary on file."</li>
+      <li><strong>Auto-redistribute percentages:</strong> When removing a beneficiary, their percentage is redistributed proportionally among remaining beneficiaries. E.g., remove a 30% beneficiary from [30%, 40%, 30%] → remaining get [57%, 43%] (proportional).</li>
+      <li><strong>Percentage validation:</strong> New allocation must total exactly 100%. If caller says "25%" but remaining only sum to 60%, the system prompts: "The remaining beneficiaries total 60%. The new allocation should bring the total to 100%."</li>
+    </ul>
+    <p><strong>Tradeoff:</strong> This is the most complex state machine in the system (8+ states). Each state needs its own error handling, retry logic, and escalation path. Testing requires covering every transition — add-then-remove, update-percentage, max-limit-hit, fuzzy-name-mismatch — making it the most test-heavy node.</p>
+  </div></div>
+</div>
+
+<!-- Q39 -->
+<div class="qa-card" id="q39">
+  <div class="qa-header" onclick="toggle(this)">
+    <span class="qa-num">39</span>
+    <span class="qa-question">Describe the browser softphone and webchat architecture. How does a browser-based call reach the same LangGraph pipeline as a PSTN call, and what's the HTTPS challenge?<span class="diff-label diff-inter">Intermediate</span></span>
+    <span class="qa-toggle">&#9660;</span>
+  </div>
+  <div class="qa-body"><div class="qa-content">
+    <p><strong>Browser softphone (<code>webhooks/browser_client.py</code>):</strong></p>
+    <ol>
+      <li><strong>Serve HTML:</strong> <code>GET /client</code> returns a single-page app with the Twilio Voice JS SDK (<code>twilio.min.js</code> bundled locally).</li>
+      <li><strong>Token generation:</strong> <code>GET /client/token</code> creates a Twilio Access Token with a <code>VoiceGrant</code> scoped to the TwiML app SID. The JS SDK uses this token to register as a SIP endpoint.</li>
+      <li><strong>Call initiation:</strong> User clicks "Call" → JS SDK connects to Twilio → Twilio hits the TwiML app webhook (<code>/webhook/voice</code>) → same LangGraph pipeline as PSTN calls.</li>
+      <li><strong>Dashboard features:</strong> Status indicator (ready/calling/active/error), mute button, call timer, live log panel via Server-Sent Events (<code>/client/logs/stream</code>).</li>
+    </ol>
+    <p><strong>Text chat (<code>webhooks/chat.py</code>):</strong></p>
+    <ul>
+      <li>Alternative text-based interface — sends utterance text directly to LangGraph, returns text response</li>
+      <li>No STT/TTS involved — useful for debugging flows without voice/Twilio overhead</li>
+      <li>Same graph invocation: <code>cno_graph.ainvoke()</code> with a synthetic <code>call_sid</code></li>
+    </ul>
+    <p><strong>The HTTPS challenge:</strong></p>
+    <ul>
+      <li>Browsers require HTTPS to grant microphone access (<code>getUserMedia</code>). The ALB serves HTTP only in dev.</li>
+      <li><strong>Production fix:</strong> CloudFront distribution in front of ALB with ACM certificate for HTTPS termination.</li>
+      <li><strong>Dev workaround:</strong> Launch Chrome with <code>--unsafely-treat-insecure-origin-as-secure=http://ALB_URL</code> flag to bypass the restriction.</li>
+    </ul>
+    <p><strong>Dashboard auth:</strong> HTTP Basic Auth via <code>DASHBOARD_USERNAME</code> + <code>DASHBOARD_PASSWORD</code> env vars. The <code>require_dashboard_auth()</code> dependency protects all <code>/client</code> endpoints. Leave password empty to disable (dev only).</p>
+    <p><strong>Tradeoff:</strong> Bundling <code>twilio.min.js</code> locally (instead of CDN) ensures the softphone works in air-gapped or restricted networks, but requires manual updates when Twilio releases SDK patches.</p>
+  </div></div>
+</div>
+
+<!-- Q40 -->
+<div class="qa-card" id="q40">
+  <div class="qa-header" onclick="toggle(this)">
+    <span class="qa-num">40</span>
+    <span class="qa-question">Explain the testing strategy: mock API design, the difference between unit tests and eval tests, and how you handle port conflicts and environment isolation.<span class="diff-label diff-adv">Advanced</span></span>
+    <span class="qa-toggle">&#9660;</span>
+  </div>
+  <div class="qa-body"><div class="qa-content">
+    <p><strong>Three-tier testing approach:</strong></p>
+    <p><strong>1. Unit tests (<code>tests/test_*.py</code>):</strong></p>
+    <ul>
+      <li>Test individual functions and nodes in isolation with mocked dependencies</li>
+      <li><code>test_card_capture.py</code> — 80+ cases covering every STT variation (homophones, "double" prefixes, noise words, comma-separated digits)</li>
+      <li><code>test_graph.py</code> — LangGraph node invocation with mocked LLM responses</li>
+      <li><code>test_nodes.py</code> — Individual node logic (auth state transitions, slot validation)</li>
+      <li><code>test_ws_stream.py</code> — WebSocket media stream handler with simulated Twilio events</li>
+    </ul>
+    <p><strong>2. Eval tests (<code>tests/eval_*.py</code>):</strong></p>
+    <ul>
+      <li>Use <strong>real LLM calls</strong> — not mocked. Measure accuracy, not just correctness.</li>
+      <li><code>eval_intents.py</code> — Router classification accuracy across 50+ utterance variations (expected intent vs. actual)</li>
+      <li><code>eval_conversation.py</code> — Full multi-turn conversation flows (auth → policy → payment) with assertion on each turn's output</li>
+      <li><code>eval_rag.py</code> — FAQ retrieval relevance scoring (retrieved chunks vs. expected knowledge)</li>
+      <li><code>eval_e2e_twilio.py</code> — End-to-end Twilio integration: actually places a call, speaks via TTS, and verifies the response</li>
+    </ul>
+    <p><strong>3. Mock API (<code>mock_cno_api.py</code>):</strong></p>
+    <ul>
+      <li>FastAPI app on port 8001 implementing all UIC API endpoints</li>
+      <li><strong>In-memory mutable data:</strong> Beneficiary data stored in <code>BENEFICIARY_DATA</code> dict — add/remove/update operations modify it during the test, then reset</li>
+      <li>Realistic responses: party search returns matching records, payment API returns confirmation codes, holding inquiry returns policy details</li>
+      <li>Runs as a separate Docker container (<code>Dockerfile.mock</code>) or standalone process</li>
+    </ul>
+    <p><strong>Port conflict handling:</strong></p>
+    <pre><code># If port 8001 has a zombie process that can't be killed:
+# Set env override to use port 8002
+CNO_API_BASE_URL=http://localhost:8002 uvicorn mock_cno_api:app --port 8002</code></pre>
+    <p><strong>CI pipeline (<code>.github/workflows/ci.yml</code>):</strong></p>
+    <ol>
+      <li>Unit tests run on every PR (no external dependencies)</li>
+      <li>Eval tests run on merge to main (require LLM API keys as GitHub secrets)</li>
+      <li>E2E Twilio tests run on manual trigger (require running infrastructure)</li>
+    </ol>
+    <p><strong>Design principle (from BUG-024 workflow):</strong> For complex extraction/parsing logic, build a standalone test file first with all variations, get 100% pass rate, <em>then</em> plug into the codebase. This avoids the cycle of "fix one case, break another."</p>
   </div></div>
 </div>
 

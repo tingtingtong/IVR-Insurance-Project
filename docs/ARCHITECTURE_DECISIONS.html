@@ -215,15 +215,16 @@
   <!-- Decision 2 -->
   <div class="card">
     <span class="card-badge">#2</span>
-    <h3>Dual LLM Strategy (Router vs Service Nodes)</h3>
-    <span class="subtitle">Lightweight model for intent routing, larger model for service nodes</span>
-    <p><span class="label-decision">Decision</span> Run two different LLM tiers: a fast, inexpensive model for intent classification and a more capable model for generating service responses.</p>
-    <p><span class="label-why">Why</span> The router runs on every single caller utterance — it needs to be fast and cheap. Service nodes (billing lookup, claims status, policy changes) need deeper reasoning and more nuanced language generation.</p>
+    <h3>Same Model, Dual Configuration (Router vs Service Nodes)</h3>
+    <span class="subtitle">Same model with different task profiles — classification vs generation</span>
+    <p><span class="label-decision">Decision</span> Use the same model (Groq Qwen 27B) for both tiers, configured differently: the router runs at temp=0 with max_tokens=20 for deterministic classification, while service nodes run at temp=0.3 with max_tokens=200 for natural response generation.</p>
+    <p><span class="label-why">Why</span> Routing is the harder NLU task — it must correctly classify ambiguous, multi-intent utterances on every turn. A smaller model risks misclassification that derails the call. Service nodes do simpler work (formatting structured API data into natural speech) but need more output tokens and slight temperature for natural phrasing.</p>
     <ul>
-      <li>Router model (e.g., Groq/Llama or Bedrock Nova Micro): sub-200ms latency, handles intent classification and slot extraction.</li>
-      <li>Service model (e.g., larger Llama variant or Claude): handles complex responses, multi-step reasoning, and policy-specific language.</li>
-      <li>This separation gives sub-second routing with high-quality responses where it actually matters to the caller experience.</li>
-      <li>Cost savings are significant: routing is ~90% of LLM calls but uses the cheapest tier.</li>
+      <li>Router config (temp=0, max_tokens=20): deterministic single-word classification; runs on every utterance; sub-200ms on Groq LPU hardware.</li>
+      <li>Service config (temp=0.3, max_tokens=200): 1-3 sentence natural responses from API data; runs once per resolved intent.</li>
+      <li>Same model avoids operational overhead of managing two separate models while giving accurate routing and natural responses.</li>
+      <li>Cost savings: routing uses ~90% of LLM calls but with tiny token output (20 vs 200 tokens).</li>
+      <li>Production scaling: if cost optimization is needed, service nodes (simpler generation) could drop to a smaller/cheaper model while the router stays on the full 27B for accuracy.</li>
     </ul>
   </div>
 
@@ -519,7 +520,7 @@
         </tr>
         <tr>
           <td>"Why Groq over OpenAI for LLM?"</td>
-          <td>Groq offers sub-200ms inference on Llama models — critical for voice latency where every millisecond counts. OpenAI's GPT models have higher latency (400-800ms typical). OpenAI is used only for generating embeddings (where latency is less critical, and quality matters more).</td>
+          <td>Groq offers sub-200ms inference on its custom LPU hardware — critical for voice latency where every millisecond counts. Currently running Qwen 27B (migrated from Llama 3.3 70B after Groq deprecated it, demonstrating the provider-agnostic design). OpenAI's GPT models have higher latency (400-800ms typical). OpenAI is used only for generating embeddings (where latency is less critical, and quality matters more).</td>
         </tr>
         <tr>
           <td>"Why ElevenLabs over Amazon Polly?"</td>
