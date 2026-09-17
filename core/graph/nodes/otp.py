@@ -364,14 +364,15 @@ async def otp_node(state: CNOState) -> dict:
         cvv = _extract_digits(last_human)
         from utils.payment_validator import validate_cvv, try_trim_extra_digits
         ok, err = validate_cvv(cvv)
-        if not ok and len(cvv) in (5, 6):
-            # Try trimming STT duplicates → 3 or 4 digits
-            for target in (3, 4):
-                corrected = try_trim_extra_digits(cvv, expected_len=target, max_extra=3)
-                if corrected:
-                    cvv = corrected
-                    ok = True
-                    break
+        if not ok and 5 <= len(cvv) <= 6:
+            # Determine expected CVV length from card type
+            # Amex (starts with 34 or 37) uses 4-digit CID; all others use 3-digit CVV
+            card_num = otp_data.get("card_number", "")
+            expected_cvv_len = 4 if card_num[:2] in ("34", "37") else 3
+            corrected = try_trim_extra_digits(cvv, expected_len=expected_cvv_len, max_extra=3)
+            if corrected:
+                cvv = corrected
+                ok = True
         if not ok:
             return {
                 "otp_step": "collecting_card_cvv",
