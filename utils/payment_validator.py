@@ -73,6 +73,51 @@ def validate_account_number(account: str) -> tuple[bool, str]:
     return True, ""
 
 
+def try_trim_extra_digits(digits: str, expected_len: int,
+                          checksum_fn=None, max_extra: int = 4) -> str:
+    """Try removing extra duplicate digits from an STT-captured number.
+
+    STT sometimes doubles digits (e.g., '111' becomes '1111'). This function
+    finds consecutive duplicate digits and tries removing extras to reach the
+    expected length. If a checksum function is provided, the result must pass it.
+    If exactly one valid candidate is found, return it. Otherwise return "".
+
+    Args:
+        digits: The raw digit string (too long).
+        expected_len: Target length (e.g., 16 for cards, 10 for phones, 9 for routing).
+        checksum_fn: Optional validation function(str) -> bool (e.g., luhn_check).
+        max_extra: Maximum extra digits to attempt correction for (default 4).
+    """
+    extras = len(digits) - expected_len
+    if extras < 1 or extras > max_extra:
+        return ""
+
+    candidates: set[str] = set()
+
+    def _search(s: str, removals_left: int):
+        if removals_left == 0:
+            if len(s) == expected_len:
+                if checksum_fn is None or checksum_fn(s):
+                    candidates.add(s)
+            return
+        if len(s) <= expected_len:
+            return
+        if len(s) - removals_left < expected_len:
+            return
+        for i in range(len(s)):
+            if (i > 0 and s[i] == s[i - 1]) or (i < len(s) - 1 and s[i] == s[i + 1]):
+                reduced = s[:i] + s[i + 1:]
+                _search(reduced, removals_left - 1)
+                if len(candidates) > 1:
+                    return
+
+    _search(digits, extras)
+
+    if len(candidates) == 1:
+        return candidates.pop()
+    return ""
+
+
 def generate_payment_id() -> str:
     """Generate a unique payment ID: PAY-YYYYMMDD-XXXXXX."""
     import random

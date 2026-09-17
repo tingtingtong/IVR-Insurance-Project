@@ -110,6 +110,40 @@ def _is_confirmation_no(text: str) -> bool:
     return False
 
 
+def _is_unrecognizable(text: str) -> bool:
+    """
+    Return True if the utterance looks like noise, STT garbage, or contextless data
+    rather than a genuine FAQ question. Used to decide whether to re-prompt vs route to FAQ.
+
+    Genuine FAQ examples (return False): "What is a beneficiary?", "How do I change my address?"
+    Noise examples (return True): "1234567890", "15th July 1965", "uh", "hello hello"
+    """
+    import re
+    stripped = re.sub(r"[^a-z0-9 ]", "", text.lower()).strip()
+    words = stripped.split()
+
+    # Mostly digits — likely a phone number, DOB, or policy number said out of context
+    digit_ratio = sum(c.isdigit() for c in stripped) / max(len(stripped), 1)
+    if digit_ratio > 0.3:
+        return True
+
+    # Date-like patterns — months or ordinals mixed with numbers (DOB said out of context)
+    _MONTH_WORDS = {"january", "february", "march", "april", "may", "june",
+                    "july", "august", "september", "october", "november", "december",
+                    "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "oct", "nov", "dec"}
+    if any(w in _MONTH_WORDS for w in words) and any(c.isdigit() for c in stripped):
+        return True
+
+    # Very short utterances (1-3 words) that don't contain question/request signal words
+    _FAQ_SIGNAL_WORDS = {"what", "how", "why", "when", "where", "can", "could", "do", "does",
+                         "is", "are", "explain", "tell", "help", "question", "know", "check",
+                         "want", "need", "would", "like", "please", "about", "my"}
+    if len(words) <= 3 and not any(w in _FAQ_SIGNAL_WORDS for w in words):
+        return True
+
+    return False
+
+
 async def _invoke_llm_with_retry(messages: list, max_attempts: int = 3) -> object:
     """
     Invoke the LLM with exponential backoff retry for transient 503/429 errors.
@@ -307,6 +341,25 @@ async def router_node(state: CNOState) -> dict:
         intent = _FLOW_TO_INTENT.get(active_flow, "escalate") if active_flow else "escalate"
         pending = []
 
+    # ── Unrecognized utterance handling ──────────────────────────────────────
+    # Fix #29: When the LLM can't classify (defaults to "faq") and there's no
+    # active flow, re-ask the last question instead of routing to FAQ which
+    # confuses callers with "I don't have info on that."
+    # After 3 consecutive unrecognized turns → escalate to live agent.
+    unrecognized_count = state.get("unrecognized_count", 0)
+    if intent == "faq" and not active_flow and _is_unrecognizable(last_human):
+        unrecognized_count += 1
+        if unrecognized_count >= 3:
+            log_event(call_sid, "unrecognized_escalate", count=unrecognized_count,
+                      input=last_human[:80])
+            return {"current_intent": "escalate", "current_node": "router",
+                    "unrecognized_count": 0}
+        log_event(call_sid, "unrecognized_reprompt", count=unrecognized_count,
+                  input=last_human[:80])
+        # Return empty intent — graph routes to END, twilio_voice.py re-prompts
+        return {"current_intent": "", "current_node": "router",
+                "unrecognized_count": unrecognized_count}
+
     # ── escalate_only: suppress any non-escalation pivot ─────────────────────
     if cs_mode == "escalate_only" and intent != "escalate":
         intent = _FLOW_TO_INTENT.get(active_flow, intent)
@@ -327,4 +380,6 @@ async def router_node(state: CNOState) -> dict:
     call_sid = state.get("call_sid", "unknown")
     log_event(call_sid, "intent_detected", intent=intent, input=last_human[:80],
               pending=pending if pending else None)
-    return {"current_intent": intent, "current_node": "router", "pending_intents": pending}
+    # Reset unrecognized counter on successful classification
+    return {"current_intent": intent, "current_node": "router",
+            "pending_intents": pending, "unrecognized_count": 0}

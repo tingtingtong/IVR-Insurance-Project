@@ -107,7 +107,7 @@ async def incoming_call(request: Request):
                     state = await session.get_state(call_sid)
                     state["pii_collected"] = {"phoneNumber": digits}
                     state["candidate_party"] = result["parties"][0]
-                    state["auth_step"] = "collecting_dob"
+                    state["auth_step"] = "confirming_ani"
                     await session.save_state(call_sid, state)
                     log_event(call_sid, "ani_match", phone=digits[:3] + "***" + digits[7:])
                 else:
@@ -168,11 +168,11 @@ async def gather_speech(request: Request):
         # so the graph checkpoint starts with phone + candidate_party populated.
         session = SessionService()
         sess_state = await session.get_state(call_sid)
-        if sess_state.get("auth_step") == "collecting_dob" and sess_state.get("candidate_party"):
-            # ANI match was found — seed the graph state
+        if sess_state.get("auth_step") == "confirming_ani" and sess_state.get("candidate_party"):
+            # ANI match was found — seed the graph state (Fix #28: confirm before skipping)
             graph_input["pii_collected"] = sess_state["pii_collected"]
             graph_input["candidate_party"] = sess_state["candidate_party"]
-            graph_input["auth_step"] = "collecting_dob"
+            graph_input["auth_step"] = "confirming_ani"
             # Clear session flag so we don't re-inject on subsequent turns
             sess_state["auth_step"] = ""
             await session.save_state(call_sid, sess_state)
@@ -232,7 +232,16 @@ async def gather_speech(request: Request):
                 media_type="application/xml",
             )
 
-        speak = tts_text or "I'm sorry, I didn't understand. Could you please repeat that?"
+        # Fix #29: When tts_text is empty (unrecognized utterance → END path),
+        # re-prompt with a helpful message instead of FAQ fallback
+        if not tts_text:
+            unrecognized = result.get("unrecognized_count", 0)
+            if unrecognized >= 2:
+                speak = "I'm having trouble understanding. You can ask about your policy status, make a payment, check your loan, or I can transfer you to an agent. How can I help?"
+            else:
+                speak = "I didn't quite catch that. How can I help you today? You can ask about your policy, make a payment, or manage your beneficiaries."
+        else:
+            speak = tts_text
         return Response(
             content=_gather_response(speak),
             media_type="application/xml",

@@ -42,6 +42,13 @@ def normalize_phone_with_hint(utterance: str) -> tuple[str, str]:
     if len(digits) == 10:
         return (digits, "")
 
+    # Smart correction: 11-12 digits (not starting with "1") — try removing STT duplicates
+    if 11 <= len(digits) <= 12 and not (len(digits) == 11 and digits[0] == "1"):
+        from utils.payment_validator import try_trim_extra_digits
+        corrected = try_trim_extra_digits(digits, expected_len=10)
+        if corrected:
+            return (corrected, "")
+
     if raw_count == 9:
         hint = (
             "I only caught 9 digits. "
