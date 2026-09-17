@@ -16,13 +16,24 @@ router = APIRouter(
 
 
 @router.get("/calls")
-async def api_calls():
-    return JSONResponse({"calls": get_calls()})
+async def api_calls(limit: int = 50, offset: int = 0):
+    from services import call_db as _db
+    limit = max(1, min(limit, 200))
+    offset = max(0, offset)
+    rows, total = _db.list_calls(limit=limit, offset=offset)
+    if not rows and offset == 0:
+        rows = get_calls()
+        total = len(rows)
+    return JSONResponse({"calls": rows, "total": total, "limit": limit, "offset": offset})
 
 
 @router.get("/calls/{call_sid}")
 async def api_call_detail(call_sid: str):
-    return JSONResponse(get_call(call_sid))
+    from services import call_db as _db
+    call = get_call(call_sid)
+    if not call.get("call_sid"):
+        call = _db.load_call(call_sid)
+    return JSONResponse(call)
 
 
 @router.get("/calls/{call_sid}/events")

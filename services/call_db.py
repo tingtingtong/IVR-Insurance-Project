@@ -164,6 +164,20 @@ def list_calls(limit: int = 50, offset: int = 0) -> tuple[list[dict], int]:
         return [], 0
 
 
+def load_call(call_sid: str) -> dict:
+    conn = _get_conn()
+    if conn is None:
+        return {}
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT data FROM ivr_call_records WHERE call_sid = %s", (call_sid,))
+            row = cur.fetchone()
+            return row[0] if row else {}
+    except Exception as e:
+        log.warning("call_db_load_one_failed", call_sid=call_sid, error=str(e))
+        return {}
+
+
 def load_recent_calls(limit: int = 100) -> list[dict]:
     """Load the most recent `limit` call records from PostgreSQL.
 
