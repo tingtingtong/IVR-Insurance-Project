@@ -7,7 +7,7 @@ resource "aws_ecs_cluster" "main" {
 # ── CloudWatch log group ────────────────────────────────────────────────────
 resource "aws_cloudwatch_log_group" "app" {
   name              = "/ecs/${var.environment}-${var.project}"
-  retention_in_days = 7
+  retention_in_days = var.environment == "prod" ? 90 : 7
 }
 
 # ── ECS Task Definition ────────────────────────────────────────────────────
