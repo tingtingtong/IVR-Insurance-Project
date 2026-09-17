@@ -148,3 +148,9 @@ variable "acm_certificate_arn" {
   type        = string
   default     = ""
 }
+
+variable "cno_api_base_url" {
+  description = "Policy-admin API base URL. Dev default is the mock sidecar. Prod must be the real API."
+  type        = string
+  default     = "http://localhost:8001"
+}

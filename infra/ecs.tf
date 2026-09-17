@@ -45,7 +45,7 @@ resource "aws_ecs_task_definition" "app" {
         { name = "REDIS_URL",        value = local.redis_url },
         { name = "DATABASE_URL",     value = local.db_url },
         { name = "APP_PORT",         value = tostring(var.app_port) },
-        { name = "CNO_API_BASE_URL", value = "http://localhost:8001" },
+        { name = "CNO_API_BASE_URL", value = var.cno_api_base_url },
         { name = "VALIDATE_TWILIO_SIGNATURE", value = var.environment == "prod" ? "true" : "false" },
         { name = "ALLOWED_ORIGINS",  value = var.allowed_origins },
         { name = "TWILIO_BASE_URL",  value = var.twilio_base_url },
@@ -120,7 +120,7 @@ resource "aws_ecs_task_definition" "app" {
         containerPort = 8001
         protocol      = "tcp"
       }]
-      essential = true
+      essential = var.environment != "prod"
       logConfiguration = {
         logDriver = "awslogs"
         options = {

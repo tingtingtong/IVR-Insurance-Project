@@ -18,6 +18,8 @@ ACH_AUTHORIZATION_SCRIPT = (
 def _generate_jwt(policy_number: str, amount: float) -> str:
     secret = settings.cno_jwt_secret
     if not secret:
+        if settings.is_prod:
+            raise RuntimeError("CNO_JWT_SECRET is required in production")
         _log.warning("jwt_secret_not_set", msg="CNO_JWT_SECRET is empty — using fallback dev secret")
         secret = "dev-fallback-secret-do-not-use-in-prod"
     payload = {
