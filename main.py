@@ -173,6 +173,30 @@ app.include_router(chat_router)
 app.include_router(dashboard_router)
 
 
+@app.get("/health/live")
+async def health_live():
+    return {"status": "ok"}
+
+
 @app.get("/health")
-async def health():
-    return {"status": "ok", "environment": settings.environment}
+@app.get("/health/ready")
+async def health_ready():
+    """ALB target-group check. 503 if Redis or Postgres is down so the task is drained."""
+    from fastapi.responses import JSONResponse
+    checks = {"redis": False, "postgres": False}
+    try:
+        import redis.asyncio as aioredis
+        r = aioredis.from_url(settings.redis_url, decode_responses=True)
+        await r.ping()
+        await r.aclose()
+        checks["redis"] = True
+    except Exception:
+        checks["redis"] = False
+    try:
+        from services.call_db import ping as pg_ping
+        checks["postgres"] = bool(pg_ping())
+    except Exception:
+        checks["postgres"] = False
+    ok = all(checks.values())
+    body = {"status": "ok" if ok else "degraded", "environment": settings.environment, "checks": checks}
+    return JSONResponse(body, status_code=200 if ok else 503)
