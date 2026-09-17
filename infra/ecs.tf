@@ -46,6 +46,9 @@ resource "aws_ecs_task_definition" "app" {
         { name = "DATABASE_URL",     value = local.db_url },
         { name = "APP_PORT",         value = tostring(var.app_port) },
         { name = "CNO_API_BASE_URL", value = "http://localhost:8001" },
+        { name = "VALIDATE_TWILIO_SIGNATURE", value = var.environment == "prod" ? "true" : "false" },
+        { name = "ALLOWED_ORIGINS",  value = var.allowed_origins },
+        { name = "TWILIO_BASE_URL",  value = var.twilio_base_url },
       ]
       secrets = [
         {
@@ -83,6 +86,22 @@ resource "aws_ecs_task_definition" "app" {
         {
           name      = "TWILIO_TWIML_APP_SID"
           valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:TWILIO_TWIML_APP_SID::"
+        },
+        {
+          name      = "DASHBOARD_PASSWORD"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:DASHBOARD_PASSWORD::"
+        },
+        {
+          name      = "WS_AUTH_TOKEN"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:WS_AUTH_TOKEN::"
+        },
+        {
+          name      = "CNO_JWT_SECRET"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:CNO_JWT_SECRET::"
+        },
+        {
+          name      = "CNO_API_KEY"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:CNO_API_KEY::"
         },
       ]
       logConfiguration = {

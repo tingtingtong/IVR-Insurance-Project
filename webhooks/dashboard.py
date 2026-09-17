@@ -273,12 +273,18 @@ from fastapi import Body
 
 @router.post("/config")
 async def api_config_update(payload: dict = Body(...)):
-    """Update a single .env key. Requires password."""
+    """Update a single .env key. Requires password. Disabled in prod (no writable .env on Fargate)."""
+    from config import settings as _settings
+    if _settings.is_prod:
+        return JSONResponse(
+            {"ok": False, "error": "Runtime .env updates are disabled in production"},
+            status_code=403,
+        )
+
     password = payload.get("password", "")
     key      = payload.get("key", "").strip().upper()
     value    = payload.get("value", "")
 
-    from config import settings as _settings
     cfg_pw = _settings.dashboard_password
     if not cfg_pw or not secrets.compare_digest(password.encode("utf-8"), cfg_pw.encode("utf-8")):
         return JSONResponse({"ok": False, "error": "Invalid password"}, status_code=403)

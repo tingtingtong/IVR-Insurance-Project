@@ -130,3 +130,15 @@ variable "redis_node_type" {
   type        = string
   default     = "cache.t4g.micro"
 }
+
+variable "allowed_origins" {
+  description = "CORS allowlist. Must not be * in prod."
+  type        = string
+  default     = "*"
+}
+
+variable "twilio_base_url" {
+  description = "Public HTTPS base URL Twilio uses for webhooks and Media Streams (e.g. https://ivr.example.com)"
+  type        = string
+  default     = ""
+}

@@ -10,16 +10,21 @@ Endpoints:
 """
 import uuid
 import structlog
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from langchain_core.messages import HumanMessage
 
 import core.graph.graph as _graph_module
 from services.conversation_store import add_chat_turn, get_chat, get_chats, ensure_chat
+from webhooks.security import require_dashboard_auth
 
 log = structlog.get_logger()
-router = APIRouter(prefix="/chat", tags=["webchat"])
+router = APIRouter(
+    prefix="/chat",
+    tags=["webchat"],
+    dependencies=[Depends(require_dashboard_auth)],
+)
 
 _GREETING = (
     "Hi! I'm your virtual insurance assistant. "
