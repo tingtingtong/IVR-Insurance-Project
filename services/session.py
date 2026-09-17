@@ -30,6 +30,12 @@ class SessionService:
     def _key(self, call_sid: str) -> str:
         return f"cno:session:{call_sid}"
 
+    async def acquire_lock(self, key: str, ttl: int = 60) -> bool:
+        """SET NX lock. Returns True if this caller owns the lock."""
+        r = await self._get_redis()
+        ok = await r.set(key, "1", nx=True, ex=ttl)
+        return bool(ok)
+
     async def init_session(self, call_sid: str) -> dict:
         """Create a blank session for a new call."""
         state = {

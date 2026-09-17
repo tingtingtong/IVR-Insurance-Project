@@ -36,6 +36,7 @@ async def process_card_payment(
     card_number: str,
     expiry: str,
     cvv: str,
+    idempotency_key: str = "",
 ) -> dict:
     """
     DEBIT_CREDIT_CARD_PAYMENT — JWT-auth integration flow.
@@ -59,6 +60,7 @@ async def process_card_payment(
         "Authorization": f"Bearer {access_token}",
         "X-Payment-JWT": jwt_token,
         "Content-Type":  "application/json",
+        "Idempotency-Key": idempotency_key or f"{policy_number}:{amount}:{card_number[-4:]}",
     }
     payload = {
         "PolicyNumber": policy_number,
@@ -95,6 +97,7 @@ async def process_ach_payment(
     routing_number: str,
     account_number: str,
     account_type: str = "checking",
+    idempotency_key: str = "",
 ) -> dict:
     """ACH / Bank payment — requires ACH authorization script read first."""
     # BUG-018: Pre-flight validation
@@ -112,6 +115,7 @@ async def process_ach_payment(
         "Authorization": f"Bearer {access_token}",
         "X-Payment-JWT": jwt_token,
         "Content-Type":  "application/json",
+        "Idempotency-Key": idempotency_key or f"{policy_number}:{amount}:{account_number[-4:]}",
     }
     payload = {
         "PolicyNumber":  policy_number,

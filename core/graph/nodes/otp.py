@@ -116,7 +116,8 @@ async def otp_node(state: CNOState) -> dict:
 
     # ── Step: ACH auth — wait for "I authorize" ───────────────────────────────
     if otp_step == "ach_auth_script":
-        if "authorize" in last_human.lower():
+        import re as _re
+        if _re.search(r"\bi authorize\b", last_human.lower()):
             otp_data["ach_authorized"] = True
             # BUG-016: Collect account number first (sensitive), routing via normal STT later
             return {
@@ -376,7 +377,7 @@ async def otp_node(state: CNOState) -> dict:
         return {
             "otp_step": "confirming_cvv",
             "otp_data": otp_data,
-            "tts_text": f"Security code {_spell_digits(cvv)}. Is that correct?",
+            "tts_text": f"I have a {len(cvv)}-digit security code. Is that correct?",
             "current_node": "otp", "active_flow": "otp",
         }
 
@@ -610,26 +611,37 @@ def _build_payment_result(result: dict, otp_data: dict) -> dict:
 
 
 async def _process_payment(otp_data: dict, policy_number: str, access_token: str) -> dict:
+    import uuid
     method = otp_data.get("payment_type", "card")
     amount = float(otp_data.get("amount", 0))
+    idempotency_key = otp_data.get("idempotency_key") or str(uuid.uuid4())
+    otp_data["idempotency_key"] = idempotency_key
 
     if method == "card":
-        return await process_card_payment(
+        result = await process_card_payment(
             policy_number=policy_number,
             access_token=access_token,
             amount=amount,
             card_number=otp_data.get("card_number", ""),
             expiry=otp_data.get("expiry", ""),
             cvv=otp_data.get("cvv", ""),
+            idempotency_key=idempotency_key,
         )
     else:
-        return await process_ach_payment(
+        result = await process_ach_payment(
             policy_number=policy_number,
             access_token=access_token,
             amount=amount,
             routing_number=otp_data.get("routing_number", ""),
             account_number=otp_data.get("account_number", ""),
+            idempotency_key=idempotency_key,
         )
+    # Drop cardholder data from in-memory state after the processor call.
+    otp_data["card_number"] = ""
+    otp_data["cvv"] = ""
+    acct = otp_data.get("account_number") or ""
+    otp_data["account_number"] = ("****" + acct[-4:]) if len(acct) >= 4 else ""
+    return result
 
 
 MAX_CARD_RETRIES = 3

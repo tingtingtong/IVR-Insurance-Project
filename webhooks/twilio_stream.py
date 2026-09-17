@@ -296,7 +296,12 @@ class CallHandler:
         """
         Merge collected DTMF data into session state and invoke the graph
         with otp_step='dtmf_complete' so otp_node moves to confirmation.
+        Redis SET NX prevents a second # from double-invoking the payment graph.
         """
+        locked = await self.session.acquire_lock(f"cno:paylock:{self.call_sid}", ttl=60)
+        if not locked:
+            log.warning("dtmf_duplicate_ignored", call_sid=self.call_sid)
+            return
         log.info("dtmf_collection_complete", call_sid=self.call_sid,
                  fields=list(collected.keys()))
         state = await self.session.get_state(self.call_sid)
