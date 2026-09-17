@@ -76,9 +76,9 @@ variable "router_bedrock_model" {
 }
 
 variable "app_port" {
-  description = "Container application port"
+  description = "Container application port (must match Dockerfile EXPOSE / uvicorn)"
   type        = number
-  default     = 8000
+  default     = 8080
 }
 
 variable "task_cpu" {
