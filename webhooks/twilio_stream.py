@@ -441,11 +441,18 @@ class CallHandler:
         try:
             client = Client(settings.twilio_account_sid, settings.twilio_auth_token)
             client.calls(self.call_sid).update(
-                twiml=f'<Response><Dial>{phone_number}</Dial></Response>'
+                twiml=(
+                    f"<Response><Dial>{phone_number}</Dial>"
+                    "<Say>Thank you for calling. Goodbye.</Say><Hangup/></Response>"
+                )
             )
             log.info("call_transferred", call_sid=self.call_sid, to=phone_number)
         except Exception as e:
             log.error("transfer_failed", call_sid=self.call_sid, error=str(e))
+            await self._speak(
+                "I'm sorry, I wasn't able to connect you to an agent. "
+                "Please call us back. Goodbye."
+            )
 
     # ── Cleanup ───────────────────────────────────────────────────────────────
 
