@@ -669,13 +669,16 @@ def _validate_card_with_feedback(card_number: str, otp_data: dict) -> dict | Non
 
     # Max retries exceeded — escalate to agent
     if retry_count >= MAX_CARD_RETRIES:
+        from config import settings
         return {
             "otp_step": "start",
             "otp_data": {},
             "tts_text": "I'm sorry, I wasn't able to validate your card number after several attempts. "
                         "Let me transfer you to a representative who can assist you.",
-            "current_node": "otp", "active_flow": "",
+            "current_node": "escalation",
+            "active_flow": "",
             "current_intent": "escalate",
+            "transfer_to": settings.twilio_agent_phone_number or "",
         }
 
     otp_data["card_retry_count"] = retry_count + 1
