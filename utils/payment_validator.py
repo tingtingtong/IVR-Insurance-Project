@@ -50,11 +50,46 @@ def validate_expiry(expiry: str) -> tuple[bool, str]:
 
 
 def validate_cvv(cvv: str) -> tuple[bool, str]:
-    """CVV must be 3 or 4 digits."""
+    """CVV must be exactly 3 digits (business rule; Amex 4-digit CID is out of scope)."""
     digits = re.sub(r"\D", "", cvv)
-    if len(digits) < 3 or len(digits) > 4:
-        return False, "CVV must be 3 or 4 digits"
+    if len(digits) != 3:
+        return False, "CVV must be 3 digits"
     return True, ""
+
+
+def try_trim_extra_digits(digits: str, expected_len: int,
+                          checksum_fn=None, max_extra: int = 4) -> str:
+    """Silently drop STT-duplicated digits to reach expected_len.
+
+    If a checksum is supplied, the unique surviving candidate must pass it.
+    Returns the corrected string, or "" if none / more than one candidate.
+    """
+    extras = len(digits) - expected_len
+    if extras < 1 or extras > max_extra:
+        return ""
+
+    candidates: set[str] = set()
+
+    def _search(s: str, removals_left: int):
+        if removals_left == 0:
+            if len(s) == expected_len:
+                if checksum_fn is None or checksum_fn(s):
+                    candidates.add(s)
+            return
+        if len(s) <= expected_len:
+            return
+        if len(s) - removals_left < expected_len:
+            return
+        for i in range(len(s)):
+            if (i > 0 and s[i] == s[i - 1]) or (i < len(s) - 1 and s[i] == s[i + 1]):
+                _search(s[:i] + s[i + 1:], removals_left - 1)
+                if len(candidates) > 1:
+                    return
+
+    _search(digits, extras)
+    if len(candidates) == 1:
+        return candidates.pop()
+    return ""
 
 
 def validate_routing_number(routing: str) -> tuple[bool, str]:
