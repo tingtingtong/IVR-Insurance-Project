@@ -123,6 +123,82 @@ _JOHN_PARTY = {
 }
 
 
+class InsuredNameRetryTests(unittest.IsolatedAsyncioTestCase):
+    def _party(self):
+        return {
+            "PartyCalrKeyCode": "PKY100001",
+            "CompanyCode": "CNO",
+            "FirstName": "John",
+            "LastName": "Smith",
+            "DOB": "1965-07-15",
+            "PhoneNumbers": [{"PhoneNumber": "5551234567", "PhoneType": "Home"}],
+            "Policies": [{"PolicyNumber": "P300123456"}],
+            "Personas": [{"name": "John Smith", "role": "insured"}],
+        }
+
+    async def test_one_word_stt_does_not_transfer(self):
+        from core.graph.nodes.auth import _collecting_name
+        result = await _collecting_name(
+            {"call_sid": "CA_JOHNSON", "slot_attempts": {}},
+            "Johnson.",
+            {"phoneNumber": "5551234567"},
+            0,
+            self._party(),
+        )
+        self.assertEqual(result["auth_step"], "collecting_name")
+        self.assertNotEqual(result.get("current_node"), "escalation")
+        self.assertIn("only heard", result["tts_text"].lower())
+        self.assertIn("spell", result["tts_text"].lower())
+
+    async def test_two_word_name_confirms_before_match(self):
+        from core.graph.nodes.auth import _collecting_name
+        result = await _collecting_name(
+            {"call_sid": "CA_JS", "slot_attempts": {}},
+            "John Smith",
+            {"phoneNumber": "5551234567"},
+            0,
+            self._party(),
+        )
+        self.assertEqual(result["auth_step"], "confirming_name")
+        self.assertIn("I heard John Smith", result["tts_text"])
+        self.assertIn("Is that correct", result["tts_text"])
+
+    def test_confirm_yes_matching_name_completes(self):
+        from core.graph.nodes.auth import _confirming_name
+        result = _confirming_name(
+            {"call_sid": "CA_YES", "slot_attempts": {}},
+            "Yes",
+            {"phoneNumber": "5551234567", "firstName": "John", "lastName": "Smith"},
+            0,
+            self._party(),
+        )
+        self.assertEqual(result["auth_step"], "complete")
+        self.assertEqual(result["caller_persona"], "insured")
+        self.assertNotIn("May I ask your name", result["tts_text"])
+
+    def test_confirm_yes_mismatch_retries_not_transfer(self):
+        from core.graph.nodes.auth import _confirming_name
+        result = _confirming_name(
+            {"call_sid": "CA_MIS", "slot_attempts": {}},
+            "Yes",
+            {"phoneNumber": "5551234567", "firstName": "Jane", "lastName": "Doe"},
+            0,
+            self._party(),
+        )
+        self.assertEqual(result["auth_step"], "collecting_name")
+        self.assertNotEqual(result.get("current_node"), "escalation")
+        self.assertIn("spell", result["tts_text"].lower())
+
+    def test_third_name_failure_transfers(self):
+        from core.graph.nodes.auth import _name_retry_or_escalate
+        state = {"call_sid": "CA_3", "slot_attempts": {"insured_name": {"invalid": 2}}}
+        result = _name_retry_or_escalate(
+            state, {"phoneNumber": "5551234567"}, self._party(), "retry"
+        )
+        self.assertEqual(result["current_node"], "escalation")
+        self.assertEqual(result["auth_step"], "failed")
+
+
 class DobMismatchGoesToNameTests(unittest.TestCase):
     def test_wrong_dob_asks_insured_name_not_readback(self):
         from core.graph.nodes.auth import _collecting_dob
@@ -179,18 +255,22 @@ class SkipSecondNameAskTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("May I ask your name please", result["tts_text"])
 
     async def test_collecting_name_success_skips_persona_ask(self):
-        from core.graph.nodes.auth import _collecting_name
+        from core.graph.nodes.auth import _collecting_name, _confirming_name
         state = {
             "call_sid": "CA_DOB_FAIL_NAME",
             "slot_attempts": {},
             "messages": [HumanMessage(content="John Smith")],
         }
-        result = await _collecting_name(
+        heard = await _collecting_name(
             state,
             "John Smith",
             {"phoneNumber": "5551234567"},
             0,
             _JOHN_PARTY,
+        )
+        self.assertEqual(heard["auth_step"], "confirming_name")
+        result = _confirming_name(
+            state, "Yes", heard["pii_collected"], 0, _JOHN_PARTY
         )
         self.assertEqual(result["auth_step"], "complete")
         self.assertEqual(result["caller_persona"], "insured")

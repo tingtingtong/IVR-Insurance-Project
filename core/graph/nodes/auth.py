@@ -4,7 +4,7 @@ from core.tools.party_search import party_search, check_auth_success
 from core.tools.auth_token import acquire_access_token
 from core.prompts.retry_prompts import get_retry_prompt, PROMPTS
 from utils.pii_validator import normalize_phone_with_hint, normalize_policy_number, normalize_dob
-from utils.name_extractor import extract_name, format_extracted_name
+from utils.name_extractor import extract_name, format_extracted_name, parse_name_deterministic
 from utils.date_utils import format_date_natural
 from utils.idk_detector import is_idk
 from utils.call_logger import log_event
@@ -89,6 +89,12 @@ async def auth_node(state: CNOState) -> dict:
         "confirming_dob":            lambda: PROMPTS["confirming_dob"]["ask"].format(
             dob=pii_collected.get("dateOfBirth", "")),
         "collecting_name":           lambda: get_retry_prompt("insured_name", "ask"),
+        "confirming_name":           lambda: (
+            "I heard {first} {last}. Is that correct?".format(
+                first=pii_collected.get("firstName", ""),
+                last=pii_collected.get("lastName", ""),
+            )
+        ),
         "collecting_policy_selection": lambda: "Please say the last 4 digits of your policy number.",
         "collecting_caller_name":    lambda: "May I ask your name please?",
     }
@@ -128,6 +134,8 @@ async def auth_node(state: CNOState) -> dict:
         result = _confirming_dob(state, last_human, pii_collected, auth_attempts, candidate_party)
     elif auth_step == "collecting_name":
         result = await _collecting_name(state, last_human, pii_collected, auth_attempts, candidate_party)
+    elif auth_step == "confirming_name":
+        result = _confirming_name(state, last_human, pii_collected, auth_attempts, candidate_party)
     elif auth_step == "collecting_policy_selection":
         result = _collecting_policy_selection(state, last_human, pii_collected, auth_attempts, candidate_party)
     elif auth_step == "collecting_caller_name":
@@ -570,8 +578,36 @@ def _confirming_dob(state, last_human, pii_collected, auth_attempts, candidate_p
     }
 
 
+MAX_NAME_ATTEMPTS = 3
+
+
+def _name_retry_or_escalate(state, pii_collected, candidate_party, tts: str) -> dict:
+    """Re-ask insured name, or transfer after 3 failed captures (not 1)."""
+    attempts = _get_slot(state, "insured_name", "invalid")
+    if attempts >= MAX_NAME_ATTEMPTS - 1:
+        return _escalate(state)
+    return {
+        "auth_step":       "collecting_name",
+        "pii_collected":   pii_collected,
+        "candidate_party": candidate_party,
+        "tts_text":        tts,
+        "slot_attempts":   _inc_slot(state, "insured_name", "invalid"),
+        "current_node":    "auth",
+        "active_flow":     "auth",
+    }
+
+
+def _spell_last_name_prompt() -> str:
+    return (
+        "Please say the first and last name again. "
+        "If the last name is unclear, please spell it letter by letter, "
+        "for example S for Sierra, M for Mike."
+    )
+
+
 async def _collecting_name(state, last_human, pii_collected, auth_attempts, candidate_party):
     slot = "insured_name"
+    call_sid = state.get("call_sid", "unknown")
 
     if not last_human:
         return {**_ask("collecting_name", pii_collected, get_retry_prompt(slot, "ask")),
@@ -581,42 +617,92 @@ async def _collecting_name(state, last_human, pii_collected, auth_attempts, cand
     if is_idk(last_human):
         return _escalate(state)
 
+    # One-word STT (e.g. "Johnson" for "John Smith") — do not let the LLM invent
+    # a last name and immediately fail the match / transfer.
+    det_first, det_last = parse_name_deterministic(last_human)
+    if det_first and not det_last:
+        log_event(call_sid, "auth_detail", step="collecting_name",
+                  action="one_word_name", heard=det_first)
+        tts = (
+            f"I only heard {det_first}. Please say the first and last name of the insured. "
+            "If the last name is unclear, please spell it letter by letter."
+        )
+        return _name_retry_or_escalate(state, pii_collected, candidate_party, tts)
+
     first, last = await extract_name(last_human)
 
     if not first or not last:
-        blank_count  = _get_slot(state, slot, "blank")
-        asked_before = _get_slot(state, slot, "asked")
+        tts = (
+            "I didn't catch both names. Please say the first and last name of the insured. "
+            "If needed, spell the last name letter by letter."
+        )
+        return _name_retry_or_escalate(state, pii_collected, candidate_party, tts)
 
-        if blank_count >= 2:
-            return _escalate(state)
+    pii_collected["firstName"] = first
+    pii_collected["lastName"]  = last
+    heard = f"{first} {last}"
+    log_event(call_sid, "auth_detail", step="collecting_name",
+              action="confirm_name", heard=heard)
+    return {
+        "auth_step":       "confirming_name",
+        "pii_collected":   pii_collected,
+        "candidate_party": candidate_party,
+        "tts_text":        f"I heard {heard}. Is that correct?",
+        "current_node":    "auth",
+        "active_flow":     "auth",
+        "slot_attempts":   state.get("slot_attempts", {}),
+    }
 
-        if not asked_before:
-            tts = get_retry_prompt(slot, "ask")
-            return {**_ask("collecting_name", pii_collected, tts, candidate_party),
-                    "slot_attempts": _inc_slot(state, slot, "asked")}
 
-        tts = get_retry_prompt(slot, "blank", blank_count)
+def _confirming_name(state, last_human, pii_collected, auth_attempts, candidate_party):
+    call_sid = state.get("call_sid", "unknown")
+    heard = f"{pii_collected.get('firstName', '')} {pii_collected.get('lastName', '')}".strip()
+
+    if not last_human:
         return {
-            "auth_step":       "collecting_name",
+            "auth_step":       "confirming_name",
             "pii_collected":   pii_collected,
             "candidate_party": candidate_party,
-            "tts_text":        tts,
-            "slot_attempts":   _inc_slot(state, slot, "blank"),
+            "tts_text":        f"I heard {heard}. Is that correct? Please say yes or no.",
             "current_node":    "auth",
             "active_flow":     "auth",
         }
 
-    pii_collected["firstName"] = first
-    pii_collected["lastName"]  = last
+    if is_idk(last_human):
+        return _name_retry_or_escalate(
+            state, {k: v for k, v in pii_collected.items() if k not in ("firstName", "lastName")},
+            candidate_party,
+            "No problem. " + _spell_last_name_prompt(),
+        )
 
-    if check_auth_success(candidate_party, pii_collected):
-        policy_numbers = _get_policy_numbers(candidate_party)
-        if len(policy_numbers) > 1:
-            return _ask_policy_selection(candidate_party, pii_collected, policy_numbers)
-        return _auth_complete(candidate_party, pii_collected)
+    answer = _yes_no(last_human)
+    if answer == "yes":
+        if check_auth_success(candidate_party, pii_collected):
+            policy_numbers = _get_policy_numbers(candidate_party)
+            if len(policy_numbers) > 1:
+                return _ask_policy_selection(candidate_party, pii_collected, policy_numbers)
+            return _auth_complete(candidate_party, pii_collected)
+        log_event(call_sid, "auth_detail", step="confirming_name",
+                  action="name_mismatch", heard=heard)
+        tts = "I wasn't able to match that name. " + _spell_last_name_prompt()
+        cleared = {k: v for k, v in pii_collected.items() if k not in ("firstName", "lastName")}
+        return _name_retry_or_escalate(state, cleared, candidate_party, tts)
 
-    # Both DOB and name failed → escalate
-    return _escalate(state)
+    if answer == "no":
+        cleared = {k: v for k, v in pii_collected.items() if k not in ("firstName", "lastName")}
+        return _name_retry_or_escalate(
+            state, cleared, candidate_party,
+            "No problem. " + _spell_last_name_prompt(),
+        )
+
+    return {
+        "auth_step":       "confirming_name",
+        "pii_collected":   pii_collected,
+        "candidate_party": candidate_party,
+        "tts_text":        f"I heard {heard}. Please say yes if that is correct, or no to say it again.",
+        "current_node":    "auth",
+        "active_flow":     "auth",
+    }
 
 
 # ── Caller persona step ───────────────────────────────────────────────────────
