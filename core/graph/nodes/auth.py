@@ -34,11 +34,9 @@ async def auth_node(state: CNOState) -> dict:
       confirming_phone       → yes → collecting_policy | no → collecting_phone
       collecting_policy      → policy captured → search by policy
                                found → collecting_dob | not found → escalate
-      collecting_dob         → DOB parsed → confirming_dob
-      confirming_dob         → yes → check auth (phone/policy + DOB)
-                               match → complete
-                               no match → collecting_name
-                               no  → collecting_dob
+      collecting_dob         → DOB parsed → match? complete : collecting_name
+                               (no "I heard {date}" read-back on mismatch)
+      confirming_dob         → kept for in-flight calls only
       collecting_name        → LLM extract → check auth (phone/policy + name)
                                match → complete | no match → escalate
       collecting_caller_name → post-auth: ask caller's name → match against personas
@@ -476,28 +474,11 @@ def _collecting_dob(state, last_human, pii_collected, auth_attempts, candidate_p
             return _ask_policy_selection(candidate_party, pii_collected, policy_numbers)
         return _auth_complete(candidate_party, pii_collected)
 
-    # DOB doesn't match — read back what we heard and ask caller to confirm
-    dob_mismatch_count = _get_slot(state, "dob_mismatch", "invalid")
+    # Parsed DOB does not match the party record. Do not read the date back —
+    # go straight to insured first/last name (use-case doc Step 4).
     log_event(call_sid, "auth_detail", step="collecting_dob", action="dob_mismatch",
-              attempt=dob_mismatch_count + 1, will_retry=dob_mismatch_count == 0)
-    if dob_mismatch_count == 0:
-        # First mismatch — confirm what we heard before retrying
-        formatted_dob = format_date_natural(parsed)
-        tts = (
-            f"I heard {formatted_dob}. Is that correct?"
-        )
-        return {
-            "auth_step":       "confirming_dob",
-            "pii_collected":   pii_collected,
-            "candidate_party": candidate_party,
-            "tts_text":        tts,
-            "slot_attempts":   _inc_slot(state, "dob_mismatch", "invalid"),
-            "current_node":    "auth",
-            "active_flow":     "auth",
-        }
-
-    # Second mismatch — fall through to name verification
-    tts = "I still wasn't able to verify that date. " + get_retry_prompt("insured_name", "ask")
+              attempt=1, will_retry=False)
+    tts = "I wasn't able to verify that date. " + get_retry_prompt("insured_name", "ask")
     return {
         "auth_step":       "collecting_name",
         "pii_collected":   pii_collected,

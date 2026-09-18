@@ -123,6 +123,33 @@ _JOHN_PARTY = {
 }
 
 
+class DobMismatchGoesToNameTests(unittest.TestCase):
+    def test_wrong_dob_asks_insured_name_not_readback(self):
+        from core.graph.nodes.auth import _collecting_dob
+        party = {
+            "PartyCalrKeyCode": "PKY100001",
+            "CompanyCode": "CNO",
+            "FirstName": "John",
+            "LastName": "Smith",
+            "DOB": "1965-07-15",
+            "PhoneNumbers": [{"PhoneNumber": "5551234567", "PhoneType": "Home"}],
+            "Policies": [{"PolicyNumber": "P300123456"}],
+            "Personas": [{"name": "John Smith", "role": "insured"}],
+        }
+        result = _collecting_dob(
+            {"call_sid": "CA_WRONG_DOB", "slot_attempts": {}},
+            "July 15 1955",
+            {"phoneNumber": "5551234567"},
+            0,
+            party,
+        )
+        self.assertEqual(result["auth_step"], "collecting_name")
+        self.assertIn("first and last name of the insured", result["tts_text"].lower())
+        self.assertNotIn("I heard", result["tts_text"])
+        self.assertNotIn("1955", result["tts_text"])
+        self.assertNotIn("Is that correct", result["tts_text"])
+
+
 class SkipSecondNameAskTests(unittest.IsolatedAsyncioTestCase):
     """DOB fail + insured name match must not ask for the name again."""
 
