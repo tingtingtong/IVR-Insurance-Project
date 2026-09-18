@@ -53,8 +53,11 @@ async def contact_node(state: CNOState) -> dict:
     if step == "collecting":
         # IDK at the "what to change?" prompt → caller unsure → offer rep
         if is_idk(last_human):
-            tts = "That's okay. I can connect you with a representative who can help update your contact information."
-            return {"otp_data": {}, "tts_text": tts, "current_node": "contact", "active_flow": ""}
+            from core.graph.escalate import transfer_now
+            return transfer_now(
+                "That's okay. Let me transfer you to a representative who can help update your contact information.",
+                otp_data={},
+            )
 
         lower = last_human.lower()
         # Use word-boundary matching so "address" inside "I don't want to update..." doesn't trigger
@@ -91,8 +94,11 @@ async def contact_node(state: CNOState) -> dict:
     if step == "collecting_address":
         # IDK: caller doesn't know their new address → offer rep
         if is_idk(last_human):
-            tts = "No problem. A representative can help you with that."
-            return {"otp_data": {}, "tts_text": tts, "current_node": "contact", "active_flow": ""}
+            from core.graph.escalate import transfer_now
+            return transfer_now(
+                "No problem. Let me transfer you to a representative who can help with that.",
+                otp_data={},
+            )
 
         otp_data["new_address"] = last_human
         return {
@@ -105,8 +111,11 @@ async def contact_node(state: CNOState) -> dict:
     if step == "collecting_phone":
         # IDK: caller doesn't know new phone → offer rep
         if is_idk(last_human):
-            tts = "No problem. A representative can help you with that."
-            return {"otp_data": {}, "tts_text": tts, "current_node": "contact", "active_flow": ""}
+            from core.graph.escalate import transfer_now
+            return transfer_now(
+                "No problem. Let me transfer you to a representative who can help with that.",
+                otp_data={},
+            )
 
         digits = "".join(c for c in last_human if c.isdigit())
         if len(digits) == 10:
@@ -128,11 +137,9 @@ async def contact_node(state: CNOState) -> dict:
             if result:
                 tts = "Your contact information has been updated. Is there anything else I can help you with?"
             else:
+                from core.graph.escalate import transfer_now
                 tts = PROMPTS["escalation"]["error"]
-                from config import settings as _settings
-                return {"otp_data": {}, "tts_text": tts, "transfer_to": _settings.twilio_agent_phone_number,
-                        "current_node": "contact", "active_flow": "",
-                        "messages": [AIMessage(content=tts)]}
+                return transfer_now(tts, otp_data={}, messages=[AIMessage(content=tts)])
             return {"otp_data": {}, "tts_text": tts, "current_node": "contact", "active_flow": "",
                     "messages": [AIMessage(content=tts)]}
 

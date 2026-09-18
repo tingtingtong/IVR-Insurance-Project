@@ -4,7 +4,7 @@ from core.tools.party_search import party_search, check_auth_success
 from core.tools.auth_token import acquire_access_token
 from core.prompts.retry_prompts import get_retry_prompt, PROMPTS
 from utils.pii_validator import normalize_phone_with_hint, normalize_policy_number, normalize_dob
-from utils.name_extractor import extract_name
+from utils.name_extractor import extract_name, format_extracted_name
 from utils.date_utils import format_date_natural
 from utils.idk_detector import is_idk
 from utils.call_logger import log_event
@@ -65,13 +65,11 @@ async def auth_node(state: CNOState) -> dict:
         auth_step = "collecting_caller_name"
 
     if auth_step == "failed" or auth_attempts >= MAX_AUTH_ATTEMPTS:
-        return {
-            "auth_step":    "failed",
-            "tts_text":     PROMPTS["escalation"]["max_attempts"],
-            "transfer_to":  "",
-            "current_node": "auth",
-            "active_flow":  "",
-        }
+        from core.graph.escalate import transfer_now
+        return transfer_now(
+            PROMPTS["escalation"]["max_attempts"],
+            auth_step="failed",
+        )
 
     # ── Last human utterance ──────────────────────────────────────────────────
     last_human = ""
@@ -136,16 +134,14 @@ async def auth_node(state: CNOState) -> dict:
         result = _collecting_policy_selection(state, last_human, pii_collected, auth_attempts, candidate_party)
     elif auth_step == "collecting_caller_name":
         # Post-auth persona identification — ask caller's name and match against policy personas
-        result = _collecting_caller_name(state, last_human)
+        result = await _collecting_caller_name(state, last_human)
     elif auth_step == "failed":
-        # Already escalated — re-confirm transfer (don't restart from phone)
-        return {
-            "auth_step":    "failed",
-            "tts_text":     PROMPTS["escalation"]["max_attempts"],
-            "current_node": "auth",
-            "active_flow":  "",
-            "transfer_to":  settings.twilio_agent_phone_number,
-        }
+        # Already escalated — transfer again; never Gather
+        from core.graph.escalate import transfer_now
+        return transfer_now(
+            PROMPTS["escalation"]["max_attempts"],
+            auth_step="failed",
+        )
     else:
         # Unknown state — restart from phone
         result = _ask("collecting_phone", pii_collected, get_retry_prompt("phone", "ask"))
@@ -182,13 +178,11 @@ async def auth_node(state: CNOState) -> dict:
             company_code=customer.get("companyCode", ""),
         )
         if not token:
-            return {
-                "auth_step":    "failed",
-                "tts_text":     PROMPTS["escalation"]["error"],
-                "current_node": "auth",
-                "active_flow":  "",
-                "transfer_to":  "",
-            }
+            from core.graph.escalate import transfer_now
+            return transfer_now(
+                PROMPTS["escalation"]["error"],
+                auth_step="failed",
+            )
         result["access_token"] = token
 
     return result
@@ -660,7 +654,7 @@ def _clean_caller_name(utterance: str) -> str:
     return clean.rstrip(".").strip()
 
 
-def _collecting_caller_name(state: CNOState, last_human: str) -> dict:
+async def _collecting_caller_name(state: CNOState, last_human: str) -> dict:
     """
     Post-auth step: ask the caller their name, then match it against the policy
     persona list (finalized_party["Personas"]).
@@ -688,8 +682,9 @@ def _collecting_caller_name(state: CNOState, last_human: str) -> dict:
     )):
         return _persona_identified("other", last_human, personas)
 
-    # Strip conversational prefixes before storing and matching the name
-    clean_name = _clean_caller_name(last_human)
+    # Smart parse: "first name is X last name is Y", NATO spelling, then LLM
+    first, last = await extract_name(last_human)
+    clean_name = format_extracted_name(first, last) or _clean_caller_name(last_human)
 
     # Detect phone number input (caller confused, said digits instead of name)
     digits_only = "".join(c for c in clean_name if c.isdigit())
@@ -827,14 +822,12 @@ def _auth_complete(party: dict, pii_collected: dict, policy_number: str = "") ->
 
 
 def _escalate(state: CNOState) -> dict:
-    return {
-        "auth_step":    "failed",
-        "auth_attempts": settings.max_auth_attempts,  # prevent re-entry restart
-        "tts_text":     PROMPTS["escalation"]["max_attempts"],
-        "current_node": "auth",
-        "active_flow":  "",
-        "transfer_to":  settings.twilio_agent_phone_number,
-    }
+    from core.graph.escalate import transfer_now
+    return transfer_now(
+        PROMPTS["escalation"]["max_attempts"],
+        auth_step="failed",
+        auth_attempts=settings.max_auth_attempts,
+    )
 
 
 def _get_policy_numbers(party: dict) -> list:

@@ -82,12 +82,13 @@ async def otp_node(state: CNOState) -> dict:
     if otp_step == "choosing_method":
         # IDK: caller unsure how to pay → offer rep
         if is_idk(last_human):
-            return {
-                "otp_step":   "start",
-                "otp_data":   {},
-                "tts_text":   "A representative can help you with your payment. Is there anything else I can help you with today?",
-                "current_node": "otp", "active_flow": "",
-            }
+            from core.graph.escalate import transfer_now
+            return transfer_now(
+                "A representative can help you with your payment. "
+                "Let me transfer you to someone who can assist you.",
+                otp_step="start",
+                otp_data={},
+            )
 
         method = _detect_payment_method(last_human)
         if not method:
@@ -669,14 +670,13 @@ def _validate_card_with_feedback(card_number: str, otp_data: dict) -> dict | Non
 
     # Max retries exceeded — escalate to agent
     if retry_count >= MAX_CARD_RETRIES:
-        return {
-            "otp_step": "start",
-            "otp_data": {},
-            "tts_text": "I'm sorry, I wasn't able to validate your card number after several attempts. "
-                        "Let me transfer you to a representative who can assist you.",
-            "current_node": "otp", "active_flow": "",
-            "current_intent": "escalate",
-        }
+        from core.graph.escalate import transfer_now
+        return transfer_now(
+            "I'm sorry, I wasn't able to capture the card number after several attempts. "
+            "Let me transfer you to a representative who can assist you.",
+            otp_step="start",
+            otp_data={},
+        )
 
     otp_data["card_retry_count"] = retry_count + 1
 

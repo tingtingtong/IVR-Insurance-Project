@@ -19,6 +19,7 @@ from langchain_core.messages import HumanMessage
 from utils.call_logger import log_event
 from utils.tts_normalizer import normalize_tts_text
 from webhooks.security import validate_twilio_webhook
+from core.graph.escalate import is_terminal as _is_terminal
 
 _twilio = TwilioClient(settings.twilio_account_sid, settings.twilio_auth_token)
 
@@ -32,6 +33,17 @@ _GREETING = (
 )
 _TIMEOUT_MSG = "I didn't catch that. Please say your request after the tone."
 _ERROR_MSG   = "I'm sorry, I'm having trouble right now. Please hold while I connect you to an agent."
+
+
+def _hangup_response(say_text: str, transfer_to: str = "") -> Response:
+    """Speak, optionally Dial an agent, then hang up. Never Gather after this."""
+    response = VoiceResponse()
+    if say_text:
+        response.say(normalize_tts_text(say_text), voice="Polly.Joanna")
+    if transfer_to:
+        response.dial(transfer_to)
+    response.hangup()
+    return Response(content=str(response), media_type="application/xml")
 
 
 def _gather_response(say_text: str, action: str = "/webhook/gather") -> str:
@@ -204,25 +216,11 @@ async def gather_speech(request: Request):
         add_call_turn(call_sid, "bot", tts_text, intent=intent, node=current_node)
         log_event(call_sid, "tts_sent", node=current_node, intent=intent, chars=len(tts_text))
 
-        if transfer_to:
+        if _is_terminal(result):
             end_call(call_sid)
-            log_event(call_sid, "call_transfer", to=transfer_to)
-            response = VoiceResponse()
-            if tts_text:
-                response.say(normalize_tts_text(tts_text), voice="Polly.Joanna")
-            response.dial(transfer_to)
-            # Hangup after dial completes/fails — prevents call from continuing
-            response.say("Thank you for calling. Goodbye.", voice="Polly.Joanna")
-            response.hangup()
-            return Response(content=str(response), media_type="application/xml")
-
-        if current_node == "goodbye":
-            end_call(call_sid)
-            log_event(call_sid, "call_end", reason="goodbye")
-            response = VoiceResponse()
-            response.say(normalize_tts_text(tts_text or "Thank you for calling. Goodbye."), voice="Polly.Joanna")
-            response.hangup()
-            return Response(content=str(response), media_type="application/xml")
+            reason = "goodbye" if current_node == "goodbye" else "escalate"
+            log_event(call_sid, "call_end", reason=reason, to=transfer_to or "")
+            return _hangup_response(tts_text, transfer_to)
 
         # BUG-016: When OTP is collecting sensitive numbers, accept both DTMF and speech
         otp_step = result.get("otp_step", "")
@@ -306,14 +304,11 @@ async def gather_payment(request: Request):
         update_call_metadata(call_sid, result2)
         add_call_turn(call_sid, "bot", tts_text, node=current_node)
 
-        if result2.get("transfer_to"):
+        if _is_terminal(result2):
             end_call(call_sid)
-            response = VoiceResponse()
-            if tts_text:
-                response.say(normalize_tts_text(tts_text), voice="Polly.Joanna")
-            response.dial(result2["transfer_to"])
-            response.hangup()
-            return Response(content=str(response), media_type="application/xml")
+            log_event(call_sid, "call_end", reason="escalate",
+                      to=result2.get("transfer_to") or "")
+            return _hangup_response(tts_text, result2.get("transfer_to") or "")
 
         # If still collecting card (retry), use DTMF+speech gather again
         if otp_step in ("collecting_card_dtmf", "collecting_bank_dtmf"):
