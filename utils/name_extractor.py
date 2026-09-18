@@ -87,47 +87,74 @@ def decode_phonetics(utterance: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+_FILLERS = (
+    "uh", "um", "er", "ah", "eh", "hmm", "huh", "like", "you know",
+    "please", "yeah", "yes", "yep", "well", "so", "actually",
+)
+_NAME_STOP = {
+    "my", "name", "is", "the", "a", "an", "and", "or", "of",
+    "first", "last", "full", "given", "family", "surname",
+    "it", "its", "it's", "this", "that", "i", "am", "im", "i'm", "me",
+    "hi", "hello", "hey", "sir", "maam", "ma'am",
+    *_FILLERS,
+}
+_NAME_TOKEN = re.compile(r"^[A-Za-z][A-Za-z'\-]*$")
+
+
+def _scrub_utterance(text: str) -> str:
+    """Drop punctuation and spoken fillers so 'Uh, my name is uh, John' → 'my name is John'."""
+    t = decode_phonetics(text or "")
+    t = re.sub(r"[^\w\s'-]", " ", t)
+    filler = "|".join(re.escape(w) for w in _FILLERS)
+    t = re.sub(rf"\b(?:{filler})\b", " ", t, flags=re.IGNORECASE)
+    return re.sub(r"\s+", " ", t).strip()
+
+
+def _is_name_token(word: str) -> bool:
+    if not word or not _NAME_TOKEN.match(word):
+        return False
+    return word.lower() not in _NAME_STOP
+
+
 def parse_name_deterministic(utterance: str) -> tuple[str, str]:
     """Pull first/last from labeled phrases or a two-word name. No LLM."""
     if not utterance:
         return ("", "")
-    text = decode_phonetics(utterance)
-    u = text.strip()
+    u = _scrub_utterance(utterance)
 
     first = last = ""
     m = re.search(
         r"first\s+name(?:\s+is)?\s+([A-Za-z][A-Za-z'\-]*)",
         u, re.IGNORECASE,
     )
-    if m:
+    if m and _is_name_token(m.group(1)):
         first = m.group(1)
     m = re.search(
         r"last\s+name(?:\s+is)?\s+([A-Za-z][A-Za-z'\-]*)",
         u, re.IGNORECASE,
     )
-    if m:
+    if m and _is_name_token(m.group(1)):
         last = m.group(1)
     if first and last:
         return (first.title(), last.title())
 
     m = re.search(
         r"(?:my\s+name\s+is|i\s+am|i'm|this\s+is|it'?s|the\s+name\s+is|name\s+is)\s+"
-        r"([A-Za-z][A-Za-z'\-]*)\s+([A-Za-z][A-Za-z'\-]*)",
+        r"([A-Za-z][A-Za-z'\-]*)(?:\s+([A-Za-z][A-Za-z'\-]*))?",
         u, re.IGNORECASE,
     )
     if m:
-        return (m.group(1).title(), m.group(2).title())
+        a, b = m.group(1), m.group(2) or ""
+        if _is_name_token(a) and _is_name_token(b):
+            return (a.title(), b.title())
+        if _is_name_token(a) and not b:
+            first = first or a
 
-    # Bare two-token name after stripping leftover filler
-    cleaned = re.sub(
-        r"^(?:uh|um|yeah|yes|please|well)\s+",
-        "", u, flags=re.IGNORECASE,
-    ).strip(" .,")
-    parts = [p for p in re.split(r"\s+", cleaned) if re.match(r"^[A-Za-z][A-Za-z'\-]*$", p)]
+    parts = [p for p in u.split() if _is_name_token(p)]
     if len(parts) >= 2:
         return (parts[0].title(), parts[-1].title())
-    if len(parts) == 1 and len(parts[0]) >= 2:
-        return (parts[0].title(), "")
+    if len(parts) == 1:
+        return (parts[0].title(), last.title() if last else "")
     return (first.title() if first else "", last.title() if last else "")
 
 
