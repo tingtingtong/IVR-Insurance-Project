@@ -13,10 +13,13 @@ class PaymentSafetyTests(unittest.TestCase):
         self.assertIn(r"\bi authorize\b", src)
         self.assertNotIn('if "authorize" in last_human.lower()', src)
 
-    def test_cvv_is_not_read_back_in_tts(self):
+    def test_cvv_is_confirmed_in_full_but_not_logged_raw(self):
         src = (ROOT / "core" / "graph" / "nodes" / "otp.py").read_text(encoding="utf-8")
-        self.assertNotIn("Security code {_spell_digits(cvv)}", src)
-        self.assertIn("digit security code", src)
+        self.assertIn("_confirm_cvv_tts", src)
+        self.assertNotIn("I received 17 digits", src)
+        redactor = (ROOT / "utils" / "pii_redactor.py").read_text(encoding="utf-8")
+        self.assertIn("[CVV REDACTED]", redactor)
+        self.assertIn("[CARD REDACTED]", redactor)
 
     def test_payment_api_sends_idempotency_key(self):
         src = (ROOT / "core" / "tools" / "payment_api.py").read_text(encoding="utf-8")
