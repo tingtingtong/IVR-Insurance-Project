@@ -34,9 +34,11 @@ async def auth_node(state: CNOState) -> dict:
       confirming_phone       → yes → collecting_policy | no → collecting_phone
       collecting_policy      → policy captured → search by policy
                                found → collecting_dob | not found → escalate
-      collecting_dob         → DOB parsed → match? complete : collecting_name
-                               (no "I heard {date}" read-back on mismatch)
-      confirming_dob         → kept for in-flight calls only
+      collecting_dob         → DOB parsed → confirming_dob ("I heard {date}")
+      confirming_dob         → yes + match → complete
+                               yes + no match → collecting_name
+                               new date spoken → capture it, then match or re-confirm
+                               no → collecting_dob
       collecting_name        → LLM extract → check auth (phone/policy + name)
                                match → complete | no match → escalate
       collecting_caller_name → post-auth: ask caller's name → match against personas
@@ -470,22 +472,30 @@ def _collecting_dob(state, last_human, pii_collected, auth_attempts, candidate_p
             "active_flow":     "auth",
         }
 
-    # DOB parsed — check auth immediately (no read-back confirmation step)
+    # Always confirm the heard date before matching. STT often shifts the day
+    # (e.g. 15th → 16th / 17th). Name fallback only after the caller confirms.
     pii_collected["dateOfBirth"] = parsed
-    match = check_auth_success(candidate_party, pii_collected)
-    expected_dob = candidate_party.get("DOB", "unknown")
-    log_event(call_sid, "auth_detail", step="collecting_dob", action="dob_verify",
-              given=parsed, expected=expected_dob[:7] + "**", match=match)
-    if match:
+    formatted = format_date_natural(parsed)
+    log_event(call_sid, "auth_detail", step="collecting_dob", action="confirm_dob",
+              given=parsed)
+    return {
+        "auth_step":       "confirming_dob",
+        "pii_collected":   pii_collected,
+        "candidate_party": candidate_party,
+        "tts_text":        PROMPTS["confirming_dob"]["ask"].format(dob=formatted),
+        "current_node":    "auth",
+        "active_flow":     "auth",
+        "slot_attempts":   state.get("slot_attempts", {}),
+    }
+
+
+def _after_dob_confirmed(candidate_party, pii_collected) -> dict:
+    """Yes on the heard date: match → auth; mismatch → insured name."""
+    if check_auth_success(candidate_party, pii_collected):
         policy_numbers = _get_policy_numbers(candidate_party)
         if len(policy_numbers) > 1:
             return _ask_policy_selection(candidate_party, pii_collected, policy_numbers)
         return _auth_complete(candidate_party, pii_collected)
-
-    # Parsed DOB does not match the party record. Do not read the date back —
-    # go straight to insured first/last name (use-case doc Step 4).
-    log_event(call_sid, "auth_detail", step="collecting_dob", action="dob_mismatch",
-              attempt=1, will_retry=False)
     tts = "I wasn't able to verify that date. " + get_retry_prompt("insured_name", "ask")
     return {
         "auth_step":       "collecting_name",
@@ -500,13 +510,14 @@ def _collecting_dob(state, last_human, pii_collected, auth_attempts, candidate_p
 
 def _confirming_dob(state, last_human, pii_collected, auth_attempts, candidate_party):
     slot = "confirming_dob"
+    call_sid = state.get("call_sid", "unknown")
+    stored = pii_collected.get("dateOfBirth", "")
 
     if not last_human:
-        formatted = format_date_natural(pii_collected.get("dateOfBirth", ""))
+        formatted = format_date_natural(stored)
         tts = PROMPTS["confirming_dob"]["ask"].format(dob=formatted)
         return {**_ask("confirming_dob", pii_collected, tts), "candidate_party": candidate_party}
 
-    # IDK at confirming_dob → caller unsure if the date read back is right → re-ask DOB
     if is_idk(last_human):
         new_pii = {k: v for k, v in pii_collected.items() if k != "dateOfBirth"}
         tts = "No problem, please say the date of birth again."
@@ -520,25 +531,30 @@ def _confirming_dob(state, last_human, pii_collected, auth_attempts, candidate_p
             "active_flow":     "auth",
         }
 
+    # Caller changed the date in this turn ("no, July 15 1965" or just a new date).
+    parsed_new = normalize_dob(last_human)
+    if parsed_new:
+        pii_collected["dateOfBirth"] = parsed_new
+        log_event(call_sid, "auth_detail", step="confirming_dob", action="dob_corrected",
+                  from_date=(stored[:7] + "**") if stored else "", given=parsed_new)
+        if check_auth_success(candidate_party, pii_collected):
+            return _after_dob_confirmed(candidate_party, pii_collected)
+        if parsed_new != stored:
+            formatted = format_date_natural(parsed_new)
+            return {
+                "auth_step":       "confirming_dob",
+                "pii_collected":   pii_collected,
+                "candidate_party": candidate_party,
+                "tts_text":        PROMPTS["confirming_dob"]["ask"].format(dob=formatted),
+                "current_node":    "auth",
+                "active_flow":     "auth",
+            }
+        return _after_dob_confirmed(candidate_party, pii_collected)
+
     answer = _yes_no(last_human)
 
     if answer == "yes":
-        if check_auth_success(candidate_party, pii_collected):
-            policy_numbers = _get_policy_numbers(candidate_party)
-            if len(policy_numbers) > 1:
-                return _ask_policy_selection(candidate_party, pii_collected, policy_numbers)
-            return _auth_complete(candidate_party, pii_collected)
-        # DOB confirmed but doesn't match → try name
-        tts = "I wasn't able to verify that date. " + get_retry_prompt("insured_name", "ask")
-        return {
-            "auth_step":       "collecting_name",
-            "pii_collected":   pii_collected,
-            "candidate_party": candidate_party,
-            "tts_text":        tts,
-            "slot_attempts":   {},
-            "current_node":    "auth",
-            "active_flow":     "auth",
-        }
+        return _after_dob_confirmed(candidate_party, pii_collected)
 
     if answer == "no":
         new_pii = {k: v for k, v in pii_collected.items() if k != "dateOfBirth"}
@@ -561,7 +577,7 @@ def _confirming_dob(state, last_human, pii_collected, auth_attempts, candidate_p
         return _escalate(state)
 
     if not asked_before:
-        formatted = format_date_natural(pii_collected.get("dateOfBirth", ""))
+        formatted = format_date_natural(stored)
         tts = PROMPTS["confirming_dob"]["ask"].format(dob=formatted)
         return {**_ask("confirming_dob", pii_collected, tts, candidate_party),
                 "slot_attempts": _inc_slot(state, slot, "asked")}

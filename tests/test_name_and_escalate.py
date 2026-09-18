@@ -199,10 +199,9 @@ class InsuredNameRetryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["auth_step"], "failed")
 
 
-class DobMismatchGoesToNameTests(unittest.TestCase):
-    def test_wrong_dob_asks_insured_name_not_readback(self):
-        from core.graph.nodes.auth import _collecting_dob
-        party = {
+class DobConfirmThenNameTests(unittest.TestCase):
+    def _party(self):
+        return {
             "PartyCalrKeyCode": "PKY100001",
             "CompanyCode": "CNO",
             "FirstName": "John",
@@ -212,18 +211,59 @@ class DobMismatchGoesToNameTests(unittest.TestCase):
             "Policies": [{"PolicyNumber": "P300123456"}],
             "Personas": [{"name": "John Smith", "role": "insured"}],
         }
+
+    def test_wrong_dob_confirms_before_name(self):
+        from core.graph.nodes.auth import _collecting_dob
         result = _collecting_dob(
             {"call_sid": "CA_WRONG_DOB", "slot_attempts": {}},
-            "July 15 1955",
+            "16 July 1938",
             {"phoneNumber": "5551234567"},
             0,
-            party,
+            self._party(),
+        )
+        self.assertEqual(result["auth_step"], "confirming_dob")
+        self.assertIn("I heard", result["tts_text"])
+        self.assertIn("Is that correct", result["tts_text"])
+        self.assertNotIn("first and last name", result["tts_text"].lower())
+
+    def test_confirm_yes_on_mismatch_then_asks_name(self):
+        from core.graph.nodes.auth import _confirming_dob
+        result = _confirming_dob(
+            {"call_sid": "CA_DOB_YES", "slot_attempts": {}},
+            "Yes",
+            {"phoneNumber": "5551234567", "dateOfBirth": "1938-07-16"},
+            0,
+            self._party(),
         )
         self.assertEqual(result["auth_step"], "collecting_name")
+        self.assertIn("wasn't able to verify that date", result["tts_text"].lower())
         self.assertIn("first and last name of the insured", result["tts_text"].lower())
-        self.assertNotIn("I heard", result["tts_text"])
-        self.assertNotIn("1955", result["tts_text"])
-        self.assertNotIn("Is that correct", result["tts_text"])
+
+    def test_confirm_no_reasks_dob(self):
+        from core.graph.nodes.auth import _confirming_dob
+        result = _confirming_dob(
+            {"call_sid": "CA_DOB_NO", "slot_attempts": {}},
+            "No",
+            {"phoneNumber": "5551234567", "dateOfBirth": "1938-07-16"},
+            0,
+            self._party(),
+        )
+        self.assertEqual(result["auth_step"], "collecting_dob")
+        self.assertNotIn("dateOfBirth", result["pii_collected"])
+        self.assertIn("date of birth", result["tts_text"].lower())
+
+    def test_spoken_correction_captures_new_dob(self):
+        from core.graph.nodes.auth import _confirming_dob
+        result = _confirming_dob(
+            {"call_sid": "CA_DOB_FIX", "slot_attempts": {}},
+            "No, July 15 1965",
+            {"phoneNumber": "5551234567", "dateOfBirth": "1938-07-16"},
+            0,
+            self._party(),
+        )
+        self.assertEqual(result["pii_collected"]["dateOfBirth"], "1965-07-15")
+        self.assertIn(result["auth_step"], ("complete", "collecting_caller_name"))
+        self.assertTrue(result.get("authenticated"))
 
 
 class SkipSecondNameAskTests(unittest.IsolatedAsyncioTestCase):
