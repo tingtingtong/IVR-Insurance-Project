@@ -84,7 +84,7 @@ _HTML = """<!DOCTYPE html>
   }
   .card {
     background: #1e293b; border-radius: 16px; padding: 40px;
-    width: 340px; box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    width: 360px; box-shadow: 0 20px 60px rgba(0,0,0,0.5);
   }
   h1 { font-size: 18px; font-weight: 600; margin-bottom: 4px; color: #f1f5f9; }
   .subtitle { font-size: 12px; color: #64748b; margin-bottom: 28px; }
@@ -127,12 +127,19 @@ _HTML = """<!DOCTYPE html>
   .log p.err   { color: #ef4444; }
   .timer { text-align: center; font-size: 28px; font-weight: 300;
            color: #3b82f6; margin: 16px 0; letter-spacing: 2px; display: none; }
+  .dtmf-pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 12px 0 6px; }
+  .dtmf-btn { padding: 12px 0; border-radius: 10px; border: 1px solid #334155;
+              background: #0f172a; color: #e2e8f0; font-size: 18px; font-weight: 600;
+              cursor: pointer; font-family: inherit; }
+  .dtmf-btn:hover:not(:disabled) { background: #334155; }
+  .dtmf-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .dtmf-hint { font-size: 11px; color: #64748b; text-align: center; margin-bottom: 4px; }
 </style>
 </head>
 <body>
 <div class="card">
   <h1>insuranceCompany IVR Test Client</h1>
-  <p class="subtitle">Browser softphone — no phone required</p>
+  <p class="subtitle">Twilio Voice JS SDK — keypad sends DTMF during card/account entry</p>
 
   <div class="status-bar">
     <div class="dot" id="dot"></div>
@@ -144,6 +151,22 @@ _HTML = """<!DOCTYPE html>
   <button class="btn btn-call" id="btn-call" disabled onclick="handleCallClick()">Call IVR</button>
   <button class="btn btn-mute" id="btn-mute" disabled onclick="toggleMute()">Mute</button>
   <button class="btn btn-hang" id="btn-hang" disabled onclick="hangUp()">Hang Up</button>
+
+  <p class="dtmf-hint">DTMF keypad — enabled on a connected call (or type 0–9 * #)</p>
+  <div class="dtmf-pad" id="dtmf-pad">
+    <button class="dtmf-btn" disabled onclick="sendDtmf('1')">1</button>
+    <button class="dtmf-btn" disabled onclick="sendDtmf('2')">2</button>
+    <button class="dtmf-btn" disabled onclick="sendDtmf('3')">3</button>
+    <button class="dtmf-btn" disabled onclick="sendDtmf('4')">4</button>
+    <button class="dtmf-btn" disabled onclick="sendDtmf('5')">5</button>
+    <button class="dtmf-btn" disabled onclick="sendDtmf('6')">6</button>
+    <button class="dtmf-btn" disabled onclick="sendDtmf('7')">7</button>
+    <button class="dtmf-btn" disabled onclick="sendDtmf('8')">8</button>
+    <button class="dtmf-btn" disabled onclick="sendDtmf('9')">9</button>
+    <button class="dtmf-btn" disabled onclick="sendDtmf('*')">*</button>
+    <button class="dtmf-btn" disabled onclick="sendDtmf('0')">0</button>
+    <button class="dtmf-btn" disabled onclick="sendDtmf('#')">#</button>
+  </div>
 
   <div class="log" id="log"></div>
 </div>
@@ -170,6 +193,7 @@ function setButtons(calling) {
   document.getElementById("btn-call").disabled =  calling;
   document.getElementById("btn-mute").disabled = !calling;
   document.getElementById("btn-hang").disabled = !calling;
+  document.querySelectorAll("#dtmf-pad .dtmf-btn").forEach(b => { b.disabled = !calling; });
 }
 
 function startTimer() {
@@ -245,7 +269,7 @@ async function startCall() {
     log("Placing call to IVR...");
     call = await device.connect({ params: {} });
 
-    call.on("accept",     () => { setStatus("Connected", "active");
+    call.on("accept",     () => { setStatus("Connected — keypad sends DTMF", "active");
                                    setButtons(true); startTimer();
                                    log("Call connected", "ok"); });
     call.on("disconnect", () => { calling = false;
@@ -276,6 +300,23 @@ function toggleMute() {
 function hangUp() {
   if (call) call.disconnect();
 }
+
+function sendDtmf(digit) {
+  if (!call) { log("No active call — DTMF ignored", "warn"); return; }
+  try {
+    call.sendDigits(String(digit));
+    log("DTMF " + digit, "ok");
+  } catch (e) {
+    log("DTMF failed: " + e.message, "err");
+  }
+}
+
+document.addEventListener("keydown", (e) => {
+  if (!call) return;
+  const t = e.target;
+  if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
+  if (/^[0-9*#]$/.test(e.key)) { e.preventDefault(); sendDtmf(e.key); }
+});
 
 init();
 </script>

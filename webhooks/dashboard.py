@@ -769,7 +769,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;backgrou
           <h3>main.py — FastAPI app wiring</h3>
           <ul>
             <li>Routers: voice_router (/webhook/*), browser_router (/client/*), chat_router (/chat/*), dashboard_router (/dashboard/*)</li>
-            <li>Startup: MemorySaver graph compile, Postgres tables for call history + RAG, Redis health, optional <code>SYNC_TWILIO_WEBHOOKS</code></li>
+            <li>Startup: AsyncPostgresSaver graph compile (MemorySaver only if Postgres is down), call-history tables + RAG, Redis health, optional <code>SYNC_TWILIO_WEBHOOKS</code></li>
             <li>structlog writes to sys.stdout → captured by _Tee above</li>
           </ul>
         </div>
@@ -788,7 +788,7 @@ POST /webhook/gather (each utterance):
 
 POST /webhook/gather-payment:
   Digits (preferred) or SpeechResult → graph, then hangup / DTMF gather / speech gather</div>
-          <p><strong>Key:</strong> <code>thread_id = call_sid</code> — MemorySaver isolates each call. Service nodes that need a live agent must call <code>transfer_now()</code> so Twilio never Gather after “let me transfer you”.</p>
+          <p><strong>Key:</strong> <code>thread_id = call_sid</code> — AsyncPostgresSaver isolates each call across restarts. Service nodes that need a live agent must call <code>transfer_now()</code> so Twilio never Gather after “let me transfer you”.</p>
         </div>
       </div>
 
@@ -801,7 +801,7 @@ POST /webhook/gather-payment:
           <table class="tbl">
             <tr><th>Field</th><th>Type</th><th>Purpose</th></tr>
             <tr><td>messages</td><td>list</td><td>Turn history. add_messages reducer = append-only. Pass only new messages each turn.</td></tr>
-            <tr><td>call_sid</td><td>str</td><td>= MemorySaver thread_id. Isolates each call.</td></tr>
+            <tr><td>call_sid</td><td>str</td><td>= LangGraph thread_id (AsyncPostgresSaver). Isolates each call.</td></tr>
             <tr><td>authenticated</td><td>bool</td><td>True after PII match (before persona name is required)</td></tr>
             <tr><td>auth_step</td><td>str</td><td>collecting_phone → dob/name → collecting_caller_name → complete|failed</td></tr>
             <tr><td>caller_name</td><td>str</td><td>What the caller said after “May I ask your name please?”</td></tr>
@@ -825,7 +825,7 @@ POST /webhook/gather-payment:
     <span class="kw">if not</span> intent: <span class="kw">return</span> END   <span class="cmt"># empty STT — Twilio re-prompts</span>
     <span class="cmt"># policy_info→policy, contact_change→contact, owner_change→escalation, …</span>
     <span class="kw">return</span> route_map.get(intent, <span class="str">"faq"</span>)</div>
-          <p>Checkpointer is <strong>MemorySaver</strong> (async-safe). Postgres is used for call-history tables + pgvector RAG, not as the live graph checkpointer. Redis is health/session — not the LangGraph store.</p>
+          <p>Checkpointer is <strong>AsyncPostgresSaver</strong> with a psycopg async pool (falls back to MemorySaver only if Postgres is unreachable). Postgres also stores call-history tables + pgvector RAG. Redis is health/session.</p>
         </div>
       </div>
 
@@ -864,8 +864,11 @@ POST /webhook/gather-payment:
   found     → collecting_dob
   not found → confirming_phone → yes → collecting_policy / no → collecting_phone
 
-collecting_dob → MATCH → authenticated (persona name only if not already collected)
-  NOMATCH → collecting_name (insured first/last). No "I heard {date}" read-back.
+collecting_dob → confirming_dob ("I heard Jul 16, 1938. Is that correct?")
+  yes + MATCH → authenticated (persona name only if not already collected)
+  yes + NOMATCH → collecting_name (insured first/last)
+  new date spoken → capture it, then match or re-confirm
+  no → collecting_dob
 
 collecting_caller_name → extract_name() (deterministic then LLM)
   fillers uh/um stripped so "Uh, my name is uh, John Smith." → John Smith
@@ -953,7 +956,7 @@ Max 3 auth failures → transfer_now() (Say + Dial + Hangup, never Gather)</div>
           <h3>Local stack (this machine)</h3>
           <ul>
             <li>IVR <code>run.py</code> :8888 · mock CNO API :8001 · Redis :6379 · Postgres :5432 (compose)</li>
-            <li>Graph checkpointer: MemorySaver. Postgres: call history + RAG tables. Redis: health/session.</li>
+            <li>Graph checkpointer: AsyncPostgresSaver (async pool). Postgres also: call history + RAG. Redis: health/session.</li>
             <li>Twilio public URL: <code>TWILIO_BASE_URL</code> (Cloudflare quick tunnel or ngrok). <code>SYNC_TWILIO_WEBHOOKS=true</code> rewrites the TwiML App + DID Voice URL on startup.</li>
             <li>Browser phone: dashboard Softphone tab and <code>/client</code>. Mic needs localhost or HTTPS. DTMF via <code>call.sendDigits()</code>.</li>
           </ul>
@@ -1006,7 +1009,7 @@ Auth (inside the service node, same turn):
       <div class="sg">
         <h4>Conversation</h4>
         <div class="sr"><span class="sk">messages</span><span class="st">list</span><span class="sd">Turn history. add_messages reducer (append-only)</span></div>
-        <div class="sr"><span class="sk">call_sid</span><span class="st">str</span><span class="sd">= MemorySaver thread_id</span></div>
+        <div class="sr"><span class="sk">call_sid</span><span class="st">str</span><span class="sd">= LangGraph thread_id (AsyncPostgresSaver)</span></div>
         <div class="sr"><span class="sk">tts_text</span><span class="st">str</span><span class="sd">Text spoken via TwiML &lt;Say Polly.Joanna&gt;</span></div>
         <div class="sr"><span class="sk">transfer_to</span><span class="st">str</span><span class="sd">Agent DID. Any value ⇒ is_terminal hangup</span></div>
       </div>
@@ -1735,8 +1738,8 @@ const CFG_META = {
   WS_AUTH_TOKEN:           {desc:'Token for authenticating WebSocket /stream connections. Empty = skip (dev only).',         best:'Set a strong token in prod. Add as ?token= param in TwiML Media Stream URL.'},
   ALLOWED_ORIGINS:         {desc:'CORS allowed origins. Comma-separated list or "*" for all.',                              best:'"*" for dev. Restrict to your domain in prod.'},
   // Infra
-  REDIS_URL:               {desc:'Redis URL for health/session. LangGraph itself uses in-process MemorySaver (async).',    best:'redis://localhost:6379/0 for local compose. Required for /health in this stack.'},
-  DATABASE_URL:            {desc:'PostgreSQL for call-history tables, PostgresSaver.setup(), and pgvector RAG.',           best:'postgresql://cno:cno_pass@localhost:5432/cno_ivr with compose pgvector/pg16.'},
+  REDIS_URL:               {desc:'Redis URL for health/session. Not the LangGraph store.',                                best:'redis://localhost:6379/0 for local compose. Required for /health in this stack.'},
+  DATABASE_URL:            {desc:'PostgreSQL for AsyncPostgresSaver (call graph state), call-history tables, and pgvector RAG.', best:'postgresql://cno:cno_pass@localhost:5432/cno_ivr with compose pgvector/pg16.'},
   ENVIRONMENT:             {desc:'Deployment environment tag. Controls logging and safety checks.',                         best:'"dev" locally. "prod" in production. Never run dev mode in prod.'},
   LOG_LEVEL:               {desc:'Logging verbosity.',                                                                      best:'"INFO" in dev and prod. "DEBUG" only for deep troubleshooting.'},
   APP_HOST:                {desc:'Network interface the server binds to.',                                                   best:'"0.0.0.0" to accept all interfaces. "127.0.0.1" for local-only.'},

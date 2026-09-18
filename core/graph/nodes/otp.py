@@ -12,13 +12,21 @@ import time
 from core.graph.state import CNOState
 from core.graph.auth_guard import ensure_authenticated, apply_auth_state, merge_auth_state
 from core.tools.payment_api import process_card_payment, process_ach_payment, get_ach_script
+from core.tools.holding_inquiry import holding_inquiry
 from core.prompts.retry_prompts import PROMPTS
 from utils.idk_detector import is_idk
 from utils.call_logger import log_event
 
 # otp_step state machine
-# "start"                   → ask card or bank
+# "start"                   → fetch due amount, ask to proceed
+# "confirming_due_amount"   → yes = pay due/premium; no = custom or exit
+# "collecting_custom_amount"→ caller names a different amount
+# "confirming_custom_amount"→ confirm the custom amount
 # "choosing_method"         → detect card vs bank
+# "confirming_card_name"    → name on card vs authenticated name
+# "collecting_cardholder_name" → full name as it appears on the card
+# "confirming_account_name" → name on bank account vs authenticated name
+# "collecting_account_name" → full name on the account
 # "collecting_card_dtmf"    → card number via DTMF or voice (full or partial)
 # "confirming_card_group"   → FEAT-006: confirm a partial group, ask for next
 # "confirming_card"         → FEAT-005: confirm full card number with caller
@@ -77,13 +85,153 @@ async def otp_node(state: CNOState) -> dict:
             "current_node": "otp", "active_flow": "",
         })
 
-    # ── Step: Start — ask payment type ───────────────────────────────────────
+    # ── Step: Start — load due amount from holding inquiry ───────────────────
     if otp_step == "start":
+        if not policy_number:
+            from core.graph.escalate import transfer_now
+            return merge_auth_state(auth_state, transfer_now(
+                "I'm sorry, I wasn't able to find your policy number. "
+                "Let me transfer you to a representative."
+            ))
+        holding = await holding_inquiry(policy_number, access_token)
+        if not holding.get("success"):
+            from core.graph.escalate import transfer_now
+            return merge_auth_state(auth_state, transfer_now(
+                PROMPTS["escalation"]["error"]
+            ))
+        due, premium = _due_and_premium(holding.get("data") or {})
+        otp_data = {
+            "due_amount":     due,
+            "premium_amount": premium,
+        }
+        if due > 0:
+            otp_data["quoted_amount"] = due
+            tts = (
+                f"Your total due amount is ${_fmt_money(due)}. "
+                "May we proceed with the payment?"
+            )
+        else:
+            otp_data["quoted_amount"] = premium
+            tts = (
+                "There is currently no premium due. However, you can pay the "
+                f"premium amount of ${_fmt_money(premium)}. "
+                "Would you like to make that payment now?"
+            )
         return merge_auth_state(auth_state, {
-            "otp_step":    "choosing_method",
-            "tts_text":    "Would you like to make a payment by card or by bank account?",
+            "otp_step":     "confirming_due_amount",
+            "otp_data":     otp_data,
+            "tts_text":     tts,
             "current_node": "otp", "active_flow": "otp",
         })
+
+    # ── Step: Confirm due / premium amount ───────────────────────────────────
+    if otp_step == "confirming_due_amount":
+        due = float(otp_data.get("due_amount") or 0)
+        spoken_amount = _extract_amount(last_human) if last_human else None
+        if spoken_amount and spoken_amount > 0 and not _is_yes(last_human):
+            otp_data["amount"] = spoken_amount
+            otp_data.pop("due_retries", None)
+            return {
+                "otp_step":     "confirming_custom_amount",
+                "otp_data":     otp_data,
+                "tts_text":     f"You'd like to pay ${_fmt_money(spoken_amount)}. Is that correct?",
+                "current_node": "otp", "active_flow": "otp",
+            }
+        if _is_yes(last_human):
+            quoted = float(otp_data.get("quoted_amount") or due or otp_data.get("premium_amount") or 0)
+            if quoted <= 0:
+                return {
+                    "otp_step":     "collecting_custom_amount",
+                    "otp_data":     otp_data,
+                    "tts_text":     "How much would you like to pay?",
+                    "current_node": "otp", "active_flow": "otp",
+                }
+            otp_data["amount"] = quoted
+            otp_data.pop("due_retries", None)
+            return _ask_payment_method(otp_data)
+        if _wants_different_amount(last_human) or (due > 0 and _is_no(last_human)):
+            otp_data.pop("due_retries", None)
+            return {
+                "otp_step":     "collecting_custom_amount",
+                "otp_data":     otp_data,
+                "tts_text":     "How much would you like to pay?",
+                "current_node": "otp", "active_flow": "otp",
+            }
+        if due <= 0 and _is_no(last_human):
+            return {
+                "otp_step":     "start",
+                "otp_data":     {},
+                "tts_text":     "No problem. Is there anything else I can help you with today?",
+                "current_node": "otp", "active_flow": "",
+            }
+        retries = int(otp_data.get("due_retries") or 0) + 1
+        otp_data["due_retries"] = retries
+        if retries >= 3:
+            from core.graph.escalate import transfer_now
+            return transfer_now(
+                "I'm sorry, I can't help you with your request. "
+                "Let me transfer you to a representative.",
+                otp_step="start", otp_data={},
+            )
+        quoted = float(otp_data.get("quoted_amount") or 0)
+        return {
+            "otp_step":     "confirming_due_amount",
+            "otp_data":     otp_data,
+            "tts_text":     (
+                f"Your total due amount is ${_fmt_money(quoted)}. "
+                "Please say yes to proceed, or no if you'd like to pay a different amount."
+                if due > 0 else
+                f"Would you like to pay the premium amount of ${_fmt_money(quoted)}? Please say yes or no."
+            ),
+            "current_node": "otp", "active_flow": "otp",
+        }
+
+    # ── Step: Custom amount (doc Step 3) ─────────────────────────────────────
+    if otp_step == "collecting_custom_amount":
+        amount = _extract_amount(last_human)
+        if amount is None or amount <= 0:
+            retries = int(otp_data.get("custom_retries") or 0) + 1
+            otp_data["custom_retries"] = retries
+            if retries >= 3:
+                from core.graph.escalate import transfer_now
+                return transfer_now(
+                    "I'm sorry, I can't help you with your request. "
+                    "Let me transfer you to a representative.",
+                    otp_step="start", otp_data={},
+                )
+            return {
+                "otp_step":     "collecting_custom_amount",
+                "otp_data":     otp_data,
+                "tts_text":     "I didn't catch the amount. How much would you like to pay, in dollars?",
+                "current_node": "otp", "active_flow": "otp",
+            }
+        otp_data["amount"] = amount
+        otp_data.pop("custom_retries", None)
+        return {
+            "otp_step":     "confirming_custom_amount",
+            "otp_data":     otp_data,
+            "tts_text":     f"You'd like to pay ${_fmt_money(amount)}. Is that correct?",
+            "current_node": "otp", "active_flow": "otp",
+        }
+
+    if otp_step == "confirming_custom_amount":
+        if _is_yes(last_human):
+            otp_data.pop("custom_retries", None)
+            return _ask_payment_method(otp_data)
+        if _is_no(last_human):
+            otp_data.pop("amount", None)
+            return {
+                "otp_step":     "collecting_custom_amount",
+                "otp_data":     otp_data,
+                "tts_text":     "No problem. How much would you like to pay?",
+                "current_node": "otp", "active_flow": "otp",
+            }
+        return {
+            "otp_step":     "confirming_custom_amount",
+            "otp_data":     otp_data,
+            "tts_text":     "Please say yes to confirm the amount, or no to change it.",
+            "current_node": "otp", "active_flow": "otp",
+        }
 
     # ── Step: Choosing method ─────────────────────────────────────────────────
     if otp_step == "choosing_method":
@@ -105,22 +253,129 @@ async def otp_node(state: CNOState) -> dict:
                 "current_node": "otp", "active_flow": "otp",
             }
         otp_data["payment_type"] = method
+        auth_name = _authenticated_name(state)
+        otp_data["authenticated_name"] = auth_name
         if method == "card":
-            # BUG-016: Offer both DTMF and voice for card number
             return {
-                "otp_step":   "collecting_card_dtmf",
+                "otp_step":   "confirming_card_name",
                 "otp_data":   otp_data,
-                "tts_text":   "Please enter your 16-digit card number using your keypad, or you can read it out loud.",
+                "tts_text":   _card_name_prompt(auth_name),
                 "current_node": "otp", "active_flow": "otp",
             }
-        else:
-            # ACH — read authorization script first
+        return {
+            "otp_step":   "confirming_account_name",
+            "otp_data":   otp_data,
+            "tts_text":   (
+                f"Please confirm if your name as it appears on the account is {auth_name}. "
+                "If not, please say the full name on the account."
+            ),
+            "current_node": "otp", "active_flow": "otp",
+        }
+
+    # ── Step: Name on card vs authenticated name ─────────────────────────────
+    if otp_step == "confirming_card_name":
+        if _is_prepaid_unnamed(last_human):
+            from core.graph.escalate import transfer_now
+            return transfer_now(
+                PROMPTS["prepaid_card_restriction"],
+                otp_step="start", otp_data={},
+            )
+        if _is_yes(last_human):
+            otp_data["cardholder_name"] = otp_data.get("authenticated_name") or _authenticated_name(state)
+            return _begin_card_number(otp_data)
+        spoken_name = _spoken_full_name(last_human)
+        if spoken_name:
+            otp_data["cardholder_name"] = spoken_name
+            return _begin_card_number(otp_data)
+        if _is_no(last_human):
             return {
-                "otp_step":   "ach_auth_script",
-                "otp_data":   otp_data,
-                "tts_text":   get_ach_script(),
+                "otp_step":     "collecting_cardholder_name",
+                "otp_data":     otp_data,
+                "tts_text":     "Please say the full name as it appears on the card.",
                 "current_node": "otp", "active_flow": "otp",
             }
+        retries = int(otp_data.get("name_retries") or 0) + 1
+        otp_data["name_retries"] = retries
+        if retries >= 3:
+            from core.graph.escalate import transfer_now
+            return transfer_now(
+                "I'm sorry, I can't help you with your request. "
+                "Let me transfer you to a representative.",
+                otp_step="start", otp_data={},
+            )
+        return {
+            "otp_step":     "confirming_card_name",
+            "otp_data":     otp_data,
+            "tts_text":     _card_name_prompt(otp_data.get("authenticated_name") or _authenticated_name(state)),
+            "current_node": "otp", "active_flow": "otp",
+        }
+
+    if otp_step == "collecting_cardholder_name":
+        if _is_prepaid_unnamed(last_human):
+            from core.graph.escalate import transfer_now
+            return transfer_now(
+                PROMPTS["prepaid_card_restriction"],
+                otp_step="start", otp_data={},
+            )
+        spoken_name = _spoken_full_name(last_human)
+        if not spoken_name:
+            retries = int(otp_data.get("name_retries") or 0) + 1
+            otp_data["name_retries"] = retries
+            if retries >= 3:
+                from core.graph.escalate import transfer_now
+                return transfer_now(
+                    "I'm sorry, I can't help you with your request. "
+                    "Let me transfer you to a representative.",
+                    otp_step="start", otp_data={},
+                )
+            return {
+                "otp_step":     "collecting_cardholder_name",
+                "otp_data":     otp_data,
+                "tts_text":     "Please say the first and last name as it appears on the card.",
+                "current_node": "otp", "active_flow": "otp",
+            }
+        otp_data["cardholder_name"] = spoken_name
+        otp_data.pop("name_retries", None)
+        return _begin_card_number(otp_data)
+
+    # ── Step: Name on bank account vs authenticated name ─────────────────────
+    if otp_step == "confirming_account_name":
+        if _is_yes(last_human):
+            otp_data["account_name"] = otp_data.get("authenticated_name") or _authenticated_name(state)
+            return _begin_ach_script(otp_data)
+        spoken_name = _spoken_full_name(last_human)
+        if spoken_name:
+            otp_data["account_name"] = spoken_name
+            return _begin_ach_script(otp_data)
+        if _is_no(last_human):
+            return {
+                "otp_step":     "collecting_account_name",
+                "otp_data":     otp_data,
+                "tts_text":     "Please say the full name as it appears on the account.",
+                "current_node": "otp", "active_flow": "otp",
+            }
+        return {
+            "otp_step":     "confirming_account_name",
+            "otp_data":     otp_data,
+            "tts_text":     (
+                f"Please confirm if the name on the account is "
+                f"{otp_data.get('authenticated_name') or _authenticated_name(state)}. "
+                "Say yes, or say the full name."
+            ),
+            "current_node": "otp", "active_flow": "otp",
+        }
+
+    if otp_step == "collecting_account_name":
+        spoken_name = _spoken_full_name(last_human)
+        if not spoken_name:
+            return {
+                "otp_step":     "collecting_account_name",
+                "otp_data":     otp_data,
+                "tts_text":     "Please say the first and last name as it appears on the account.",
+                "current_node": "otp", "active_flow": "otp",
+            }
+        otp_data["account_name"] = spoken_name
+        return _begin_ach_script(otp_data)
 
     # ── Step: ACH auth — wait for "I authorize" ───────────────────────────────
     if otp_step == "ach_auth_script":
@@ -392,6 +647,9 @@ async def otp_node(state: CNOState) -> dict:
     # ── Step: Confirm CVV ──────────────────────────────────────────────────
     if otp_step == "confirming_cvv":
         if _is_yes(last_human):
+            if float(otp_data.get("amount") or 0) > 0:
+                result = await _process_payment(otp_data, policy_number, access_token)
+                return _build_payment_result(result, otp_data)
             return {
                 "otp_step": "collecting_card_amount",
                 "otp_data": otp_data,
@@ -501,6 +759,9 @@ async def otp_node(state: CNOState) -> dict:
     # ── Step: Confirm routing number ───────────────────────────────────────
     if otp_step == "confirming_routing":
         if _is_yes(last_human):
+            if float(otp_data.get("amount") or 0) > 0:
+                result = await _process_payment(otp_data, policy_number, access_token)
+                return _build_payment_result(result, otp_data)
             return {
                 "otp_step": "collecting_bank_amount",
                 "otp_data": otp_data,
@@ -986,6 +1247,111 @@ def _wants_cancel(utterance: str) -> bool:
     if "never mind" in lower or "don't want" in lower or "forget it" in lower:
         return True
     return False
+
+
+def _fmt_money(amount: float) -> str:
+    return f"{float(amount):.2f}"
+
+
+def _parse_money(val) -> float:
+    if val is None or val == "":
+        return 0.0
+    s = str(val).replace("$", "").replace(",", "").strip()
+    try:
+        return float(s)
+    except ValueError:
+        return 0.0
+
+
+def _due_and_premium(data: dict) -> tuple[float, float]:
+    """Due from AmountDue when present; else premium if PaidToDate is in the past."""
+    from datetime import date
+    premium = _parse_money(data.get("PremiumAmount"))
+    if "AmountDue" in data and data.get("AmountDue") not in (None, ""):
+        return _parse_money(data.get("AmountDue")), premium
+    paid_raw = str(data.get("PaidToDate") or "")[:10]
+    try:
+        paid = date.fromisoformat(paid_raw)
+        due = premium if paid < date.today() else 0.0
+    except ValueError:
+        due = premium
+    return due, premium
+
+
+def _authenticated_name(state: dict) -> str:
+    name = (state.get("caller_name") or "").strip()
+    if name:
+        return name.title()
+    cust = state.get("customer") or {}
+    parts = [str(cust.get("firstName") or "").strip(), str(cust.get("lastName") or "").strip()]
+    joined = " ".join(p for p in parts if p)
+    return joined.title() if joined else "the name we have on file"
+
+
+def _card_name_prompt(auth_name: str) -> str:
+    return (
+        f"Is the name {auth_name} the same as it appears on the card? "
+        "If not, please say the full name as it appears on the card."
+    )
+
+
+def _ask_payment_method(otp_data: dict) -> dict:
+    return {
+        "otp_step":     "choosing_method",
+        "otp_data":     otp_data,
+        "tts_text":     "Which payment method would you like to use: a card or bank account?",
+        "current_node": "otp", "active_flow": "otp",
+    }
+
+
+def _begin_card_number(otp_data: dict) -> dict:
+    otp_data.pop("name_retries", None)
+    return {
+        "otp_step":     "collecting_card_dtmf",
+        "otp_data":     otp_data,
+        "tts_text":     "Please enter your 16-digit card number using your keypad, or you can read it out loud.",
+        "current_node": "otp", "active_flow": "otp",
+    }
+
+
+def _begin_ach_script(otp_data: dict) -> dict:
+    return {
+        "otp_step":     "ach_auth_script",
+        "otp_data":     otp_data,
+        "tts_text":     get_ach_script(),
+        "current_node": "otp", "active_flow": "otp",
+    }
+
+
+def _wants_different_amount(utterance: str) -> bool:
+    u = (utterance or "").lower()
+    return any(p in u for p in (
+        "different amount", "another amount", "other amount",
+        "change the amount", "not that amount", "pay something else",
+        "different",
+    ))
+
+
+def _is_prepaid_unnamed(utterance: str) -> bool:
+    u = (utterance or "").lower()
+    return any(p in u for p in (
+        "prepaid",
+        "does not have a name",
+        "doesn't have a name",
+        "doesnt have a name",
+        "no name on the card",
+        "card has no name",
+        "card does not have a name",
+    ))
+
+
+def _spoken_full_name(utterance: str) -> str:
+    from utils.name_extractor import parse_name_deterministic, format_extracted_name
+    first, last = parse_name_deterministic(utterance or "")
+    name = format_extracted_name(first, last)
+    if first and last:
+        return name
+    return ""
 
 
 def _detect_payment_method(utterance: str) -> str:
