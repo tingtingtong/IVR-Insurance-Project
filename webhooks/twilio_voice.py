@@ -260,7 +260,13 @@ async def gather_payment(request: Request):
     digits     = form.get("Digits", "").strip()
     speech     = form.get("SpeechResult", "").strip()
 
-    log.info("gather_payment_raw", call_sid=call_sid, digits=digits, speech=speech[:60] if speech else "")
+    log.info(
+        "gather_payment_raw",
+        call_sid=call_sid,
+        digits=("[REDACTED]" if digits else ""),
+        speech=("[REDACTED]" if speech else ""),
+        input_kind=("dtmf" if digits else ("speech" if speech else "empty")),
+    )
 
     # Prefer DTMF digits over speech if both present
     collected_number = ""

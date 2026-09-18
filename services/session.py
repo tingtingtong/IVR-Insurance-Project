@@ -91,10 +91,12 @@ class SessionService:
         if "otp_data" in serializable and isinstance(serializable["otp_data"], dict):
             otp = dict(serializable["otp_data"])
             for key in ("card_number", "account_number"):
-                if key in otp and len(otp[key]) >= 4:
+                if key in otp and isinstance(otp[key], str) and len(otp[key]) >= 4:
                     otp[key] = "****" + otp[key][-4:]
             if "cvv" in otp:
                 otp["cvv"] = "***"
+            if "card_groups" in otp:
+                otp["card_groups"] = ["[REDACTED]"] * len(otp["card_groups"] or [])
             serializable["otp_data"] = otp
         await r.setex(self._key(call_sid), SESSION_TTL, json.dumps(serializable))
 

@@ -57,8 +57,15 @@ async def otp_node(state: CNOState) -> dict:
     policy_number = customer.get("policyNumber", "")
     last_human = _last_human(messages)
 
-    log_event(call_sid, "node_enter", node="otp", step=otp_step,
-              input=last_human[:40] if last_human else "")
+    _sensitive_steps = {
+        "collecting_card_dtmf", "confirming_card_group", "confirming_card",
+        "collecting_card_cvv", "confirming_cvv", "collecting_bank_dtmf",
+        "confirming_bank_account", "dtmf_complete",
+    }
+    log_event(
+        call_sid, "node_enter", node="otp", step=otp_step,
+        input=("[REDACTED]" if otp_step in _sensitive_steps else (last_human[:40] if last_human else "")),
+    )
 
     # ── BUG-028: Cancel/exit from OTP flow at any step ─────────────────────
     if otp_step not in ("start", "complete") and last_human and _wants_cancel(last_human):
@@ -177,11 +184,10 @@ async def otp_node(state: CNOState) -> dict:
                 existing_groups.append(collected)
                 otp_data["card_groups"] = existing_groups
                 total_so_far = len(all_digits)
-                ordinal = _group_ordinal(total_so_far)
                 return {
                     "otp_step": "confirming_card_group",
                     "otp_data": otp_data,
-                    "tts_text": f"I received {ordinal}: {_spell_digits(collected)}. Is that correct?",
+                    "tts_text": f"I heard {_spell_digits(collected)}. Is that correct?",
                     "current_node": "otp", "active_flow": "otp",
                 }
 
@@ -219,11 +225,10 @@ async def otp_node(state: CNOState) -> dict:
                 groups[-1] = correction
                 otp_data["card_groups"] = groups
                 new_total = len("".join(groups))
-                ordinal = _group_ordinal(new_total)
                 return {
                     "otp_step": "confirming_card_group",
                     "otp_data": otp_data,
-                    "tts_text": f"I have {ordinal}: {_spell_digits(correction)}. Is that correct?",
+                    "tts_text": f"I heard {_spell_digits(correction)}. Is that correct?",
                     "current_node": "otp", "active_flow": "otp",
                 }
             else:
@@ -262,12 +267,11 @@ async def otp_node(state: CNOState) -> dict:
             validation_result = _validate_card_with_feedback(card_number, otp_data)
             if validation_result is not None:
                 return validation_result
-            last4 = card_number[-4:]
-            # FEAT-005: Confirm card number with caller before proceeding
+            # Confirm the full 16 digits — last-4 is not enough when STT drops/doubles digits.
             return {
                 "otp_step": "confirming_card",
                 "otp_data": otp_data,
-                "tts_text": f"I have your card number ending in {_spell_digits(last4)}. Is that correct?",
+                "tts_text": _confirm_card_tts(otp_data.get("card_number", "")),
                 "current_node": "otp", "active_flow": "otp",
             }
         else:
@@ -362,21 +366,24 @@ async def otp_node(state: CNOState) -> dict:
     # ── Step: Collect CVV via normal STT ───────────────────────────────────
     if otp_step == "collecting_card_cvv":
         cvv = _extract_digits(last_human)
-        from utils.payment_validator import validate_cvv
+        from utils.payment_validator import validate_cvv, try_trim_extra_digits
+        if len(cvv) != 3 and 4 <= len(cvv) <= 6:
+            trimmed = try_trim_extra_digits(cvv, expected_len=3, max_extra=3)
+            if trimmed:
+                cvv = trimmed
         ok, err = validate_cvv(cvv)
         if not ok:
             return {
                 "otp_step": "collecting_card_cvv",
                 "otp_data": otp_data,
-                "tts_text": "I need the 3 or 4 digit security code from the back of your card. Please try again.",
+                "tts_text": "I need the 3-digit security code on the back of your card. Please say it again.",
                 "current_node": "otp", "active_flow": "otp",
             }
         otp_data["cvv"] = cvv
-        # FEAT-005: Confirm CVV
         return {
             "otp_step": "confirming_cvv",
             "otp_data": otp_data,
-            "tts_text": f"Security code {_spell_digits(cvv)}. Is that correct?",
+            "tts_text": _confirm_cvv_tts(cvv),
             "current_node": "otp", "active_flow": "otp",
         }
 
@@ -637,96 +644,75 @@ MAX_CARD_RETRIES = 3
 
 def _validate_card_with_feedback(card_number: str, otp_data: dict) -> dict | None:
     """
-    BUG-017: Validate card number with intelligent self-correction.
-    FEAT-005: Smart 17→16 digit correction — try removing each duplicate digit.
-    Returns a state dict to send back to the caller if validation fails,
-    or None if the card is valid.
+    Validate the card. Extra STT digits are trimmed silently — never tell the
+    caller we "received 17 digits". On success return None so the caller hears
+    a full 16-digit confirmation. On failure re-ask without leaking PAN.
     """
     import re
-    from utils.payment_validator import validate_card_number, luhn_check
+    from utils.payment_validator import validate_card_number, luhn_check, try_trim_extra_digits
 
     digits = re.sub(r"\D", "", card_number)
     retry_count = otp_data.get("card_retry_count", 0)
 
-    ok, err = validate_card_number(card_number)
+    ok, _err = validate_card_number(digits)
+    if not ok and 17 <= len(digits) <= 20:
+        corrected = try_trim_extra_digits(digits, expected_len=16, checksum_fn=luhn_check)
+        if corrected:
+            otp_data["card_number"] = corrected
+            otp_data.pop("card_retry_count", None)
+            return None
+
     if ok:
+        otp_data["card_number"] = digits
         otp_data.pop("card_retry_count", None)
         return None
 
-    # FEAT-005: Smart correction for 17 digits (1 extra) — try removing each digit
-    if len(digits) == 17:
-        corrected = _try_correct_extra_digit(digits)
-        if corrected:
-            otp_data["card_number"] = corrected
-            last4 = corrected[-4:]
-            # Ask caller to confirm the corrected number
-            return {
-                "otp_step": "confirming_card",
-                "otp_data": otp_data,
-                "tts_text": f"I received 17 digits. I think you meant the card ending in {_spell_digits(last4)}. Is that correct?",
-                "current_node": "otp", "active_flow": "otp",
-            }
-
-    # Max retries exceeded — escalate to agent
     if retry_count >= MAX_CARD_RETRIES:
         return {
             "otp_step": "start",
             "otp_data": {},
-            "tts_text": "I'm sorry, I wasn't able to validate your card number after several attempts. "
+            "tts_text": "I'm sorry, I wasn't able to capture the card number after several attempts. "
                         "Let me transfer you to a representative who can assist you.",
             "current_node": "otp", "active_flow": "",
             "current_intent": "escalate",
         }
 
     otp_data["card_retry_count"] = retry_count + 1
-
-    # Build intelligent feedback based on what went wrong
-    if len(digits) == 0:
-        hint = "I didn't receive any digits."
-    elif len(digits) < 16:
-        hint = f"I only received {len(digits)} digits, but a card number should be 16 digits."
-    elif len(digits) > 16:
-        hint = f"I received {len(digits)} digits, but a card number should be 16 digits."
-    else:
-        hint = f"The number ending in {digits[-4:]} didn't pass verification. One or more digits may be incorrect."
-
+    otp_data.pop("card_number", None)
+    otp_data.pop("card_groups", None)
+    hint = "I didn't catch the full card number. Please say all 16 digits again."
     if retry_count >= 1:
-        hint += " You can also enter the number using your keypad."
-
+        hint += " You can also enter it using your keypad."
     return {
         "otp_step": "collecting_card_dtmf",
         "otp_data": otp_data,
-        "tts_text": f"{hint} Please try entering your 16-digit card number again.",
+        "tts_text": hint,
         "current_node": "otp", "active_flow": "otp",
     }
-
-
-def _try_correct_extra_digit(digits_17: str) -> str:
-    """FEAT-005: Try removing one extra digit from a 17-digit string to get valid 16.
-
-    Strategy: find consecutive duplicate digits and try removing one.
-    If exactly one removal passes Luhn, return the corrected number.
-    """
-    from utils.payment_validator import luhn_check
-    candidates = set()
-    for i in range(len(digits_17)):
-        # Only try removing a digit if it's the same as its neighbor (likely STT double-tap)
-        if i > 0 and digits_17[i] == digits_17[i - 1]:
-            candidate = digits_17[:i] + digits_17[i + 1:]
-            if luhn_check(candidate):
-                candidates.add(candidate)
-        elif i < len(digits_17) - 1 and digits_17[i] == digits_17[i + 1]:
-            candidate = digits_17[:i] + digits_17[i + 1:]
-            if luhn_check(candidate):
-                candidates.add(candidate)
-    if len(candidates) == 1:
-        return candidates.pop()
-    return ""
 
 
 def _spell_digits(digits: str) -> str:
     """Spell out digits for TTS clarity: '4444' → '4, 4, 4, 4'."""
     return ", ".join(digits)
+
+
+def _spell_card_number(digits: str) -> str:
+    """Read a 16-digit PAN in four-digit groups with pauses."""
+    import re
+    d = re.sub(r"\D", "", digits)
+    groups = [d[i:i + 4] for i in range(0, len(d), 4)]
+    return ". ".join(_spell_digits(g) for g in groups if g)
+
+
+def _confirm_card_tts(card_number: str) -> str:
+    return (
+        f"Let me confirm the card number I heard. {_spell_card_number(card_number)}. "
+        "Is that correct?"
+    )
+
+
+def _confirm_cvv_tts(cvv: str) -> str:
+    return f"The security code I heard is {_spell_digits(cvv)}. Is that correct?"
 
 
 def _extract_digits(utterance: str) -> str:
