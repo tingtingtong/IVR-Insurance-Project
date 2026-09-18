@@ -49,6 +49,17 @@ class DeterministicNameTests(unittest.TestCase):
     def test_i_am(self):
         self.assertEqual(parse_name_deterministic("I am Jane Doe"), ("Jane", "Doe"))
 
+    def test_fillers_around_my_name_is(self):
+        # Call CA5589887086f1df8c2aee86daa589c75f stored "My Smith"
+        self.assertEqual(
+            parse_name_deterministic("Uh, my name is uh, John Smith."),
+            ("John", "Smith"),
+        )
+        self.assertEqual(
+            parse_name_deterministic("um my name is john smith"),
+            ("John", "Smith"),
+        )
+
 
 class ExtractNameTests(unittest.IsolatedAsyncioTestCase):
     async def test_labeled_does_not_need_llm(self):
@@ -79,6 +90,22 @@ class CallerNameNodeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["caller_persona"], "insured")
         self.assertEqual(result["caller_name"], "John Smith")
         self.assertEqual(result["auth_step"], "complete")
+
+    async def test_uh_my_name_is_uh_john_smith(self):
+        from core.graph.nodes.auth import _collecting_caller_name
+        uttered = "Uh, my name is uh, John Smith."
+        state = {
+            "call_sid": "CA_NAME2",
+            "finalized_party": {
+                "Personas": [{"name": "John Smith", "role": "insured"}],
+            },
+            "slot_attempts": {},
+            "messages": [HumanMessage(content=uttered)],
+        }
+        result = await _collecting_caller_name(state, uttered)
+        self.assertEqual(result["caller_name"], "John Smith")
+        self.assertEqual(result["caller_persona"], "insured")
+        self.assertNotIn("My Smith", result["caller_name"])
 
 
 class EscalateHangupTests(unittest.TestCase):
