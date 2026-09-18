@@ -553,25 +553,39 @@ async def otp_node(state: CNOState) -> dict:
             "current_node": "otp", "active_flow": "otp",
         }
 
-    # ── Step: Complete — handle repeat/follow-up requests ────────────────────
+    # ── Step: Complete — repeat numbers, hang up, or ask anything else ────────
     if otp_step == "complete":
-        # Allow caller to ask for confirmation number again
-        lower = last_human.lower()
-        if any(w in lower for w in ["repeat", "again", "confirmation", "number", "reference", "save"]):
+        # "Yes" after "would you like me to repeat those numbers?" means repeat.
+        if _wants_repeat_confirmation(last_human) or _is_yes(last_human):
             stored_tts = otp_data.get("last_confirmation_tts", "")
             if stored_tts:
                 return {
                     "otp_step": "complete",
                     "otp_data": otp_data,
-                    "tts_text": f"Let me repeat that for you. {stored_tts}",
+                    "tts_text": (
+                        f"Let me repeat that slowly. {stored_tts} "
+                        "Would you like me to repeat those numbers again, "
+                        "or is there anything else I can help you with today?"
+                    ),
                     "current_node": "otp", "active_flow": "otp",
                 }
-        # Anything else — clear flow and let router handle
+        if _is_done_after_payment(last_human):
+            return {
+                "otp_step": "complete",
+                "otp_data": otp_data,
+                "tts_text": "Thank you for calling. Have a great day. Goodbye.",
+                "current_node": "goodbye", "active_flow": "",
+                "current_intent": "goodbye",
+            }
+        # Keep confirmation numbers so a later "repeat that" still works
         return {
-            "otp_step": "start",
-            "otp_data": {},
-            "tts_text": "",
-            "current_node": "otp", "active_flow": "",
+            "otp_step": "complete",
+            "otp_data": otp_data,
+            "tts_text": (
+                "Is there anything else I can help you with today? "
+                "You can also ask me to repeat your confirmation number."
+            ),
+            "current_node": "otp", "active_flow": "otp",
         }
 
     tts_fallback = "Is there anything else I can help you with?"
@@ -585,17 +599,28 @@ def _build_payment_result(result: dict, otp_data: dict) -> dict:
     if result["success"]:
         confirmation = result.get("confirmation", "")
         payment_id = result.get("payment_id", "")
-        tts = "Your payment has been processed successfully."
+        numbers = []
         if confirmation:
-            tts += f" Your confirmation number is {_spell_alphanumeric(confirmation)}."
+            numbers.append(
+                f"Your confirmation number is {_spell_alphanumeric(confirmation, slow=True)}."
+            )
         if payment_id:
-            tts += f" Your payment reference ID is {_spell_alphanumeric(payment_id)}."
-        tts += " Please save these numbers for your records."
+            numbers.append(
+                f"Your payment reference ID is {_spell_alphanumeric(payment_id, slow=True)}."
+            )
+        numbers_tts = " ".join(numbers)
+        tts = "Your payment has been processed successfully."
+        if numbers_tts:
+            tts += f" {numbers_tts}"
+        tts += " Please write these numbers down."
         tts += f" {PROMPTS['payment_disclosure']}"
-        # Store confirmation text so caller can ask to repeat
+        tts += (
+            " Would you like me to repeat those numbers, "
+            "or is there anything else I can help you with today?"
+        )
         return {
             "otp_step": "complete",
-            "otp_data": {"last_confirmation_tts": tts},
+            "otp_data": {"last_confirmation_tts": numbers_tts},
             "tts_text": tts,
             "current_node": "otp", "active_flow": "otp",
         }
@@ -891,8 +916,18 @@ def _format_expiry_spoken(expiry: str) -> str:
     return expiry
 
 
-def _spell_alphanumeric(code: str) -> str:
-    """Spell out a confirmation code for TTS clarity: 'CNF-ABC123' → 'C N F dash A B C 1 2 3'."""
+_DIGIT_WORDS = {
+    "0": "zero", "1": "one", "2": "two", "3": "three", "4": "four",
+    "5": "five", "6": "six", "7": "seven", "8": "eight", "9": "nine",
+}
+
+
+def _spell_alphanumeric(code: str, slow: bool = False) -> str:
+    """Spell a confirmation/reference id character by character.
+
+    slow=True inserts a period between tokens and speaks digits as words so
+    Polly pauses: 'CNF755' → 'C. N. F. seven. five. five.'
+    """
     parts = []
     for ch in code:
         if ch == "-":
@@ -900,10 +935,46 @@ def _spell_alphanumeric(code: str) -> str:
         elif ch.isalpha():
             parts.append(ch.upper())
         elif ch.isdigit():
-            parts.append(ch)
+            parts.append(_DIGIT_WORDS.get(ch, ch) if slow else ch)
         else:
             parts.append(ch)
+    if slow:
+        return ". ".join(parts) + "."
     return " ".join(parts)
+
+
+def _wants_repeat_confirmation(utterance: str) -> bool:
+    """True when the caller asks to hear the confirmation/reference number again."""
+    import re
+    u = re.sub(r"[^a-z0-9 ]", " ", utterance.lower())
+    u = " ".join(u.split())
+    if any(p in u for p in (
+        "confirmation number", "confirmation", "reference", "reference id",
+        "reference number", "repeat", "say it again", "read it again",
+        "read that again", "say that again", "those numbers", "the numbers",
+    )):
+        return True
+    words = set(u.split())
+    if "repeat" in words or "again" in words:
+        return True
+    return False
+
+
+def _is_done_after_payment(utterance: str) -> bool:
+    """Thank-you / nothing-else after a completed payment should hang up, not IDK."""
+    import re
+    u = re.sub(r"[^a-z0-9 ]", " ", utterance.lower())
+    u = " ".join(u.split())
+    if u in {
+        "thank you", "thanks", "thank you so much", "thanks so much",
+        "thank you very much", "no", "nope", "nothing", "nothing else",
+        "that's all", "thats all", "no thanks", "no thank you",
+        "goodbye", "bye", "hang up",
+    }:
+        return True
+    if u.startswith("thank you") and len(u.split()) <= 5:
+        return True
+    return False
 
 
 def _wants_cancel(utterance: str) -> bool:
