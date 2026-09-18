@@ -22,8 +22,11 @@ resource "aws_db_instance" "main" {
   vpc_security_group_ids = [aws_security_group.rds.id]
 
   publicly_accessible = false
-  skip_final_snapshot  = true # demo — no snapshot on destroy
-  deletion_protection  = false
+  skip_final_snapshot       = var.environment != "prod"
+  final_snapshot_identifier = var.environment == "prod" ? "${var.project}-${var.environment}-final" : null
+  deletion_protection       = var.environment == "prod"
+  backup_retention_period   = var.environment == "prod" ? 7 : 0
+  storage_encrypted         = true
 
   tags = { Name = "${var.project}-postgres" }
 }

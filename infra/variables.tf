@@ -76,9 +76,9 @@ variable "router_bedrock_model" {
 }
 
 variable "app_port" {
-  description = "Container application port"
+  description = "Container application port (must match Dockerfile EXPOSE / uvicorn)"
   type        = number
-  default     = 8000
+  default     = 8080
 }
 
 variable "task_cpu" {
@@ -129,4 +129,28 @@ variable "redis_node_type" {
   description = "ElastiCache node type (cache.t4g.micro for dev, cache.t4g.small+ for prod)"
   type        = string
   default     = "cache.t4g.micro"
+}
+
+variable "allowed_origins" {
+  description = "CORS allowlist. Must not be * in prod."
+  type        = string
+  default     = "*"
+}
+
+variable "twilio_base_url" {
+  description = "Public HTTPS base URL Twilio uses for webhooks and Media Streams (e.g. https://ivr.example.com)"
+  type        = string
+  default     = ""
+}
+
+variable "acm_certificate_arn" {
+  description = "ACM cert ARN for ALB HTTPS. Empty = HTTP only (dev). Set in prod so Twilio can use wss/https."
+  type        = string
+  default     = ""
+}
+
+variable "cno_api_base_url" {
+  description = "Policy-admin API base URL. Dev default is the mock sidecar. Prod must be the real API."
+  type        = string
+  default     = "http://localhost:8001"
 }

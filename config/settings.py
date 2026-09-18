@@ -1,3 +1,4 @@
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -112,9 +113,37 @@ class Settings(BaseSettings):
     app_port: int = 8080
     log_level: str = "INFO"
 
+    # Cap concurrent LLM calls per process (80 parallel streams would otherwise stampede Groq)
+    llm_max_inflight: int = 20
+
     @property
     def is_prod(self) -> bool:
-        return self.environment == "prod"
+        return self.environment.lower() == "prod"
+
+    @model_validator(mode="after")
+    def _enforce_prod_security(self):
+        """Refuse to boot in prod with open-by-default security controls."""
+        if not self.is_prod:
+            return self
+        missing: list[str] = []
+        if not self.dashboard_password:
+            missing.append("DASHBOARD_PASSWORD")
+        if not self.validate_twilio_signature:
+            missing.append("VALIDATE_TWILIO_SIGNATURE=true")
+        if not (self.twilio_base_url or "").lower().startswith("https://"):
+            missing.append("TWILIO_BASE_URL (must be https://...)")
+        if not self.ws_auth_token:
+            missing.append("WS_AUTH_TOKEN")
+        if self.allowed_origins.strip() == "*":
+            missing.append("ALLOWED_ORIGINS (must not be *)")
+        if not self.cno_jwt_secret or self.cno_jwt_secret == "dev-fallback-secret-do-not-use-in-prod":
+            missing.append("CNO_JWT_SECRET")
+        if missing:
+            raise ValueError(
+                "Refusing to start ENVIRONMENT=prod with open security controls. "
+                "Set: " + ", ".join(missing)
+            )
+        return self
 
 
 settings = Settings()

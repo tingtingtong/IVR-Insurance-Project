@@ -10,16 +10,21 @@ Endpoints:
 """
 import uuid
 import structlog
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from langchain_core.messages import HumanMessage
 
 import core.graph.graph as _graph_module
 from services.conversation_store import add_chat_turn, get_chat, get_chats, ensure_chat
+from webhooks.security import require_dashboard_auth
 
 log = structlog.get_logger()
-router = APIRouter(prefix="/chat", tags=["webchat"])
+router = APIRouter(
+    prefix="/chat",
+    tags=["webchat"],
+    dependencies=[Depends(require_dashboard_auth)],
+)
 
 _GREETING = (
     "Hi! I'm your virtual insurance assistant. "
@@ -158,12 +163,13 @@ async def reset_session(session_id: str):
     _chats.pop(session_id, None)
     # Clear LangGraph checkpoint for this thread
     try:
-        from core.graph.graph import _checkpointer
-        config = {"configurable": {"thread_id": f"chat_{session_id}"}}
-        # MemorySaver doesn't expose a delete API; just remove from storage dict
-        thread_key = f"chat_{session_id}"
-        if hasattr(_checkpointer, "storage"):
-            _checkpointer.storage.pop(thread_key, None)
-    except Exception:
-        pass
+        from core.graph.graph import get_checkpointer
+        cp = get_checkpointer()
+        thread_id = f"chat_{session_id}"
+        if cp is not None and hasattr(cp, "adelete_thread"):
+            await cp.adelete_thread(thread_id)
+        elif cp is not None and hasattr(cp, "storage"):
+            cp.storage.pop(thread_id, None)
+    except Exception as e:
+        log.warning("checkpoint_reset_failed", error=str(e))
     return JSONResponse({"status": "reset", "session_id": session_id})

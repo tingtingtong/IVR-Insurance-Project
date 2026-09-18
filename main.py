@@ -47,14 +47,22 @@ structlog.configure(
 
 log = structlog.get_logger()
 
-# Holds the postgres context manager so we can close it cleanly on shutdown
-_pg_ctx = None
+# Async Postgres resources backing AsyncPostgresSaver (closed on shutdown)
+_pg_pool = None
+_pg_conn = None
+
+
+def _postgres_conninfo() -> str:
+    db_url = settings.database_url
+    if "+" in db_url.split("://")[0]:
+        db_url = "postgresql://" + db_url.split("://", 1)[1]
+    return db_url
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup: compile graph with checkpointer. Shutdown: close DB connection."""
-    global _pg_ctx
+    global _pg_pool, _pg_conn
     from core.graph.graph import build_graph, set_graph
     from langgraph.checkpoint.memory import MemorySaver
 
@@ -72,17 +80,16 @@ async def lifespan(app: FastAPI):
         log.info("langsmith_tracing_disabled")
 
     checkpointer = None
+    _pg_pool = None
+    _pg_conn = None
     try:
         import socket
-        import psycopg
-        from langgraph.checkpoint.postgres import PostgresSaver
         from urllib.parse import urlparse
+        from psycopg import AsyncConnection
+        from psycopg.rows import dict_row
+        from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
-        db_url = settings.database_url
-        if "+" in db_url.split("://")[0]:
-            db_url = "postgresql://" + db_url.split("://", 1)[1]
-
-        # Fast port-check before attempting full connect — fails instantly if Postgres is down
+        db_url = _postgres_conninfo()
         parsed = urlparse(db_url)
         pg_host = parsed.hostname or "localhost"
         pg_port = parsed.port or 5432
@@ -93,23 +100,54 @@ async def lifespan(app: FastAPI):
         if not reachable:
             raise ConnectionRefusedError(f"PostgreSQL not reachable at {pg_host}:{pg_port}")
 
-        # PostgresSaver with sync psycopg.connect doesn't support async aget_tuple
-        # (needed by graph.ainvoke). Ensure tables exist for conversation_store, then
-        # use MemorySaver for the graph checkpointer (async-compatible).
-        conn = psycopg.connect(db_url, autocommit=True, connect_timeout=5)
-        tmp_cp = PostgresSaver(conn)
-        tmp_cp.setup()  # creates checkpoint tables if missing
-        conn.close()
-        checkpointer = MemorySaver()
-        log.info("checkpointer_memory_with_postgres_db", db=f"{pg_host}:{pg_port}")
+        conn_kwargs = {
+            "autocommit": True,
+            "prepare_threshold": 0,
+            "row_factory": dict_row,
+        }
+
+        # psycopg AsyncConnectionPool hangs on Windows SelectorEventLoop workers.
+        # Use a pooled saver on Unix; a single async connection on Windows.
+        if sys.platform == "win32":
+            conn = await AsyncConnection.connect(db_url, connect_timeout=5, **conn_kwargs)
+            cp = AsyncPostgresSaver(conn)
+            await cp.setup()
+            _pg_conn = conn
+            checkpointer = cp
+            log.info("checkpointer_async_postgres", db=f"{pg_host}:{pg_port}", mode="single_connection")
+        else:
+            from psycopg_pool import AsyncConnectionPool
+            pool = AsyncConnectionPool(
+                conninfo=db_url,
+                min_size=1,
+                max_size=10,
+                timeout=10,
+                open=False,
+                kwargs=conn_kwargs,
+            )
+            await pool.open(wait=True, timeout=10)
+            cp = AsyncPostgresSaver(pool)
+            await cp.setup()
+            _pg_pool = pool
+            checkpointer = cp
+            log.info("checkpointer_async_postgres", db=f"{pg_host}:{pg_port}", pool_max=10)
     except Exception as pg_err:
         log.warning("checkpointer_fallback_to_memory", error=str(pg_err))
         checkpointer = MemorySaver()
-        _pg_ctx = None
+        _pg_pool = None
+        _pg_conn = None
 
     compiled = build_graph().compile(checkpointer=checkpointer)
-    set_graph(compiled)
+    set_graph(compiled, checkpointer)
     log.info("graph_compiled", checkpointer=type(checkpointer).__name__)
+
+    from core.tools.http import init_http, close_http
+    await init_http()
+    log.info("http_client_ready")
+
+    from services.rag import warm_store
+    warm_store()
+    log.info("rag_store_warmed")
 
     # Load call history from PostgreSQL so the dashboard is populated after restart
     from services.conversation_store import init_from_db
@@ -123,12 +161,20 @@ async def lifespan(app: FastAPI):
     yield  # server runs here
 
     # ── Shutdown ──────────────────────────────────────────────────────────────
-    if checkpointer is not None and hasattr(checkpointer, "conn"):
+    if _pg_pool is not None:
         try:
-            checkpointer.conn.close()
-            log.info("checkpointer_postgres_closed")
+            await _pg_pool.close()
+            log.info("checkpointer_postgres_pool_closed")
         except Exception:
             pass
+    if _pg_conn is not None:
+        try:
+            await _pg_conn.close()
+            log.info("checkpointer_postgres_conn_closed")
+        except Exception:
+            pass
+    from core.tools.http import close_http
+    await close_http()
     log.info("cno_ivr_shutdown")
 
 
@@ -167,6 +213,37 @@ app.include_router(chat_router)
 app.include_router(dashboard_router)
 
 
+@app.get("/metrics")
+async def metrics():
+    from fastapi.responses import PlainTextResponse
+    from services.metrics import prometheus_text
+    return PlainTextResponse(prometheus_text(), media_type="text/plain; version=0.0.4")
+
+
+@app.get("/health/live")
+async def health_live():
+    return {"status": "ok"}
+
+
 @app.get("/health")
-async def health():
-    return {"status": "ok", "environment": settings.environment}
+@app.get("/health/ready")
+async def health_ready():
+    """ALB target-group check. 503 if Redis or Postgres is down so the task is drained."""
+    from fastapi.responses import JSONResponse
+    checks = {"redis": False, "postgres": False}
+    try:
+        import redis.asyncio as aioredis
+        r = aioredis.from_url(settings.redis_url, decode_responses=True)
+        await r.ping()
+        await r.aclose()
+        checks["redis"] = True
+    except Exception:
+        checks["redis"] = False
+    try:
+        from services.call_db import ping as pg_ping
+        checks["postgres"] = bool(pg_ping())
+    except Exception:
+        checks["postgres"] = False
+    ok = all(checks.values())
+    body = {"status": "ok" if ok else "degraded", "environment": settings.environment, "checks": checks}
+    return JSONResponse(body, status_code=200 if ok else 503)

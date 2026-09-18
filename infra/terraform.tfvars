@@ -14,12 +14,8 @@ max_tasks         = 2
 db_instance_class = "db.t4g.micro"
 redis_node_type   = "cache.t4g.micro"
 
-# ── Scaling profile: prod (3,000 calls/day) — uncomment to use ───────────────
-# task_cpu          = 1024   # 1 vCPU
-# task_memory       = 2048   # 2 GB
-# min_tasks         = 2
-# max_tasks         = 8
-# cpu_scale_target  = 60
-# memory_scale_target = 70
-# db_instance_class = "db.t4g.small"
-# redis_node_type   = "cache.t4g.small"
+# ── Scaling profile: prod (3,000 calls/day, 50-80 parallel) ──────────────────
+# Use infra/prod.tfvars — do not uncomment here (this file is the cheap dev profile).
+#   terraform apply -var-file=prod.tfvars
+# task_cpu=2048  task_memory=4096  min_tasks=4  max_tasks=8
+# db.t4g.small + cache.t4g.small

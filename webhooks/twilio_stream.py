@@ -155,6 +155,8 @@ class CallHandler:
         custom = start_data.get("customParameters", {})
         from_number = custom.get("from", custom.get("From", ""))
 
+        from services.metrics import inc
+        inc("calls_started")
         log.info("call_started", call_sid=self.call_sid, stream_sid=self.stream_sid,
                  auth_mode=settings.auth_mode, from_number=from_number)
 
@@ -236,6 +238,8 @@ class CallHandler:
                 config={"configurable": {"thread_id": self.call_sid}},
             )
         except Exception as e:
+            from services.metrics import inc
+            inc("graph_errors")
             log.error("graph_error", call_sid=self.call_sid, error=str(e))
             await self._speak(PROMPTS["escalation"]["error"])
             return
@@ -264,8 +268,19 @@ class CallHandler:
             self._dtmf_collector = DTMFCollector(payment_type)
             log.info("dtmf_mode_activated", call_sid=self.call_sid, payment_type=payment_type)
 
-        if transfer_to:
-            await self._transfer_call(transfer_to)
+        from core.graph.escalate import is_terminal
+        if is_terminal(result):
+            if transfer_to:
+                await self._transfer_call(transfer_to)
+            else:
+                await self._speak("Thank you for calling. Goodbye.")
+                try:
+                    from twilio.rest import Client
+                    Client(settings.twilio_account_sid, settings.twilio_auth_token).calls(
+                        self.call_sid
+                    ).update(status="completed")
+                except Exception as e:
+                    log.error("hangup_failed", call_sid=self.call_sid, error=str(e))
 
     # ── DTMF handlers ─────────────────────────────────────────────────────────
 
@@ -296,7 +311,12 @@ class CallHandler:
         """
         Merge collected DTMF data into session state and invoke the graph
         with otp_step='dtmf_complete' so otp_node moves to confirmation.
+        Redis SET NX prevents a second # from double-invoking the payment graph.
         """
+        locked = await self.session.acquire_lock(f"cno:paylock:{self.call_sid}", ttl=60)
+        if not locked:
+            log.warning("dtmf_duplicate_ignored", call_sid=self.call_sid)
+            return
         log.info("dtmf_collection_complete", call_sid=self.call_sid,
                  fields=list(collected.keys()))
         state = await self.session.get_state(self.call_sid)
@@ -436,11 +456,18 @@ class CallHandler:
         try:
             client = Client(settings.twilio_account_sid, settings.twilio_auth_token)
             client.calls(self.call_sid).update(
-                twiml=f'<Response><Dial>{phone_number}</Dial></Response>'
+                twiml=(
+                    f"<Response><Dial>{phone_number}</Dial>"
+                    "<Say>Thank you for calling. Goodbye.</Say><Hangup/></Response>"
+                )
             )
             log.info("call_transferred", call_sid=self.call_sid, to=phone_number)
         except Exception as e:
             log.error("transfer_failed", call_sid=self.call_sid, error=str(e))
+            await self._speak(
+                "I'm sorry, I wasn't able to connect you to an agent. "
+                "Please call us back. Goodbye."
+            )
 
     # ── Cleanup ───────────────────────────────────────────────────────────────
 

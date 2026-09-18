@@ -30,22 +30,18 @@ async def policy_node(state: CNOState) -> dict:
 
     policy_number = customer.get("policyNumber", "")
     if not policy_number:
-        return merge_auth_state(auth_state, {
-            "tts_text":    "I'm sorry, I wasn't able to find your policy number. Let me transfer you to a representative.",
-            "transfer_to": settings.twilio_agent_phone_number,
-            "current_node": "policy", "active_flow": "",
-        })
+        from core.graph.escalate import transfer_now
+        return merge_auth_state(auth_state, transfer_now(
+            "I'm sorry, I wasn't able to find your policy number. Let me transfer you to a representative."
+        ))
 
     result = await holding_inquiry(policy_number, access_token)
     log_event(call_sid, "api_call", node="policy", api="holding_inquiry",
               success=result["success"], error=result.get("error", "")[:60] if not result["success"] else "")
 
     if not result["success"]:
-        return merge_auth_state(auth_state, {
-            "tts_text":    PROMPTS["escalation"]["error"],
-            "transfer_to": settings.twilio_agent_phone_number,
-            "current_node": "policy", "active_flow": "",
-        })
+        from core.graph.escalate import transfer_now
+        return merge_auth_state(auth_state, transfer_now(PROMPTS["escalation"]["error"]))
 
     data = result["data"]
     context = _format_policy_context(data, customer)

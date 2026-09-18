@@ -25,9 +25,5 @@ async def escalation_node(state: CNOState) -> dict:
 
     log_event(call_sid, "node_exit", node="escalation",
               latency_ms=int((time.time() - t0) * 1000), chars=len(tts))
-    return {
-        "tts_text":    tts,
-        "transfer_to": settings.twilio_agent_phone_number,
-        "current_node": "escalation",
-        "active_flow":  "",
-    }
+    from core.graph.escalate import transfer_now
+    return transfer_now(tts)
