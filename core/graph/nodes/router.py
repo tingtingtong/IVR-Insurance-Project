@@ -89,7 +89,13 @@ def _caller_wants_goodbye(text: str) -> bool:
     # Strip punctuation so "No, thank you" matches "no thank you"
     lower = re.sub(r"[^a-z0-9 ]", " ", text.lower()).strip()
     lower = " ".join(lower.split())  # collapse multiple spaces
-    return any(kw in lower for kw in _GOODBYE_KEYWORDS)
+    if any(kw in lower for kw in _GOODBYE_KEYWORDS):
+        return True
+    # Bare "thank you" / "thanks" is a hang-up, not an unknown intent.
+    # Do not treat longer sentences that happen to contain "thank you".
+    if re.fullmatch(r"(thank you|thanks)( so much| very much)?", lower):
+        return True
+    return False
 
 
 def _is_confirmation_no(text: str) -> bool:

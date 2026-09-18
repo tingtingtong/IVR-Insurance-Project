@@ -14,7 +14,7 @@ from twilio.rest import Client as TwilioClient
 from config import settings
 import core.graph.graph as _graph_module
 from services.session import SessionService
-from services.conversation_store import start_call, add_call_turn, end_call, set_recording, update_call_metadata
+from services.conversation_store import start_call, add_call_turn, end_call, set_recording, update_call_metadata, get_call
 from langchain_core.messages import HumanMessage
 from utils.call_logger import log_event
 from utils.tts_normalizer import normalize_tts_text
@@ -31,7 +31,34 @@ _GREETING = (
     "How can I help you today?"
 )
 _TIMEOUT_MSG = "I didn't catch that. Please say your request after the tone."
+_CONFIRM_TIMEOUT_MSG = "I didn't catch that. Please say yes or no."
 _ERROR_MSG   = "I'm sorry, I'm having trouble right now. Please hold while I connect you to an agent."
+
+
+def _last_bot_text(call_sid: str) -> str:
+    try:
+        call = get_call(call_sid) or {}
+        for turn in reversed(call.get("turns") or []):
+            if turn.get("role") == "bot":
+                return turn.get("text") or ""
+    except Exception:
+        pass
+    return ""
+
+
+def _timeout_prompt(call_sid: str) -> str:
+    """Use a yes/no retry when the last prompt was a confirmation — not a generic IDK."""
+    last = _last_bot_text(call_sid).lower()
+    if any(p in last for p in (
+        "is that correct",
+        "say yes",
+        "yes or no",
+        "please confirm",
+        "repeat those numbers",
+        "anything else i can help",
+    )):
+        return _CONFIRM_TIMEOUT_MSG
+    return _TIMEOUT_MSG
 
 
 def _gather_response(say_text: str, action: str = "/webhook/gather") -> str:
@@ -150,8 +177,11 @@ async def gather_speech(request: Request):
     if not transcript:
         log_event(call_sid, "stt_empty", reason="no_speech_result",
                   form_keys=list(form.keys()))
+        timeout_msg = _timeout_prompt(call_sid)
+        add_call_turn(call_sid, "human", "[no speech detected]")
+        add_call_turn(call_sid, "bot", timeout_msg, node="gather_timeout")
         return Response(
-            content=_gather_response(_TIMEOUT_MSG),
+            content=_gather_response(timeout_msg),
             media_type="application/xml",
         )
 
@@ -232,7 +262,9 @@ async def gather_speech(request: Request):
                 media_type="application/xml",
             )
 
-        speak = tts_text or "I'm sorry, I didn't understand. Could you please repeat that?"
+        speak = tts_text or (
+            "Is there anything else I can help you with today?"
+        )
         return Response(
             content=_gather_response(speak),
             media_type="application/xml",
