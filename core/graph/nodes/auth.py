@@ -805,10 +805,35 @@ def _ask(step: str, pii_collected: dict, tts: str, candidate_party: dict = None)
 
 def _auth_complete(party: dict, pii_collected: dict, policy_number: str = "") -> dict:
     customer = _build_customer(party, policy_number)
-    # Transition directly to caller-name collection rather than sending the old
-    # "authenticated" greeting. The persona step will greet the caller by name once
-    # their identity on the policy is established. auth_step stays "collecting_caller_name"
-    # so _route_after_auth holds in the auth node for the next turn.
+    # If auth succeeded via the insured-name fallback (DOB failed, name matched),
+    # the caller already said their name this turn. Reuse it for persona — do not
+    # ask "May I ask your name please?" a second time.
+    known_name = " ".join(
+        p for p in (
+            (pii_collected.get("firstName") or "").strip(),
+            (pii_collected.get("lastName") or "").strip(),
+        ) if p
+    )
+    if known_name:
+        personas = party.get("Personas") or []
+        role = _match_persona(known_name, personas)
+        if role == "other":
+            # Name already satisfied check_auth_success against the party record.
+            role = "insured"
+        identified = _persona_identified(role, known_name, personas)
+        tts = f"I've verified your identity. {identified['tts_text']}"
+        identified.update({
+            "authenticated":   True,
+            "customer":        customer,
+            "finalized_party": party,
+            "candidate_party": {},
+            "pii_collected":   pii_collected,
+            "tts_text":        tts,
+            "messages":        [AIMessage(content=tts)],
+        })
+        return identified
+
+    # Phone+DOB (or policy+DOB) path — we have not heard a name yet.
     name_ask = "I've verified your identity. May I ask your name please?"
     return {
         "authenticated":    True,
