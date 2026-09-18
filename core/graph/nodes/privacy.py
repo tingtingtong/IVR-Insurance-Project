@@ -79,11 +79,9 @@ async def privacy_node(state: CNOState) -> dict:
             if result:
                 tts = "Your privacy opt-out request has been recorded. Is there anything else I can help you with?"
             else:
+                from core.graph.escalate import transfer_now
                 tts = PROMPTS["escalation"]["error"]
-                from config import settings as _settings
-                return {"otp_data": {}, "tts_text": tts, "transfer_to": _settings.twilio_agent_phone_number,
-                        "current_node": "privacy", "active_flow": "",
-                        "messages": [AIMessage(content=tts)]}
+                return transfer_now(tts, otp_data={}, messages=[AIMessage(content=tts)])
             return {"otp_data": {}, "tts_text": tts, "current_node": "privacy", "active_flow": "",
                     "messages": [AIMessage(content=tts)]}
         return {

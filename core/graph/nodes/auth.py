@@ -65,13 +65,11 @@ async def auth_node(state: CNOState) -> dict:
         auth_step = "collecting_caller_name"
 
     if auth_step == "failed" or auth_attempts >= MAX_AUTH_ATTEMPTS:
-        return {
-            "auth_step":    "failed",
-            "tts_text":     PROMPTS["escalation"]["max_attempts"],
-            "transfer_to":  "",
-            "current_node": "auth",
-            "active_flow":  "",
-        }
+        from core.graph.escalate import transfer_now
+        return transfer_now(
+            PROMPTS["escalation"]["max_attempts"],
+            auth_step="failed",
+        )
 
     # ── Last human utterance ──────────────────────────────────────────────────
     last_human = ""
@@ -138,14 +136,12 @@ async def auth_node(state: CNOState) -> dict:
         # Post-auth persona identification — ask caller's name and match against policy personas
         result = await _collecting_caller_name(state, last_human)
     elif auth_step == "failed":
-        # Already escalated — re-confirm transfer (don't restart from phone)
-        return {
-            "auth_step":    "failed",
-            "tts_text":     PROMPTS["escalation"]["max_attempts"],
-            "current_node": "auth",
-            "active_flow":  "",
-            "transfer_to":  settings.twilio_agent_phone_number,
-        }
+        # Already escalated — transfer again; never Gather
+        from core.graph.escalate import transfer_now
+        return transfer_now(
+            PROMPTS["escalation"]["max_attempts"],
+            auth_step="failed",
+        )
     else:
         # Unknown state — restart from phone
         result = _ask("collecting_phone", pii_collected, get_retry_prompt("phone", "ask"))
@@ -182,13 +178,11 @@ async def auth_node(state: CNOState) -> dict:
             company_code=customer.get("companyCode", ""),
         )
         if not token:
-            return {
-                "auth_step":    "failed",
-                "tts_text":     PROMPTS["escalation"]["error"],
-                "current_node": "auth",
-                "active_flow":  "",
-                "transfer_to":  "",
-            }
+            from core.graph.escalate import transfer_now
+            return transfer_now(
+                PROMPTS["escalation"]["error"],
+                auth_step="failed",
+            )
         result["access_token"] = token
 
     return result
@@ -828,14 +822,12 @@ def _auth_complete(party: dict, pii_collected: dict, policy_number: str = "") ->
 
 
 def _escalate(state: CNOState) -> dict:
-    return {
-        "auth_step":    "failed",
-        "auth_attempts": settings.max_auth_attempts,  # prevent re-entry restart
-        "tts_text":     PROMPTS["escalation"]["max_attempts"],
-        "current_node": "auth",
-        "active_flow":  "",
-        "transfer_to":  settings.twilio_agent_phone_number,
-    }
+    from core.graph.escalate import transfer_now
+    return transfer_now(
+        PROMPTS["escalation"]["max_attempts"],
+        auth_step="failed",
+        auth_attempts=settings.max_auth_attempts,
+    )
 
 
 def _get_policy_numbers(party: dict) -> list:

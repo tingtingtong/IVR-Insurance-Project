@@ -58,12 +58,8 @@ async def beneficiary_node(state: CNOState) -> dict:
     if step == "listing":
         benes = await _fetch_beneficiaries(policy_number, access_token, call_sid)
         if benes is None:
-            from config import settings as _settings
-            return merge_auth_state(auth_state, {
-                "tts_text": PROMPTS["escalation"]["error"],
-                "transfer_to": _settings.twilio_agent_phone_number,
-                "current_node": "beneficiary", "active_flow": "",
-            })
+            from core.graph.escalate import transfer_now
+            return merge_auth_state(auth_state, transfer_now(PROMPTS["escalation"]["error"]))
 
         edit["current_beneficiaries"] = benes
         listing_text = _format_beneficiaries_tts(benes)
