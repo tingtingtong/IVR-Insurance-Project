@@ -268,8 +268,19 @@ class CallHandler:
             self._dtmf_collector = DTMFCollector(payment_type)
             log.info("dtmf_mode_activated", call_sid=self.call_sid, payment_type=payment_type)
 
-        if transfer_to:
-            await self._transfer_call(transfer_to)
+        from core.graph.escalate import is_terminal
+        if is_terminal(result):
+            if transfer_to:
+                await self._transfer_call(transfer_to)
+            else:
+                await self._speak("Thank you for calling. Goodbye.")
+                try:
+                    from twilio.rest import Client
+                    Client(settings.twilio_account_sid, settings.twilio_auth_token).calls(
+                        self.call_sid
+                    ).update(status="completed")
+                except Exception as e:
+                    log.error("hangup_failed", call_sid=self.call_sid, error=str(e))
 
     # ── DTMF handlers ─────────────────────────────────────────────────────────
 

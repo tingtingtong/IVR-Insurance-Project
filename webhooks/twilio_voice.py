@@ -19,6 +19,7 @@ from langchain_core.messages import HumanMessage
 from utils.call_logger import log_event
 from utils.tts_normalizer import normalize_tts_text
 from webhooks.security import validate_twilio_webhook
+from core.graph.escalate import is_terminal as _is_terminal
 
 _twilio = TwilioClient(settings.twilio_account_sid, settings.twilio_auth_token)
 
@@ -59,19 +60,6 @@ def _timeout_prompt(call_sid: str) -> str:
     )):
         return _CONFIRM_TIMEOUT_MSG
     return _TIMEOUT_MSG
-
-
-def _is_terminal(result: dict) -> bool:
-    """True when the graph wants the call to end — transfer, goodbye, or escalate."""
-    if not result:
-        return False
-    if result.get("transfer_to"):
-        return True
-    if result.get("current_node") in ("escalation", "goodbye"):
-        return True
-    if result.get("current_intent") == "escalate":
-        return True
-    return False
 
 
 def _hangup_response(say_text: str, transfer_to: str = "") -> Response:
