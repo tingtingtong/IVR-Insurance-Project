@@ -1,5 +1,4 @@
 from langgraph.graph import StateGraph, START, END  # noqa: F401 — END re-exported for edges
-from langgraph.checkpoint.memory import MemorySaver
 
 from core.graph.state import CNOState
 from core.graph.nodes.router import router_node
@@ -92,9 +91,16 @@ def build_graph() -> StateGraph:
 # Module-level compiled graph — set to None until startup initializes it.
 # Startup in main.py calls set_graph() after building with the chosen checkpointer.
 cno_graph = None
+_checkpointer = None
 
 
-def set_graph(compiled_graph) -> None:
+def set_graph(compiled_graph, checkpointer=None) -> None:
     """Called from main.py startup to inject the compiled graph."""
-    global cno_graph
+    global cno_graph, _checkpointer
     cno_graph = compiled_graph
+    if checkpointer is not None:
+        _checkpointer = checkpointer
+
+
+def get_checkpointer():
+    return _checkpointer

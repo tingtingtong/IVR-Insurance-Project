@@ -54,6 +54,8 @@ class STTService:
         )
         self._connection = None
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._closed = False
+        self._reconnecting = False
 
     async def start(self) -> None:
         self._loop = asyncio.get_event_loop()
@@ -67,11 +69,39 @@ class STTService:
     async def send_audio(self, mulaw_bytes: bytes) -> None:
         """Forward raw mulaw audio from Twilio directly to Deepgram."""
         if self._connection:
-            await self._connection.send(mulaw_bytes)
+            try:
+                await self._connection.send(mulaw_bytes)
+            except Exception:
+                await self._reconnect()
 
     async def finish(self) -> None:
+        self._closed = True
         if self._connection:
-            await self._connection.finish()
+            try:
+                await self._connection.finish()
+            except Exception:
+                pass
+            self._connection = None
+
+    async def _reconnect(self) -> None:
+        if self._closed or self._reconnecting:
+            return
+        self._reconnecting = True
+        import structlog
+        log = structlog.get_logger()
+        try:
+            if self._connection:
+                try:
+                    await self._connection.finish()
+                except Exception:
+                    pass
+            await asyncio.sleep(0.5)
+            await self.start()
+            log.info("deepgram_reconnected")
+        except Exception as exc:
+            log.error("deepgram_reconnect_failed", error=str(exc))
+        finally:
+            self._reconnecting = False
 
     async def _handle_transcript(self, _client, result, **kwargs) -> None:
         try:
@@ -88,3 +118,5 @@ class STTService:
         import structlog
         log = structlog.get_logger()
         log.error("deepgram_error", error=str(error))
+        if not self._closed:
+            asyncio.create_task(self._reconnect())

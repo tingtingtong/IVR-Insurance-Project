@@ -7,7 +7,7 @@ resource "aws_ecs_cluster" "main" {
 # ── CloudWatch log group ────────────────────────────────────────────────────
 resource "aws_cloudwatch_log_group" "app" {
   name              = "/ecs/${var.environment}-${var.project}"
-  retention_in_days = 7
+  retention_in_days = var.environment == "prod" ? 90 : 7
 }
 
 # ── ECS Task Definition ────────────────────────────────────────────────────
@@ -45,7 +45,10 @@ resource "aws_ecs_task_definition" "app" {
         { name = "REDIS_URL",        value = local.redis_url },
         { name = "DATABASE_URL",     value = local.db_url },
         { name = "APP_PORT",         value = tostring(var.app_port) },
-        { name = "CNO_API_BASE_URL", value = "http://localhost:8001" },
+        { name = "CNO_API_BASE_URL", value = var.cno_api_base_url },
+        { name = "VALIDATE_TWILIO_SIGNATURE", value = var.environment == "prod" ? "true" : "false" },
+        { name = "ALLOWED_ORIGINS",  value = var.allowed_origins },
+        { name = "TWILIO_BASE_URL",  value = var.twilio_base_url },
       ]
       secrets = [
         {
@@ -84,6 +87,22 @@ resource "aws_ecs_task_definition" "app" {
           name      = "TWILIO_TWIML_APP_SID"
           valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:TWILIO_TWIML_APP_SID::"
         },
+        {
+          name      = "DASHBOARD_PASSWORD"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:DASHBOARD_PASSWORD::"
+        },
+        {
+          name      = "WS_AUTH_TOKEN"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:WS_AUTH_TOKEN::"
+        },
+        {
+          name      = "CNO_JWT_SECRET"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:CNO_JWT_SECRET::"
+        },
+        {
+          name      = "CNO_API_KEY"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:CNO_API_KEY::"
+        },
       ]
       logConfiguration = {
         logDriver = "awslogs"
@@ -101,7 +120,7 @@ resource "aws_ecs_task_definition" "app" {
         containerPort = 8001
         protocol      = "tcp"
       }]
-      essential = true
+      essential = var.environment != "prod"
       logConfiguration = {
         logDriver = "awslogs"
         options = {
@@ -119,8 +138,16 @@ resource "aws_ecs_service" "app" {
   name            = "${var.environment}-${var.project}-svc"
   cluster         = aws_ecs_cluster.main.id
   task_definition = aws_ecs_task_definition.app.arn
-  desired_count   = 1
+  desired_count   = var.min_tasks
   launch_type     = "FARGATE"
+
+  deployment_minimum_healthy_percent = 100
+  deployment_maximum_percent         = 200
+
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
 
   network_configuration {
     subnets          = aws_subnet.public[*].id
@@ -199,7 +226,7 @@ resource "aws_appautoscaling_policy" "alb_requests" {
       predefined_metric_type = "ALBRequestCountPerTarget"
       resource_label         = "${aws_lb.app.arn_suffix}/${aws_lb_target_group.app.arn_suffix}"
     }
-    target_value       = 10   # scale out when >10 active requests per task
+    target_value       = 20   # ~20 Media Stream calls per 2-vCPU task before scale-out
     scale_in_cooldown  = 120
     scale_out_cooldown = 60
   }

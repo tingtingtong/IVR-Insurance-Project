@@ -1,8 +1,8 @@
-import aiohttp
 import jwt
 import time
 import structlog
 from config import settings
+from core.tools.http import post_json
 
 _log = structlog.get_logger()
 
@@ -18,6 +18,8 @@ ACH_AUTHORIZATION_SCRIPT = (
 def _generate_jwt(policy_number: str, amount: float) -> str:
     secret = settings.cno_jwt_secret
     if not secret:
+        if settings.is_prod:
+            raise RuntimeError("CNO_JWT_SECRET is required in production")
         _log.warning("jwt_secret_not_set", msg="CNO_JWT_SECRET is empty — using fallback dev secret")
         secret = "dev-fallback-secret-do-not-use-in-prod"
     payload = {
@@ -36,6 +38,7 @@ async def process_card_payment(
     card_number: str,
     expiry: str,
     cvv: str,
+    idempotency_key: str = "",
 ) -> dict:
     """
     DEBIT_CREDIT_CARD_PAYMENT — JWT-auth integration flow.
@@ -59,6 +62,7 @@ async def process_card_payment(
         "Authorization": f"Bearer {access_token}",
         "X-Payment-JWT": jwt_token,
         "Content-Type":  "application/json",
+        "Idempotency-Key": idempotency_key or f"{policy_number}:{amount}:{card_number[-4:]}",
     }
     payload = {
         "PolicyNumber": policy_number,
@@ -68,24 +72,17 @@ async def process_card_payment(
         "CVV": cvv,
     }
     t0 = time.time()
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=15)) as resp:
-                body = await resp.json()
-                latency = int((time.time() - t0) * 1000)
-                if resp.status in (200, 201):
-                    payment_id = body.get("PaymentId", "")
-                    _log.info("api_card_payment", policy=policy_number[:3] + "****",
-                              status=resp.status, latency_ms=latency, payment_id=payment_id)
-                    return {"success": True, "confirmation": body.get("ConfirmationNumber", ""),
-                            "payment_id": payment_id, "error": ""}
-                _log.warning("api_card_payment_failed", status=resp.status,
-                             error=str(body)[:100], latency_ms=latency)
-                return {"success": False, "confirmation": "", "payment_id": "", "error": str(body)}
-    except Exception as e:
-        latency = int((time.time() - t0) * 1000)
-        _log.error("api_card_payment_error", error=str(e)[:100], latency_ms=latency)
-        return {"success": False, "confirmation": "", "payment_id": "", "error": str(e)}
+    status, body = await post_json(url, json=payload, headers=headers, timeout=5)
+    latency = int((time.time() - t0) * 1000)
+    if status in (200, 201):
+        payment_id = body.get("PaymentId", "")
+        _log.info("api_card_payment", policy=policy_number[:3] + "****",
+                  status=status, latency_ms=latency, payment_id=payment_id)
+        return {"success": True, "confirmation": body.get("ConfirmationNumber", ""),
+                "payment_id": payment_id, "error": ""}
+    _log.warning("api_card_payment_failed", status=status,
+                 error=str(body)[:100], latency_ms=latency)
+    return {"success": False, "confirmation": "", "payment_id": "", "error": str(body)}
 
 
 async def process_ach_payment(
@@ -95,6 +92,7 @@ async def process_ach_payment(
     routing_number: str,
     account_number: str,
     account_type: str = "checking",
+    idempotency_key: str = "",
 ) -> dict:
     """ACH / Bank payment — requires ACH authorization script read first."""
     # BUG-018: Pre-flight validation
@@ -112,6 +110,7 @@ async def process_ach_payment(
         "Authorization": f"Bearer {access_token}",
         "X-Payment-JWT": jwt_token,
         "Content-Type":  "application/json",
+        "Idempotency-Key": idempotency_key or f"{policy_number}:{amount}:{account_number[-4:]}",
     }
     payload = {
         "PolicyNumber":  policy_number,
@@ -121,24 +120,17 @@ async def process_ach_payment(
         "AccountType":   account_type,
     }
     t0 = time.time()
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=15)) as resp:
-                body = await resp.json()
-                latency = int((time.time() - t0) * 1000)
-                if resp.status in (200, 201):
-                    payment_id = body.get("PaymentId", "")
-                    _log.info("api_ach_payment", policy=policy_number[:3] + "****",
-                              status=resp.status, latency_ms=latency, payment_id=payment_id)
-                    return {"success": True, "confirmation": body.get("ConfirmationNumber", ""),
-                            "payment_id": payment_id, "error": ""}
-                _log.warning("api_ach_payment_failed", status=resp.status,
-                             error=str(body)[:100], latency_ms=latency)
-                return {"success": False, "confirmation": "", "payment_id": "", "error": str(body)}
-    except Exception as e:
-        latency = int((time.time() - t0) * 1000)
-        _log.error("api_ach_payment_error", error=str(e)[:100], latency_ms=latency)
-        return {"success": False, "confirmation": "", "payment_id": "", "error": str(e)}
+    status, body = await post_json(url, json=payload, headers=headers, timeout=5)
+    latency = int((time.time() - t0) * 1000)
+    if status in (200, 201):
+        payment_id = body.get("PaymentId", "")
+        _log.info("api_ach_payment", policy=policy_number[:3] + "****",
+                  status=status, latency_ms=latency, payment_id=payment_id)
+        return {"success": True, "confirmation": body.get("ConfirmationNumber", ""),
+                "payment_id": payment_id, "error": ""}
+    _log.warning("api_ach_payment_failed", status=status,
+                 error=str(body)[:100], latency_ms=latency)
+    return {"success": False, "confirmation": "", "payment_id": "", "error": str(body)}
 
 
 def get_ach_script() -> str:

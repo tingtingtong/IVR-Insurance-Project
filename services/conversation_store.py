@@ -9,7 +9,7 @@ Webchat sessions remain in-memory only (ephemeral by design).
 from collections import deque
 from datetime import datetime
 from typing import Literal
-from utils.pii_redactor import redact_turn
+from utils.pii_redactor import redact_turn, looks_like_isolated_cvv
 import services.call_db as _db
 
 # ── Call (phone) conversations ────────────────────────────────────────────────
@@ -59,10 +59,18 @@ def add_call_turn(
 ) -> None:
     if call_sid not in _calls:
         return
+    stored = text
+    if role == "human" and looks_like_isolated_cvv(text or ""):
+        for prev in reversed(_calls[call_sid].get("turns") or []):
+            if prev.get("role") == "bot":
+                prev_text = (prev.get("text") or "").lower()
+                if "security code" in prev_text or "[cvv redacted]" in prev_text:
+                    stored = "[CVV REDACTED]"
+                break
     _calls[call_sid]["turns"].append({
         "ts":     datetime.now().isoformat(timespec="seconds"),
         "role":   role,
-        "text":   redact_turn(role, text),
+        "text":   stored if stored == "[CVV REDACTED]" else redact_turn(role, stored, node),
         "intent": intent,
         "node":   node,
     })

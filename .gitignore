@@ -63,3 +63,6 @@ infra/terraform.tfstate.backup
 
 # ── Claude Code config ──────────────────────────────────────────────────────
 .claude/
+
+# ── Local-only session notes (never push) ──────────────────────────────────
+docs/GIT_GITHUB_OPERATIONS.md

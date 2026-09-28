@@ -52,9 +52,21 @@ if sys.platform == "win32":
 import uvicorn
 
 if __name__ == "__main__":
-    uvicorn.run(
-        "main:app",
-        host="0.0.0.0",
-        port=8888,
-        log_level="info",
-    )
+    # uvicorn's default Windows loop is ProactorEventLoop, which psycopg async
+    # (AsyncPostgresSaver) cannot use. Force SelectorEventLoop on Windows.
+    if sys.platform == "win32":
+        config = uvicorn.Config(
+            "main:app",
+            host="0.0.0.0",
+            port=8888,
+            log_level="info",
+        )
+        config.get_loop_factory = lambda: asyncio.SelectorEventLoop
+        uvicorn.Server(config).run()
+    else:
+        uvicorn.run(
+            "main:app",
+            host="0.0.0.0",
+            port=8888,
+            log_level="info",
+        )

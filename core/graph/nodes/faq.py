@@ -53,9 +53,11 @@ async def faq_node(state: CNOState) -> dict:
     else:
         # No RAG match — canned response or escalate depending on feature flag.
         if settings.faq_fallback_to_escalate:
+            from core.graph.escalate import transfer_now
             tts = "I'm sorry, I don't have specific information on that. Let me connect you with a representative who can help."
-        else:
-            tts = "I'm sorry, I don't have specific information about that. Is there anything else I can help you with, or would you like me to connect you with a representative?"
+            log_event(call_sid, "faq_rag_miss", node="faq", query=last_human[:80])
+            return transfer_now(tts, messages=[AIMessage(content=tts)])
+        tts = "I'm sorry, I don't have specific information about that. Is there anything else I can help you with, or would you like me to connect you with a representative?"
         log_event(call_sid, "faq_rag_miss", node="faq", query=last_human[:80])
         log_event(call_sid, "llm_response", node="faq", latency_ms=0, chars=len(tts))
         return {

@@ -1,3 +1,4 @@
+import asyncio
 from langchain_community.vectorstores import PGVector
 from langchain_openai import OpenAIEmbeddings
 from langchain_core.documents import Document
@@ -6,6 +7,14 @@ from config import settings
 COLLECTION_NAME = "insuranceCompany_knowledge"
 
 _vector_store: PGVector | None = None
+
+
+def _connection_string() -> str:
+    url = settings.database_url
+    if settings.is_prod and "sslmode=" not in url:
+        sep = "&" if "?" in url else "?"
+        url = url + sep + "sslmode=require"
+    return url
 
 
 def _get_store() -> PGVector:
@@ -17,10 +26,18 @@ def _get_store() -> PGVector:
         )
         _vector_store = PGVector(
             collection_name=COLLECTION_NAME,
-            connection_string=settings.database_url,
+            connection_string=_connection_string(),
             embedding_function=embeddings,
         )
     return _vector_store
+
+
+def warm_store() -> None:
+    """Pre-init embeddings + pgvector so the first FAQ caller is not a cold start."""
+    try:
+        _get_store()
+    except Exception:
+        pass
 
 
 async def search_knowledge(query: str, k: int = 3) -> str:
@@ -29,13 +46,15 @@ async def search_knowledge(query: str, k: int = 3) -> str:
     Returns concatenated context string for LLM grounding.
     Returns empty string if DB is unavailable (FAQ node falls back to LLM only).
     """
+    global _vector_store
     try:
         store = _get_store()
-        docs: list[Document] = store.similarity_search(query, k=k)
+        docs: list[Document] = await asyncio.to_thread(store.similarity_search, query, k)
         if not docs:
             return ""
         return "\n\n".join(d.page_content for d in docs)
     except Exception:
+        _vector_store = None
         return ""
 
 

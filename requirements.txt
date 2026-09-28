@@ -33,7 +33,7 @@ webrtcvad-wheels==2.0.14        # pre-built wheels, no compiler needed
 redis[hiredis]==8.1.0
 
 # PostgreSQL checkpoint (LangGraph persistent memory)
-psycopg[async,binary]>=3.3.4
+psycopg[async,binary,pool]>=3.3.4
 langgraph-checkpoint-postgres==3.1.1
 
 # RAG — vector store

@@ -1,6 +1,21 @@
 """Dual-provider LLM factory — Groq (default) or Amazon Bedrock."""
-
+import asyncio
 from config import settings
+
+_sem: asyncio.Semaphore | None = None
+
+
+def llm_semaphore() -> asyncio.Semaphore:
+    global _sem
+    if _sem is None:
+        _sem = asyncio.Semaphore(max(1, settings.llm_max_inflight))
+    return _sem
+
+
+async def ainvoke_limited(llm, messages):
+    """Serialize LLM calls so 50-80 parallel streams cannot exceed provider rate limits."""
+    async with llm_semaphore():
+        return await llm.ainvoke(messages)
 
 
 def get_llm(*, temperature: float = 0.3, max_tokens: int = 200):
