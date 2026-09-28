@@ -585,19 +585,24 @@ def _build_payment_result(result: dict, otp_data: dict) -> dict:
     if result["success"]:
         confirmation = result.get("confirmation", "")
         payment_id = result.get("payment_id", "")
-        tts = "Your payment has been processed successfully."
+        method = otp_data.get("payment_type", "card")
+        amount = otp_data.get("amount", 0)
+
+        # Payment summary
+        tts = f"Your {method} payment of ${amount:.2f} has been processed successfully."
         if confirmation:
-            tts += f" Your confirmation number is {_spell_alphanumeric(confirmation)}."
+            tts += f" Your confirmation number is, {_spell_alphanumeric(confirmation)}."
         if payment_id:
-            tts += f" Your payment reference ID is {_spell_alphanumeric(payment_id)}."
+            tts += f" Your payment reference ID is, {_spell_alphanumeric(payment_id)}."
         tts += " Please save these numbers for your records."
         tts += f" {PROMPTS['payment_disclosure']}"
+        tts += " Is there anything else I can help you with today?"
         # Store confirmation text so caller can ask to repeat
         return {
             "otp_step": "complete",
             "otp_data": {"last_confirmation_tts": tts},
             "tts_text": tts,
-            "current_node": "otp", "active_flow": "otp",
+            "current_node": "otp", "active_flow": "",
         }
     else:
         tts = f"I'm sorry, the payment could not be processed. {result.get('error', '')} Please try again or call back."
@@ -892,7 +897,8 @@ def _format_expiry_spoken(expiry: str) -> str:
 
 
 def _spell_alphanumeric(code: str) -> str:
-    """Spell out a confirmation code for TTS clarity: 'CNF-ABC123' → 'C N F dash A B C 1 2 3'."""
+    """Spell out a confirmation code for TTS clarity: 'CNF-ABC123' → 'C, N, F, dash, A, B, C, 1, 2, 3'.
+    Uses commas to force TTS pauses between characters so it's not spoken too fast."""
     parts = []
     for ch in code:
         if ch == "-":
@@ -903,7 +909,7 @@ def _spell_alphanumeric(code: str) -> str:
             parts.append(ch)
         else:
             parts.append(ch)
-    return " ".join(parts)
+    return ", ".join(parts)
 
 
 def _wants_cancel(utterance: str) -> bool:
