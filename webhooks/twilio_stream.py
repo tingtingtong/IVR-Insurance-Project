@@ -210,31 +210,36 @@ class CallHandler:
 
     # ── Transcript handler (called by Deepgram) ───────────────────────────────
 
-    async def _on_transcript(self, text: str, is_final: bool):
+    async def _on_transcript(self, text: str, is_final: bool, speech_final: bool = False):
         if not is_final or not text.strip():
             return
 
         # In DTMF mode, voice input is treated as the card/account number
         # (browser softphone callers speak instead of pressing keys).
-        # Buffer transcripts to accumulate split finals from Deepgram (300ms
-        # endpointing splits long digit sequences into multiple utterances).
-        # Flush when we have ≥16 digits or after a timeout.
+        # Buffer is_final transcripts and flush when speech_final=True
+        # (Deepgram confirms the speaker has paused — full utterance complete).
+        # This avoids split-transcript issues where 300ms endpointing chops
+        # a 16-digit card number into multiple partial finals.
         if self._dtmf_mode or self._voice_digit_buffer:
-            log.info("dtmf_voice_fallback", call_sid=self.call_sid, text=text)
+            log.info("dtmf_voice_fallback", call_sid=self.call_sid,
+                     text=text, speech_final=speech_final)
             self._dtmf_mode = False
             self._dtmf_collector = None
             self._voice_digit_buffer.append(text)
+
             # Check if we have enough digits already
             from utils.card_extractor import extract_card_digits
             all_digits = extract_card_digits(" ".join(self._voice_digit_buffer))
-            if len(all_digits) >= 16:
-                # Got enough — flush immediately
+
+            # Flush when: speech_final (speaker paused) OR ≥16 digits collected
+            if speech_final or len(all_digits) >= 16:
                 if self._voice_digit_timer:
                     self._voice_digit_timer.cancel()
                     self._voice_digit_timer = None
                 asyncio.ensure_future(self._flush_voice_digits())
                 return
-            # Still accumulating — reset the flush timer
+
+            # Safety net: flush after timeout in case speech_final never arrives
             if self._voice_digit_timer:
                 self._voice_digit_timer.cancel()
             loop = asyncio.get_event_loop()
