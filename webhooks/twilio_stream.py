@@ -116,6 +116,10 @@ class CallHandler:
         self._dtmf_mode      = False               # suppresses STT processing
         self._dtmf_collector: DTMFCollector | None = None
 
+        # Voice-digit buffering: accumulate split transcripts before processing
+        self._voice_digit_buffer: list[str] = []
+        self._voice_digit_timer: asyncio.TimerHandle | None = None
+
     # ── Main loop ─────────────────────────────────────────────────────────────
 
     async def run(self):
@@ -210,25 +214,21 @@ class CallHandler:
             return
 
         # In DTMF mode, voice input is treated as the card/account number
-        # (browser softphone callers speak instead of pressing keys)
-        if self._dtmf_mode and self._dtmf_collector:
+        # (browser softphone callers speak instead of pressing keys).
+        # Buffer transcripts for 1.5s to accumulate split finals from Deepgram,
+        # then process all at once through OTP node's progressive capture.
+        if self._dtmf_mode or self._voice_digit_buffer:
             log.info("dtmf_voice_fallback", call_sid=self.call_sid, text=text)
             self._dtmf_mode = False
-            collector = self._dtmf_collector
             self._dtmf_collector = None
-            if self._processing.locked():
-                return
-            async with self._processing:
-                # Extract digits from spoken text (STT homophones, word numbers, etc.)
-                field = collector._field
-                from utils.card_extractor import extract_card_digits
-                extracted = extract_card_digits(text)
-                if extracted:
-                    await self._on_dtmf_complete({field: extracted})
-                else:
-                    # No digits found — route back through normal STT path
-                    # so OTP node re-prompts via collecting_card_dtmf step
-                    await self._process_turn(text)
+            self._voice_digit_buffer.append(text)
+            # Reset the flush timer on each new transcript
+            if self._voice_digit_timer:
+                self._voice_digit_timer.cancel()
+            loop = asyncio.get_event_loop()
+            self._voice_digit_timer = loop.call_later(
+                1.5, lambda: asyncio.ensure_future(self._flush_voice_digits())
+            )
             return
 
         log.info("transcript", call_sid=self.call_sid, text=text)
@@ -239,6 +239,19 @@ class CallHandler:
 
         async with self._processing:
             await self._process_turn(text)
+
+    async def _flush_voice_digits(self):
+        """Flush buffered voice transcripts as a single combined utterance."""
+        if not self._voice_digit_buffer:
+            return
+        combined = " ".join(self._voice_digit_buffer)
+        self._voice_digit_buffer.clear()
+        self._voice_digit_timer = None
+        log.info("voice_digits_flushed", call_sid=self.call_sid, combined=combined)
+        if self._processing.locked():
+            return
+        async with self._processing:
+            await self._process_turn(combined)
 
     async def _process_turn(self, utterance: str):
         """Append utterance to history, then invoke the graph."""
