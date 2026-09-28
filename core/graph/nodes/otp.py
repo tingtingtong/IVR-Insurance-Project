@@ -869,20 +869,24 @@ def _build_payment_result(result: dict, otp_data: dict) -> dict:
     if result["success"]:
         confirmation = result.get("confirmation", "")
         payment_id = result.get("payment_id", "")
+        method = otp_data.get("payment_type", "card")
+        amount = otp_data.get("amount", 0)
+
+        # Payment summary with spelled-out confirmation numbers
         numbers = []
         if confirmation:
             numbers.append(
-                f"Your confirmation number is {_spell_alphanumeric(confirmation, slow=True)}."
+                f"Your confirmation number is, {_spell_alphanumeric(confirmation)}."
             )
         if payment_id:
             numbers.append(
-                f"Your payment reference ID is {_spell_alphanumeric(payment_id, slow=True)}."
+                f"Your payment reference ID is, {_spell_alphanumeric(payment_id)}."
             )
         numbers_tts = " ".join(numbers)
-        tts = "Your payment has been processed successfully."
+        tts = f"Your {method} payment of ${amount:.2f} has been processed successfully."
         if numbers_tts:
             tts += f" {numbers_tts}"
-        tts += " Please write these numbers down."
+        tts += " Please save these numbers for your records."
         tts += f" {PROMPTS['payment_disclosure']}"
         tts += (
             " Would you like me to repeat those numbers, "
@@ -892,7 +896,7 @@ def _build_payment_result(result: dict, otp_data: dict) -> dict:
             "otp_step": "complete",
             "otp_data": {"last_confirmation_tts": numbers_tts},
             "tts_text": tts,
-            "current_node": "otp", "active_flow": "otp",
+            "current_node": "otp", "active_flow": "",
         }
     else:
         tts = f"I'm sorry, the payment could not be processed. {result.get('error', '')} Please try again or call back."
@@ -1184,8 +1188,8 @@ _DIGIT_WORDS = {
 def _spell_alphanumeric(code: str, slow: bool = False) -> str:
     """Spell a confirmation/reference id character by character.
 
-    slow=True inserts a period between tokens and speaks digits as words so
-    Polly pauses: 'CNF755' → 'C. N. F. seven. five. five.'
+    Uses commas to force TTS pauses between characters.
+    slow=True speaks digits as words: 'CNF755' → 'C, N, F, seven, five, five.'
     """
     parts = []
     for ch in code:
@@ -1197,9 +1201,7 @@ def _spell_alphanumeric(code: str, slow: bool = False) -> str:
             parts.append(_DIGIT_WORDS.get(ch, ch) if slow else ch)
         else:
             parts.append(ch)
-    if slow:
-        return ". ".join(parts) + "."
-    return " ".join(parts)
+    return ", ".join(parts)
 
 
 def _wants_repeat_confirmation(utterance: str) -> bool:
