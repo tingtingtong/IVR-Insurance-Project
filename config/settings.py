@@ -27,6 +27,12 @@ class Settings(BaseSettings):
     faq_fallback_to_escalate: bool = False     # True → no-RAG-match routes to agent instead of canned msg
     max_auth_attempts: int = 3                 # max PII retries before escalation
 
+    # STT provider toggle: "deepgram" (default) or "google" or "azure"
+    stt_provider: str = "deepgram"
+
+    # TTS provider toggle: "openai" (default) or "elevenlabs"
+    tts_provider: str = "openai"
+
     # Deepgram STT
     deepgram_api_key: str
     deepgram_model: str = "nova-2"
@@ -40,6 +46,16 @@ class Settings(BaseSettings):
     deepgram_interim_results: bool = True    # stream partial transcripts
     deepgram_punctuate: bool = True
     deepgram_no_delay: bool = True
+
+    # Google Cloud STT (used when STT_PROVIDER=google)
+    google_stt_language: str = "en-US"
+    google_stt_model: str = "telephony"
+    # Requires GOOGLE_APPLICATION_CREDENTIALS env var or GCP default credentials
+
+    # Azure Speech STT (used when STT_PROVIDER=azure)
+    azure_speech_key: str = ""
+    azure_speech_region: str = "eastus"
+    azure_stt_language: str = "en-US"
 
     # ElevenLabs TTS
     elevenlabs_api_key: str
