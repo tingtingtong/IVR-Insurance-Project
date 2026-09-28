@@ -28,6 +28,12 @@ class Settings(BaseSettings):
     faq_fallback_to_escalate: bool = False     # True → no-RAG-match routes to agent instead of canned msg
     max_auth_attempts: int = 3                 # max PII retries before escalation
 
+    # STT provider toggle: "deepgram" (the only supported provider today)
+    stt_provider: str = "deepgram"
+
+    # TTS provider toggle: "openai" (default) or "elevenlabs"
+    tts_provider: str = "openai"
+
     # Deepgram STT
     deepgram_api_key: str
     deepgram_model: str = "nova-2"

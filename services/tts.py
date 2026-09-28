@@ -1,19 +1,21 @@
+"""
+TTS provider factory.
+
+Set TTS_PROVIDER in .env:
+  - "openai"     (default) — OpenAI TTS-1, PCM 24kHz → 8kHz mulaw
+  - "elevenlabs" — ElevenLabs streaming, PCM 8kHz → mulaw
+"""
 import audioop
 from typing import AsyncIterator
-from openai import AsyncOpenAI
 from config import settings
 from utils.tts_normalizer import normalize_tts_text
 
-# Resample state (stateful ratecv across chunks)
-_RESAMPLE_STATE = None
 
-class TTSService:
-    """
-    OpenAI TTS streaming — PCM 24kHz → resampled to 8kHz mulaw for Twilio.
-    Model and voice driven by settings (openai_tts_model / openai_tts_voice).
-    """
+class OpenAITTSService:
+    """OpenAI TTS streaming — PCM 24kHz → resampled to 8kHz mulaw for Twilio."""
 
     def __init__(self):
+        from openai import AsyncOpenAI
         self._client = AsyncOpenAI(api_key=settings.openai_api_key)
 
     async def stream(self, text: str) -> AsyncIterator[bytes]:
@@ -36,3 +38,15 @@ class TTSService:
                 # Convert 16-bit PCM → G.711 mulaw
                 mulaw_chunk = audioop.lin2ulaw(resampled, 2)
                 yield mulaw_chunk
+
+
+def TTSService():
+    """Factory — returns the TTS service based on TTS_PROVIDER setting."""
+    provider = settings.tts_provider.lower()
+    if provider == "elevenlabs":
+        from services.tts_elevenlabs import ElevenLabsTTSService
+        return ElevenLabsTTSService()
+    elif provider == "openai":
+        return OpenAITTSService()
+    else:
+        raise ValueError(f"Unknown TTS_PROVIDER: {provider!r}. Use 'openai' or 'elevenlabs'.")
