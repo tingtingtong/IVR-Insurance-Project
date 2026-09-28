@@ -80,15 +80,43 @@ def _gather_dtmf_or_speech(say_text: str) -> str:
 
 @router.post("/webhook/voice", dependencies=[Depends(validate_twilio_webhook)])
 async def incoming_call(request: Request):
-    """Initial inbound call — initialize session and play greeting."""
+    """Initial inbound call — initialize session and play greeting.
+
+    When AUTH_MODE=realtime, returns <Connect><Stream> TwiML to route the call
+    through the WebSocket /stream path (Deepgram STT + OpenAI Realtime auth).
+    Otherwise, uses standard <Gather> (Twilio built-in STT + Polly TTS).
+    """
     form = await request.form()
     call_sid  = form.get("CallSid", "")
     from_num  = form.get("From", "")
 
-    log.info("call_started", call_sid=call_sid, from_number=from_num)
+    log.info("call_started", call_sid=call_sid, from_number=from_num,
+             auth_mode=settings.auth_mode)
     start_call(call_sid, from_num)
+    log_event(call_sid, "call_start", from_number=from_num,
+              auth_mode=settings.auth_mode,
+              channel="stream" if settings.auth_mode == "realtime" else "webhook")
+
+    # ── Realtime mode: route call through WebSocket Media Stream ──────────
+    if settings.auth_mode == "realtime":
+        from services.twilio_webhook_sync import resolve_base_url
+        base_url = resolve_base_url(settings)
+        if base_url:
+            ws_url = base_url.replace("https://", "wss://").replace("http://", "ws://")
+            ws_url = f"{ws_url}/stream"
+            if settings.ws_auth_token:
+                ws_url += f"?token={settings.ws_auth_token}"
+            log.info("routing_to_stream", call_sid=call_sid, ws_url=ws_url)
+            response = VoiceResponse()
+            connect = response.connect()
+            connect.stream(url=ws_url)
+            return Response(content=str(response), media_type="application/xml")
+        else:
+            log.warning("realtime_mode_fallback_to_gather",
+                        reason="no base URL for WebSocket stream")
+
+    # ── Standard mode: use Twilio <Gather> for STT ────────────────────────
     add_call_turn(call_sid, "bot", _GREETING, node="greeting")
-    log_event(call_sid, "call_start", from_number=from_num, channel="webhook")
 
     session = SessionService()
     await session.init_session(call_sid)

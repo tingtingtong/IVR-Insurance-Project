@@ -61,21 +61,30 @@ def pcm16_24k_to_mulaw8k(data: bytes, state=None) -> tuple[bytes, object]:
 # ── Session configuration ─────────────────────────────────────────────────────
 
 _SYSTEM_PROMPT = """\
-You are a voice authentication IVR for insuranceCompany.
-Verify the caller's identity using PII. Be brief and professional — this is a phone call.
+You are a friendly virtual assistant for US Insurance Company's phone line.
+Your job is to greet the caller warmly and verify their identity before helping them.
 
-RULES:
-1. Start by asking for the caller's 10-digit phone number (include area code).
-2. When the caller gives a phone number, immediately call collect_phone.
-3. Follow the instruction returned from each function call.
-4. When the caller gives a date of birth, call collect_dob.
-5. When the caller gives a policy number, call collect_policy.
-6. When the caller gives their name (first + last), call collect_name.
-7. Do NOT call a function unless the caller has given you that piece of information.
-8. Keep all responses under 2 sentences.
-9. If the caller corrects information they previously gave (e.g. "I meant 1965 not 1975"),
-   immediately call the appropriate function with the CORRECTED value.
-10. When a date doesn't match, let the caller try again — they may have misspoken.
+PERSONALITY:
+- Warm, natural, conversational — like a helpful customer service rep, not a robot.
+- Keep responses to 1-2 short sentences. This is a phone call, not a chat.
+- Never say "10-digit" or demand a specific format. Just ask naturally.
+
+CONVERSATION FLOW:
+1. Greet: "Thank you for calling US Insurance Company. I'm your virtual assistant \
+and I'm here to help you with your life insurance policy. \
+Before I can help, I just need to verify your identity. \
+Could you please tell me the phone number on your account?"
+2. When the caller says a phone number, call collect_phone immediately.
+3. Follow the instruction in the function result — it tells you what to ask next.
+4. When the caller says a date of birth, call collect_dob.
+5. When the caller says a policy number, call collect_policy.
+6. When the caller says their name, call collect_name.
+7. If the caller mentions what they need help with (e.g. "I want to check my policy"), \
+acknowledge it briefly ("Sure, I can help with that. Let me just verify your identity first.") \
+then continue verification.
+8. If the caller corrects themselves ("I meant 1965 not 1975"), call the function with the corrected value.
+9. Never demand a specific format. If the caller says "five five five, one two three, four five six seven", \
+that's fine — extract the digits and call the function.
 """
 
 _TOOLS = [
@@ -209,10 +218,23 @@ class RealtimeAuthSession:
         await self._send({
             "type": "session.update",
             "session": {
-                "type":         "realtime",
-                "instructions": _SYSTEM_PROMPT,
-                "tools":        _TOOLS,
-                "tool_choice":  "auto",
+                "modalities":          ["text", "audio"],
+                "instructions":        _SYSTEM_PROMPT,
+                "voice":               REALTIME_VOICE,
+                "input_audio_format":  "pcm16",
+                "output_audio_format": "pcm16",
+                "tools":               _TOOLS,
+                "tool_choice":         "auto",
+                "turn_detection": {
+                    "type":              "server_vad",
+                    "threshold":         0.5,
+                    "prefix_padding_ms": 300,
+                    "silence_duration_ms": 500,
+                },
+                "temperature":         0.6,
+                "input_audio_transcription": {
+                    "model": "whisper-1",
+                },
             },
         })
 
@@ -262,6 +284,22 @@ class RealtimeAuthSession:
             if pcm16:
                 mulaw, self._down_state = pcm16_24k_to_mulaw8k(pcm16, self._down_state)
                 await self._on_audio(mulaw)
+
+        elif t == "response.audio_transcript.done":
+            # Log what the model said (for dashboard/debugging)
+            transcript = event.get("transcript", "")
+            if transcript:
+                log.info("realtime_bot_said", call_sid=self.call_sid, text=transcript[:120])
+                from services.conversation_store import add_call_turn
+                add_call_turn(self.call_sid, "bot", transcript, node="realtime_auth")
+
+        elif t == "conversation.item.input_audio_transcription.completed":
+            # Log what the caller said
+            transcript = event.get("transcript", "")
+            if transcript:
+                log.info("realtime_caller_said", call_sid=self.call_sid, text=transcript[:120])
+                from services.conversation_store import add_call_turn
+                add_call_turn(self.call_sid, "human", transcript)
 
         elif t == "response.output_item.done":
             item = event.get("item", {})
@@ -340,7 +378,10 @@ class RealtimeAuthSession:
             return {
                 "ok":    True,
                 "found": True,
-                "instruction": "Phone matched. Ask for the insured's date of birth.",
+                "instruction": (
+                    "Phone matched our records. Now ask for the insured's date of birth — "
+                    "say something like 'And what is the date of birth on the account?'"
+                ),
             }
 
         formatted = f"{digits[:3]}-{digits[3:6]}-{digits[6:]}"
@@ -348,8 +389,9 @@ class RealtimeAuthSession:
             "ok":    True,
             "found": False,
             "instruction": (
-                f"Phone {formatted} was not found. Read it back and ask the caller to confirm. "
-                "If correct, ask for their policy number next."
+                f"No account found for {formatted}. Gently confirm: "
+                f"'I have {formatted} — is that correct?' "
+                "If they confirm it's correct, ask for their policy number instead."
             ),
         }
 
@@ -382,10 +424,9 @@ class RealtimeAuthSession:
                 "ok":      True,
                 "matched": False,
                 "instruction": (
-                    "That date of birth doesn't match our records. "
-                    "Tell the caller it didn't match and ask them to try again. "
-                    "If they correct themselves (e.g. 'I meant 1965 not 1975'), "
-                    "accept the correction and call collect_dob with the corrected date."
+                    "That date didn't match. Say something like: "
+                    "'Hmm, that doesn't match what we have on file. Could you try again?' "
+                    "If they correct themselves, call collect_dob with the corrected date."
                 ),
             }
 
@@ -393,8 +434,8 @@ class RealtimeAuthSession:
             "ok":     True,
             "matched": False,
             "instruction": (
-                "Date of birth still didn't match after retry. Tell the caller you couldn't verify it, "
-                "then ask for the insured's first and last name."
+                "DOB didn't match after retry. Say: 'No worries — I can verify another way. "
+                "Could you tell me the first and last name on the account?'"
             ),
         }
 
@@ -460,7 +501,8 @@ class RealtimeAuthSession:
             "ok":     False,
             "matched": False,
             "instruction": (
-                "Verification failed. Tell the caller you're transferring them to a representative."
+                "Verification wasn't successful. Say: 'I'm sorry, I wasn't able to verify your "
+                "identity. Let me transfer you to a representative who can help.' Then stop."
             ),
         }
 
@@ -514,8 +556,9 @@ class RealtimeAuthSession:
             "ok":     True,
             "matched": True,
             "instruction": (
-                "Say exactly: 'I've verified your identity.' "
-                "Do not say anything else after this."
+                "Verification successful. Tell the caller: "
+                "'Great, I've verified your identity. How can I help you today?' "
+                "Then stop — do not say anything else."
             ),
         }
 

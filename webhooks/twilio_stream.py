@@ -165,6 +165,8 @@ class CallHandler:
             # Realtime mode: OpenAI handles auth conversation (STT + NLU + TTS + barge-in)
             from services.realtime_auth import RealtimeAuthSession
             self._auth_active   = True
+            _cs_start_call(self.call_sid, from_number)
+            add_call_turn(self.call_sid, "bot", "[Realtime auth: greeting + identity verification]", node="realtime_auth")
             self._realtime_auth = RealtimeAuthSession(
                 call_sid      = self.call_sid,
                 on_audio      = self._relay_audio_to_twilio,
