@@ -209,8 +209,26 @@ class CallHandler:
         if not is_final or not text.strip():
             return
 
-        # Suppress STT while collecting DTMF — keypad digits aren't speech turns
-        if self._dtmf_mode:
+        # In DTMF mode, voice input is treated as the card/account number
+        # (browser softphone callers speak instead of pressing keys)
+        if self._dtmf_mode and self._dtmf_collector:
+            log.info("dtmf_voice_fallback", call_sid=self.call_sid, text=text)
+            self._dtmf_mode = False
+            collector = self._dtmf_collector
+            self._dtmf_collector = None
+            if self._processing.locked():
+                return
+            async with self._processing:
+                # Extract digits from spoken text (STT homophones, word numbers, etc.)
+                field = collector._field
+                from utils.card_extractor import extract_card_digits
+                extracted = extract_card_digits(text)
+                if extracted:
+                    await self._on_dtmf_complete({field: extracted})
+                else:
+                    # No digits found — route back through normal STT path
+                    # so OTP node re-prompts via collecting_card_dtmf step
+                    await self._process_turn(text)
             return
 
         log.info("transcript", call_sid=self.call_sid, text=text)
