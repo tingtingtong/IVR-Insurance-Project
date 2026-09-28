@@ -1,5 +1,4 @@
 import time
-import aiohttp
 from langchain_core.messages import AIMessage
 from core.graph.state import CNOState
 from core.graph.auth_guard import ensure_authenticated, apply_auth_state, merge_auth_state
@@ -56,8 +55,11 @@ async def document_node(state: CNOState) -> dict:
     if step == "collecting_type":
         # IDK: caller doesn't know which document → offer rep
         if is_idk(last_human):
-            tts = "A representative can help you request documents. Is there anything else I can help you with?"
-            return {"otp_data": {}, "tts_text": tts, "current_node": "document", "active_flow": ""}
+            from core.graph.escalate import transfer_now
+            return transfer_now(
+                "Let me transfer you to a representative who can help you request documents.",
+                otp_data={},
+            )
 
         doc_key = _detect_doc_type(last_human)
         if not doc_key:
@@ -79,8 +81,11 @@ async def document_node(state: CNOState) -> dict:
     if step == "ask_delivery":
         # IDK: caller unsure about delivery method → offer rep
         if is_idk(last_human):
-            tts = "No problem. A representative can help you request documents. Is there anything else I can help you with?"
-            return {"otp_data": {}, "tts_text": tts, "current_node": "document", "active_flow": ""}
+            from core.graph.escalate import transfer_now
+            return transfer_now(
+                "No problem. Let me transfer you to a representative who can help you request documents.",
+                otp_data={},
+            )
 
         delivery = _detect_delivery(last_human)
 
@@ -110,11 +115,9 @@ async def document_node(state: CNOState) -> dict:
             if result:
                 tts = f"Your {DOCUMENT_TYPES[otp_data['doc_type']]} will be sent within 7 to 10 business days. Is there anything else I can help you with?"
             else:
+                from core.graph.escalate import transfer_now
                 tts = PROMPTS["escalation"]["error"]
-                from config import settings as _settings
-                return {"otp_data": {}, "tts_text": tts, "transfer_to": _settings.twilio_agent_phone_number,
-                        "current_node": "document", "active_flow": "",
-                        "messages": [AIMessage(content=tts)]}
+                return transfer_now(tts, otp_data={}, messages=[AIMessage(content=tts)])
             return {"otp_data": {}, "tts_text": tts, "current_node": "document", "active_flow": "",
                     "messages": [AIMessage(content=tts)]}
         return {
@@ -137,11 +140,10 @@ async def _request_document(customer: dict, data: dict, access_token: str) -> bo
         "DocumentType": data.get("doc_type", ""),
         "DeliveryMethod": data.get("delivery", "mail"),
     }
+    from core.tools.http import post_json
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=payload, headers=headers,
-                                    timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                return resp.status in (200, 201)
+        status, _body = await post_json(url, json=payload, headers=headers, timeout=5)
+        return status in (200, 201)
     except Exception:
         return False
 

@@ -48,7 +48,7 @@ def test_tts_normalizer():
 
     check("policy number",
           normalize_tts_text("Policy P300123456"),
-          "Policy P 3 0 0 1 2 3 4 5 6")
+          "Policy P, three, zero, zero, one, two, three, four, five, six")
 
     check("double period fix",
           normalize_tts_text("response.. Just a moment"),

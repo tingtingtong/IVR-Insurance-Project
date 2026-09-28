@@ -56,9 +56,25 @@ load_dotenv()  # load .env so APP_PORT etc. are available via os.getenv
 import uvicorn
 
 if __name__ == "__main__":
-    uvicorn.run(
-        "main:app",
-        host=os.getenv("APP_HOST", "0.0.0.0"),
-        port=int(os.getenv("APP_PORT", "8082")),
-        log_level=os.getenv("LOG_LEVEL", "info").lower(),
-    )
+    host = os.getenv("APP_HOST", "0.0.0.0")
+    port = int(os.getenv("APP_PORT", "8082"))
+    log_level = os.getenv("LOG_LEVEL", "info").lower()
+
+    # uvicorn's default Windows loop is ProactorEventLoop, which psycopg async
+    # (AsyncPostgresSaver) cannot use. Force SelectorEventLoop on Windows.
+    if sys.platform == "win32":
+        config = uvicorn.Config(
+            "main:app",
+            host=host,
+            port=port,
+            log_level=log_level,
+        )
+        config.get_loop_factory = lambda: asyncio.SelectorEventLoop
+        uvicorn.Server(config).run()
+    else:
+        uvicorn.run(
+            "main:app",
+            host=host,
+            port=port,
+            log_level=log_level,
+        )

@@ -30,22 +30,16 @@ async def payment_node(state: CNOState) -> dict:
 
     policy_number = customer.get("policyNumber", "")
     if not policy_number:
-        return merge_auth_state(auth_state, {
-            "tts_text":    PROMPTS["escalation"]["error"],
-            "transfer_to": settings.twilio_agent_phone_number,
-            "current_node": "payment", "active_flow": "",
-        })
+        from core.graph.escalate import transfer_now
+        return merge_auth_state(auth_state, transfer_now(PROMPTS["escalation"]["error"]))
 
     result = await payment_history(policy_number, access_token)
     log_event(call_sid, "api_call", node="payment", api="payment_history",
               success=result["success"], txn_count=len(result.get("transactions", [])))
 
     if not result["success"]:
-        return merge_auth_state(auth_state, {
-            "tts_text":    PROMPTS["escalation"]["error"],
-            "transfer_to": settings.twilio_agent_phone_number,
-            "current_node": "payment", "active_flow": "",
-        })
+        from core.graph.escalate import transfer_now
+        return merge_auth_state(auth_state, transfer_now(PROMPTS["escalation"]["error"]))
 
     transactions = result["transactions"]
     context = _format_transactions(transactions)

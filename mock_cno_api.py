@@ -144,7 +144,7 @@ POLICY_DETAIL = {
     "P300000001": {
         "PolicyStatus": "Active",
         "PremiumAmount": "75.00",
-        "PaidToDate": "2026-06-01",
+        "PaidToDate": "2027-06-01",
         "BillingMode": "Monthly",
         "CoverageAmount": "25000",
     },
@@ -340,7 +340,16 @@ async def holding_inquiry(request: Request):
     if not detail:
         return _error(f"Policy {policy_num} not found")
 
-    return JSONResponse(status_code=200, content=detail)
+    from datetime import date
+    content = dict(detail)
+    try:
+        paid = date.fromisoformat(str(content.get("PaidToDate", ""))[:10])
+        premium = float(str(content.get("PremiumAmount", "0")).replace(",", ""))
+        content["AmountDue"] = f"{premium:.2f}" if paid < date.today() else "0.00"
+    except (TypeError, ValueError):
+        content["AmountDue"] = str(content.get("PremiumAmount", "0.00"))
+
+    return JSONResponse(status_code=200, content=content)
 
 
 @app.post("/payment/history")

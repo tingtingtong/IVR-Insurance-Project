@@ -12,6 +12,8 @@ The full call dict (turns, events, metadata) is stored as JSONB so no schema
 migration is needed when new fields are added.
 """
 import json
+import queue
+import threading
 import time
 import structlog
 
@@ -21,6 +23,9 @@ _conn = None  # module-level sync psycopg2 connection
 _last_attempt: float = 0.0  # epoch time of last connect attempt
 _RETRY_INTERVAL = 30        # seconds to wait before retrying after a failure
 _CONNECT_TIMEOUT = 3        # seconds for TCP connection attempt
+_write_q: queue.Queue = queue.Queue(maxsize=2000)
+_worker_started = False
+_write_lock = threading.Lock()
 
 
 def _get_conn():
@@ -69,8 +74,26 @@ def _ensure_table(conn) -> None:
         """)
 
 
-def upsert_call(call_sid: str, data: dict) -> None:
-    """Persist (insert or update) a call record.  Silently no-ops if DB unavailable."""
+def _ensure_worker() -> None:
+    global _worker_started
+    with _write_lock:
+        if _worker_started:
+            return
+        t = threading.Thread(target=_writer_loop, name="call-db-writer", daemon=True)
+        t.start()
+        _worker_started = True
+
+
+def _writer_loop() -> None:
+    while True:
+        item = _write_q.get()
+        if item is None:
+            return
+        call_sid, data = item
+        _upsert_sync(call_sid, data)
+
+
+def _upsert_sync(call_sid: str, data: dict) -> None:
     conn = _get_conn()
     if conn is None:
         return
@@ -88,9 +111,71 @@ def upsert_call(call_sid: str, data: dict) -> None:
             )
     except Exception as e:
         log.warning("call_db_upsert_failed", call_sid=call_sid, error=str(e))
-        # Reset connection so next call gets a fresh one
         global _conn
         _conn = None
+
+
+def upsert_call(call_sid: str, data: dict) -> None:
+    """Enqueue a write. Never blocks the voice event loop; drops if the queue is full."""
+    _ensure_worker()
+    try:
+        _write_q.put_nowait((call_sid, data))
+    except queue.Full:
+        log.warning("call_db_queue_full", call_sid=call_sid)
+
+
+def ping() -> bool:
+    """True if Postgres accepts a connection. Used by /health/ready."""
+    conn = _get_conn()
+    if conn is None:
+        return False
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1")
+            cur.fetchone()
+        return True
+    except Exception:
+        global _conn
+        _conn = None
+        return False
+
+
+def list_calls(limit: int = 50, offset: int = 0) -> tuple[list[dict], int]:
+    """Paginated call history for the dashboard. Returns (rows, total_count)."""
+    conn = _get_conn()
+    if conn is None:
+        return [], 0
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM ivr_call_records")
+            total = int(cur.fetchone()[0])
+            cur.execute(
+                """
+                SELECT data FROM ivr_call_records
+                ORDER BY started_at DESC
+                LIMIT %s OFFSET %s
+                """,
+                (limit, offset),
+            )
+            rows = [row[0] for row in cur.fetchall()]
+            return rows, total
+    except Exception as e:
+        log.warning("call_db_list_failed", error=str(e))
+        return [], 0
+
+
+def load_call(call_sid: str) -> dict:
+    conn = _get_conn()
+    if conn is None:
+        return {}
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT data FROM ivr_call_records WHERE call_sid = %s", (call_sid,))
+            row = cur.fetchone()
+            return row[0] if row else {}
+    except Exception as e:
+        log.warning("call_db_load_one_failed", call_sid=call_sid, error=str(e))
+        return {}
 
 
 def load_recent_calls(limit: int = 100) -> list[dict]:

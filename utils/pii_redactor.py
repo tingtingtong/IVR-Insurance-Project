@@ -1,7 +1,8 @@
 """
 PII and payment info redactor for call transcripts.
-Applied to caller (human) turns before storing in conversation_store.
-Bot turns are not redacted — they never contain raw PII.
+
+Applied to both human and bot turns. Card number and CVV are read back for
+confirmation but must never land in the dashboard transcript or event log.
 """
 import re
 
@@ -28,6 +29,18 @@ _DOLLAR = re.compile(r'\$[\d,]+(?:\.\d{2})?|\b\d[\d,]*(?:\.\d{2})?\s*dollars?\b'
 # Credit / debit card numbers (13–19 digits, may have spaces/dashes)
 _CARD = re.compile(r'\b(?:\d[\s\-]?){13,19}\b')
 
+# Spoken-back PAN: "4, 1, 1, 1. 1, 1, 1, 1. ..."
+_SPELLED_CARD = re.compile(r'(?:\d\s*[,.]?\s*){13,19}')
+
+# Spoken-back CVV: "security code I heard is 5, 4, 3"
+_SPELLED_CVV = re.compile(
+    r'(?:security code(?: I heard is)?|CVV)[^\d]{0,24}(?:\d\s*[,.]?\s*){3,4}',
+    re.IGNORECASE,
+)
+
+# Isolated 3-digit code (CVV spoken as "5 4 3" / "543")
+_THREE_DIGIT = re.compile(r'^\s*\d(?:[\s,.\-]*\d){2}\s*\.?\s*$')
+
 # SSN: XXX-XX-XXXX or 9 raw digits preceded by "social" keyword
 _SSN = re.compile(r'\b\d{3}[\-\s]\d{2}[\-\s]\d{4}\b')
 
@@ -40,26 +53,36 @@ _BANK_ACCT = re.compile(
 # ── Replacement labels ─────────────────────────────────────────────────────────
 
 _REPLACEMENTS = [
-    (_SSN,       "[SSN REDACTED]"),
-    (_CARD,      "[CARD REDACTED]"),
-    (_BANK_ACCT, "[BANK ACCT REDACTED]"),
-    (_PHONE,     "[PHONE REDACTED]"),
+    (_SSN,         "[SSN REDACTED]"),
+    (_SPELLED_CVV, "[CVV REDACTED]"),
+    (_SPELLED_CARD,"[CARD REDACTED]"),
+    (_CARD,        "[CARD REDACTED]"),
+    (_BANK_ACCT,   "[BANK ACCT REDACTED]"),
+    (_PHONE,       "[PHONE REDACTED]"),
     (_DATE_VERBAL, "[DOB REDACTED]"),
     (_DATE_NUMERIC,"[DATE REDACTED]"),
-    (_POLICY,    "[POLICY REDACTED]"),
-    (_DOLLAR,    "[AMOUNT REDACTED]"),
+    (_POLICY,      "[POLICY REDACTED]"),
+    (_DOLLAR,      "[AMOUNT REDACTED]"),
 ]
 
 
 def redact(text: str) -> str:
     """Return text with PII and payment info replaced by labeled placeholders."""
+    if not text:
+        return text
     for pattern, label in _REPLACEMENTS:
         text = pattern.sub(label, text)
     return text
 
 
-def redact_turn(role: str, text: str) -> str:
-    """Redact human turns; pass bot turns through unchanged."""
-    if role == "human":
-        return redact(text)
-    return text
+def looks_like_isolated_cvv(text: str) -> bool:
+    return bool(text and _THREE_DIGIT.match(text))
+
+
+def redact_turn(role: str, text: str, node: str = "") -> str:
+    """Redact PAN/CVV in both human and bot turns before persistence."""
+    if not text:
+        return text
+    if node == "otp" and looks_like_isolated_cvv(text):
+        return "[CVV REDACTED]"
+    return redact(text)

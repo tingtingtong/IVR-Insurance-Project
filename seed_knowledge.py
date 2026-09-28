@@ -156,7 +156,7 @@ KNOWLEDGE_BASE: list[tuple[str, dict]] = [
     ),
     (
         "To make a card payment you will need your 16-digit card number, the card expiry date "
-        "in month and year format, and the 3 or 4 digit security code on the back of your card. "
+        "in month and year format, and the 3-digit security code on the back of your card. "
         "Card payments post within 24 to 48 hours.",
         {"category": "payments", "subcategory": "card_payment",
          "keywords": "card payment 16 digit expiry CVV security code credit debit"},

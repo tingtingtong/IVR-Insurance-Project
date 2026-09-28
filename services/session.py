@@ -20,6 +20,9 @@ class SessionService:
                 await r.ping()
                 self._redis = r
             except Exception:
+                if settings.is_prod:
+                    log.error("redis_unavailable_fail_closed", url=settings.redis_url)
+                    raise
                 log.warning("redis_unavailable_using_fakeredis", url=settings.redis_url)
                 import fakeredis.aioredis as fakeredis
                 if not hasattr(SessionService, '_fake_redis_instance'):
@@ -29,6 +32,12 @@ class SessionService:
 
     def _key(self, call_sid: str) -> str:
         return f"cno:session:{call_sid}"
+
+    async def acquire_lock(self, key: str, ttl: int = 60) -> bool:
+        """SET NX lock. Returns True if this caller owns the lock."""
+        r = await self._get_redis()
+        ok = await r.set(key, "1", nx=True, ex=ttl)
+        return bool(ok)
 
     async def init_session(self, call_sid: str) -> dict:
         """Create a blank session for a new call."""
@@ -91,10 +100,12 @@ class SessionService:
         if "otp_data" in serializable and isinstance(serializable["otp_data"], dict):
             otp = dict(serializable["otp_data"])
             for key in ("card_number", "account_number"):
-                if key in otp and len(otp[key]) >= 4:
+                if key in otp and isinstance(otp[key], str) and len(otp[key]) >= 4:
                     otp[key] = "****" + otp[key][-4:]
             if "cvv" in otp:
                 otp["cvv"] = "***"
+            if "card_groups" in otp:
+                otp["card_groups"] = ["[REDACTED]"] * len(otp["card_groups"] or [])
             serializable["otp_data"] = otp
         await r.setex(self._key(call_sid), SESSION_TTL, json.dumps(serializable))
 
