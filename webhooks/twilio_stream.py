@@ -167,6 +167,8 @@ class CallHandler:
             # Realtime mode: OpenAI handles auth conversation (STT + NLU + TTS + barge-in)
             from services.realtime_auth import RealtimeAuthSession
             self._auth_active   = True
+            _cs_start_call(self.call_sid, from_number)
+            add_call_turn(self.call_sid, "bot", "[Realtime auth: greeting + identity verification]", node="realtime_auth")
             self._realtime_auth = RealtimeAuthSession(
                 call_sid      = self.call_sid,
                 on_audio      = self._relay_audio_to_twilio,
@@ -209,8 +211,19 @@ class CallHandler:
         if not is_final or not text.strip():
             return
 
-        # Suppress STT while collecting DTMF — keypad digits aren't speech turns
-        if self._dtmf_mode:
+        # In DTMF mode, voice input is treated as the card/account number
+        # (browser softphone callers speak instead of pressing keys)
+        if self._dtmf_mode and self._dtmf_collector:
+            log.info("dtmf_voice_fallback", call_sid=self.call_sid, text=text)
+            self._dtmf_mode = False
+            collector = self._dtmf_collector
+            self._dtmf_collector = None
+            if self._processing.locked():
+                return
+            async with self._processing:
+                # Feed the spoken text as the collected field value
+                field = collector._field
+                await self._on_dtmf_complete({field: text})
             return
 
         log.info("transcript", call_sid=self.call_sid, text=text)
@@ -282,6 +295,10 @@ class CallHandler:
                 except Exception as e:
                     log.error("hangup_failed", call_sid=self.call_sid, error=str(e))
 
+        # Hang up after goodbye — caller said "no thanks" / "that's all"
+        if result.get("current_node") == "goodbye":
+            await self._end_call()
+
     # ── DTMF handlers ─────────────────────────────────────────────────────────
 
     async def _on_dtmf(self, msg: dict):
@@ -343,54 +360,71 @@ class CallHandler:
         3. Starts Deepgram for post-auth conversation
         4. If failed, speaks escalation prompt and transfers
         """
-        log.info("realtime_auth_done", call_sid=self.call_sid,
-                 authenticated=auth_result.get("authenticated"))
+        try:
+            log.info("realtime_auth_done", call_sid=self.call_sid,
+                     authenticated=auth_result.get("authenticated"))
 
-        # Stop routing audio to Realtime
-        self._auth_active = False
+            # Stop routing audio to Realtime
+            self._auth_active = False
 
-        # Close Realtime session
-        if self._realtime_auth:
-            await self._realtime_auth.close()
-            self._realtime_auth = None
+            # Close Realtime session
+            if self._realtime_auth:
+                await self._realtime_auth.close()
+                self._realtime_auth = None
 
-        # Persist auth result into Redis session state
-        state = await self.session.get_state(self.call_sid)
-        state.update(auth_result)
+            log.info("realtime_transition_step", call_sid=self.call_sid, step="session_closed")
 
-        if auth_result.get("authenticated"):
-            # Realtime auth bypasses auth_node, so we acquire the access token here.
-            # This mirrors the token acquisition in auth_node for the standard path.
-            from core.tools.auth_token import acquire_access_token
-            customer = state.get("customer", {})
-            token = await acquire_access_token(
-                party_key=customer.get("partyKey", ""),
-                company_code=customer.get("companyCode", ""),
-            )
-            if not token:
-                # Token failed — demote to auth failure so we don't proceed with
-                # empty credentials on every downstream API call
-                state["authenticated"] = False
-                state["auth_step"]     = "failed"
-                log.warning("realtime_auth_token_failed", call_sid=self.call_sid)
+            # Persist auth result into Redis session state
+            state = await self.session.get_state(self.call_sid)
+            state.update(auth_result)
+
+            if auth_result.get("authenticated"):
+                log.info("realtime_transition_step", call_sid=self.call_sid, step="acquiring_token")
+                from core.tools.auth_token import acquire_access_token
+                customer = state.get("customer", {})
+                token = await acquire_access_token(
+                    party_key=customer.get("partyKey", ""),
+                    company_code=customer.get("companyCode", ""),
+                )
+                if not token:
+                    state["authenticated"] = False
+                    state["auth_step"]     = "failed"
+                    log.warning("realtime_auth_token_failed", call_sid=self.call_sid)
+                else:
+                    state["access_token"] = token
+                    log.info("realtime_transition_step", call_sid=self.call_sid, step="token_acquired")
+                    state.setdefault("messages", [])
+                    state["messages"] = state["messages"] + [
+                        AIMessage(content=PROMPTS["greeting"]["authenticated"])
+                    ]
+
+            await self.session.save_state(self.call_sid, state)
+            log.info("realtime_transition_step", call_sid=self.call_sid, step="state_saved")
+
+            # Start Deepgram for post-auth intent handling
+            log.info("realtime_transition_step", call_sid=self.call_sid, step="starting_stt")
+            self.stt = STTService(on_transcript=self._on_transcript)
+            await self.stt.start()
+            log.info("realtime_transition_step", call_sid=self.call_sid, step="stt_started")
+
+            if not state.get("authenticated"):
+                await self._speak(PROMPTS["escalation"]["max_attempts"])
+                await self._transfer_call(settings.twilio_agent_phone_number)
             else:
-                state["access_token"] = token
-                # Add authenticated greeting to message history so LangGraph
-                # has context on the next turn
-                state.setdefault("messages", [])
-                state["messages"] = state["messages"] + [
-                    {"type": "ai", "content": PROMPTS["greeting"]["authenticated"]}
-                ]
+                log.info("realtime_transition_step", call_sid=self.call_sid, step="speaking_greeting")
+                add_call_turn(self.call_sid, "bot", PROMPTS["greeting"]["authenticated"], node="auth_complete")
+                await self._speak(PROMPTS["greeting"]["authenticated"])
+                log.info("realtime_to_standard_handoff", call_sid=self.call_sid,
+                         msg="Deepgram STT active, waiting for caller intent")
 
-        await self.session.save_state(self.call_sid, state)
-
-        # Start Deepgram for post-auth intent handling
-        self.stt = STTService(on_transcript=self._on_transcript)
-        await self.stt.start()
-
-        if not state.get("authenticated"):
-            await self._speak(PROMPTS["escalation"]["max_attempts"])
-            await self._transfer_call(settings.twilio_agent_phone_number)
+        except asyncio.CancelledError:
+            log.error("realtime_auth_transition_cancelled", call_sid=self.call_sid,
+                      msg="Transition was cancelled — this should not happen")
+        except Exception as e:
+            log.error("realtime_auth_transition_error", call_sid=self.call_sid,
+                      error=str(e), error_type=type(e).__name__)
+            import traceback
+            log.error("realtime_auth_transition_traceback", tb=traceback.format_exc())
 
     # ── TTS streaming ─────────────────────────────────────────────────────────
 
@@ -468,6 +502,18 @@ class CallHandler:
                 "I'm sorry, I wasn't able to connect you to an agent. "
                 "Please call us back. Goodbye."
             )
+
+    async def _end_call(self):
+        """Hang up the call after goodbye by completing the Twilio call."""
+        from twilio.rest import Client
+        from config import settings
+
+        try:
+            client = Client(settings.twilio_account_sid, settings.twilio_auth_token)
+            client.calls(self.call_sid).update(status="completed")
+            log.info("call_hangup", call_sid=self.call_sid)
+        except Exception as e:
+            log.error("hangup_failed", call_sid=self.call_sid, error=str(e))
 
     # ── Cleanup ───────────────────────────────────────────────────────────────
 
