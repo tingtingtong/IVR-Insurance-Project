@@ -24,7 +24,6 @@ Auth logic mirrors core/graph/nodes/auth.py:
 """
 
 import asyncio
-import audioop
 import base64
 import json
 import structlog
@@ -38,24 +37,8 @@ from core.prompts.retry_prompts import PROMPTS
 
 log = structlog.get_logger()
 
-REALTIME_URL  = "wss://api.openai.com/v1/realtime?model=gpt-realtime-1.5"
+REALTIME_URL  = "wss://api.openai.com/v1/realtime?model=gpt-realtime"
 REALTIME_VOICE = "alloy"   # options: alloy, ash, ballad, coral, echo, sage, shimmer, verse
-
-
-# ── Audio format conversion ───────────────────────────────────────────────────
-
-def mulaw8k_to_pcm16_24k(data: bytes, state=None) -> tuple[bytes, object]:
-    """Twilio mulaw 8kHz → OpenAI Realtime PCM16 24kHz."""
-    linear = audioop.ulaw2lin(data, 2)
-    upsampled, new_state = audioop.ratecv(linear, 2, 1, 8000, 24000, state)
-    return upsampled, new_state
-
-
-def pcm16_24k_to_mulaw8k(data: bytes, state=None) -> tuple[bytes, object]:
-    """OpenAI Realtime PCM16 24kHz → Twilio mulaw 8kHz."""
-    downsampled, new_state = audioop.ratecv(data, 2, 1, 24000, 8000, state)
-    mulaw = audioop.lin2ulaw(downsampled, 2)
-    return mulaw, new_state
 
 
 # ── Session configuration ─────────────────────────────────────────────────────
@@ -78,12 +61,13 @@ Could you please tell me the phone number on your account?"
 3. Follow the instruction in the function result — it tells you what to ask next.
 4. When the caller says a date of birth, call collect_dob.
 5. When the caller says a policy number, call collect_policy.
-6. When the caller says their name, call collect_name.
-7. If the caller mentions what they need help with (e.g. "I want to check my policy"), \
+6. When the caller says their name for VERIFICATION (DOB didn't match), call collect_name.
+7. When the caller tells you who they are (after identity is verified), call identify_caller.
+8. If the caller mentions what they need help with (e.g. "I want to check my policy"), \
 acknowledge it briefly ("Sure, I can help with that. Let me just verify your identity first.") \
 then continue verification.
-8. If the caller corrects themselves ("I meant 1965 not 1975"), call the function with the corrected value.
-9. Never demand a specific format. If the caller says "five five five, one two three, four five six seven", \
+9. If the caller corrects themselves ("I meant 1965 not 1975"), call the function with the corrected value.
+10. Never demand a specific format. If the caller says "five five five, one two three, four five six seven", \
 that's fine — extract the digits and call the function.
 """
 
@@ -112,7 +96,7 @@ _TOOLS = [
             "properties": {
                 "date": {
                     "type": "string",
-                    "description": "Date of birth in YYYY-MM-DD format.",
+                    "description": "Date of birth.",
                 }
             },
             "required": ["date"],
@@ -161,6 +145,21 @@ _TOOLS = [
             "required": ["last_four"],
         },
     },
+    {
+        "type": "function",
+        "name": "identify_caller",
+        "description": "Caller stated who they are (e.g. 'This is John' or 'I'm the policyholder'). Called AFTER identity verification, not during.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "The caller's spoken name. E.g. 'John Smith'",
+                }
+            },
+            "required": ["name"],
+        },
+    },
 ]
 
 
@@ -201,10 +200,6 @@ class RealtimeAuthSession:
         self._attempts:        int  = 0
         self._pending_result:  dict | None = None  # set on auth complete, fires on response.done
 
-        # Audio resampling state (continuous across chunks)
-        self._up_state   = None   # mulaw→pcm16 ratecv state
-        self._down_state = None   # pcm16→mulaw ratecv state
-
     # ── Public API ────────────────────────────────────────────────────────────
 
     async def start(self) -> None:
@@ -212,42 +207,42 @@ class RealtimeAuthSession:
         headers = {
             "Authorization": f"Bearer {settings.openai_api_key}",
         }
-        self._ws = await websockets.connect(REALTIME_URL, additional_headers=headers)
+        self._ws = await websockets.connect(REALTIME_URL, extra_headers=headers)
         self._recv_task = asyncio.create_task(self._recv_loop())
 
-        await self._send({
+        session_config = {
             "type": "session.update",
             "session": {
-                "modalities":          ["text", "audio"],
+                "type":                "realtime",
                 "instructions":        _SYSTEM_PROMPT,
-                "voice":               REALTIME_VOICE,
-                "input_audio_format":  "pcm16",
-                "output_audio_format": "pcm16",
+                "output_modalities":   ["audio"],
                 "tools":               _TOOLS,
                 "tool_choice":         "auto",
-                "turn_detection": {
-                    "type":              "server_vad",
-                    "threshold":         0.5,
-                    "prefix_padding_ms": 300,
-                    "silence_duration_ms": 500,
-                },
-                "temperature":         0.6,
-                "input_audio_transcription": {
-                    "model": "whisper-1",
+                "audio": {
+                    "input": {
+                        "format": {"type": "audio/pcmu"},
+                        "turn_detection": {"type": "server_vad"},
+                    },
+                    "output": {
+                        "format": {"type": "audio/pcmu"},
+                        "voice": REALTIME_VOICE,
+                    },
                 },
             },
-        })
+        }
+        log.info("realtime_session_config", call_sid=self.call_sid,
+                 tools_count=len(_TOOLS), voice=REALTIME_VOICE)
+        await self._send(session_config)
 
         # Trigger the first model response (greeting + phone ask)
         await self._send({"type": "response.create"})
         log.info("realtime_auth_started", call_sid=self.call_sid)
 
     async def send_audio(self, mulaw_bytes: bytes) -> None:
-        """Forward Twilio mulaw 8kHz audio to the Realtime API as PCM16 24kHz."""
+        """Forward Twilio mulaw audio directly to the Realtime API (audio/pcmu)."""
         if self._closed or not self._ws:
             return
-        pcm16, self._up_state = mulaw8k_to_pcm16_24k(mulaw_bytes, self._up_state)
-        encoded = base64.b64encode(pcm16).decode("utf-8")
+        encoded = base64.b64encode(mulaw_bytes).decode("utf-8")
         await self._send({"type": "input_audio_buffer.append", "audio": encoded})
 
     async def close(self) -> None:
@@ -280,10 +275,9 @@ class RealtimeAuthSession:
         t = event.get("type", "")
 
         if t == "response.output_audio.delta":
-            pcm16 = base64.b64decode(event.get("delta", ""))
-            if pcm16:
-                mulaw, self._down_state = pcm16_24k_to_mulaw8k(pcm16, self._down_state)
-                await self._on_audio(mulaw)
+            audio_data = base64.b64decode(event.get("delta", ""))
+            if audio_data:
+                await self._on_audio(audio_data)
 
         elif t == "response.audio_transcript.done":
             # Log what the model said (for dashboard/debugging)
@@ -307,12 +301,18 @@ class RealtimeAuthSession:
                 await self._handle_function_call(item)
 
         elif t == "response.done":
-            # If auth just completed, fire the callback now that model finished speaking
+            # If auth just completed, fire the callback now that model finished speaking.
+            # IMPORTANT: Run in a separate task so close() doesn't kill the transition.
+            # _on_auth_done calls close() which cancels _recv_task — if we're inside
+            # _recv_task, the CancelledError would abort the entire transition.
             if self._pending_result:
                 result = self._pending_result
                 self._pending_result = None
                 if not self._closed:
-                    await self._on_auth_done(result)
+                    asyncio.create_task(self._on_auth_done(result))
+
+        elif t == "session.created" or t == "session.updated":
+            log.info("realtime_session_ok", call_sid=self.call_sid, event_type=t)
 
         elif t == "error":
             log.error("realtime_api_error", call_sid=self.call_sid,
@@ -338,6 +338,8 @@ class RealtimeAuthSession:
             result = await self._do_collect_name(args.get("first", ""), args.get("last", ""))
         elif name == "select_policy":
             result = self._do_select_policy(args.get("last_four", ""))
+        elif name == "identify_caller":
+            result = self._do_identify_caller(args.get("name", ""))
         else:
             result = {"error": f"unknown function: {name}"}
 
@@ -379,8 +381,8 @@ class RealtimeAuthSession:
                 "ok":    True,
                 "found": True,
                 "instruction": (
-                    "Phone matched our records. Now ask for the insured's date of birth — "
-                    "say something like 'And what is the date of birth on the account?'"
+                    "Phone matched our records. Now ask: "
+                    "'And what is the date of birth on the account?'"
                 ),
             }
 
@@ -419,13 +421,22 @@ class RealtimeAuthSession:
         # Clear the failed DOB so the caller can try again
         self._pii.pop("dateOfBirth", None)
 
+        # Format the date the caller said for readback
+        from datetime import datetime
+        try:
+            dt = datetime.strptime(normalized or raw, "%Y-%m-%d")
+            spoken_date = dt.strftime("%B %d, %Y")
+        except (ValueError, TypeError):
+            spoken_date = raw
+
         if self._dob_attempts <= 1:
             return {
                 "ok":      True,
                 "matched": False,
                 "instruction": (
-                    "That date didn't match. Say something like: "
-                    "'Hmm, that doesn't match what we have on file. Could you try again?' "
+                    f"That date didn't match. Read back what you heard: "
+                    f"'I heard {spoken_date} — is that correct?' "
+                    "If yes and it still doesn't match, ask them to try again. "
                     "If they correct themselves, call collect_dob with the corrected date."
                 ),
             }
@@ -540,9 +551,40 @@ class RealtimeAuthSession:
         return self._schedule_success(policy_number=matched)
 
     def _schedule_success(self, policy_number: str = "") -> dict:
-        """Mark auth as pending completion. Fires on_auth_done after model speaks."""
-        from core.graph.nodes.auth import _build_customer
+        """Data verified — now ask for caller's full name before completing auth."""
+        self._verified_policy_number = policy_number
+        self._identity_verified = True
+        return {
+            "ok":      True,
+            "matched": True,
+            "instruction": (
+                "Now ask: 'May I know your full name — first name and last name — please?' "
+                "When the caller says their name, call identify_caller."
+            ),
+        }
+
+    def _do_identify_caller(self, caller_name: str) -> dict:
+        """Determine caller's persona (insured/owner/payor/other) and complete auth."""
+        if not caller_name.strip():
+            return {
+                "ok": False,
+                "instruction": "Couldn't catch the name. Ask: 'May I know your full name — first name and last name — please?'",
+            }
+
+        from core.graph.nodes.auth import _build_customer, _match_persona
+        policy_number = getattr(self, "_verified_policy_number", "")
         customer = _build_customer(self._candidate_party, policy_number)
+
+        # Determine persona from party data (keys may be lowercase or capitalized)
+        personas = [
+            {
+                "name": p.get("name", "") or p.get("Name", ""),
+                "role": (p.get("role", "") or p.get("Role", "other")).lower(),
+            }
+            for p in self._candidate_party.get("Personas", [])
+        ]
+        role = _match_persona(caller_name, personas) if personas else "insured"
+
         self._pending_result = {
             "authenticated":   True,
             "auth_step":       "complete",
@@ -551,16 +593,29 @@ class RealtimeAuthSession:
             "finalized_party": self._candidate_party,
             "candidate_party": {},
             "pii_collected":   self._pii,
+            "caller_name":     caller_name.strip(),
+            "caller_persona":  role,
         }
-        return {
-            "ok":     True,
-            "matched": True,
-            "instruction": (
-                "Verification successful. Tell the caller: "
-                "'Great, I've verified your identity. How can I help you today?' "
-                "Then stop — do not say anything else."
-            ),
-        }
+
+        if role in ("payor", "insured", "owner"):
+            return {
+                "ok":     True,
+                "instruction": (
+                    f"Say: 'Thank you, {caller_name.title()}. I've verified your identity. "
+                    "How can I help you today?' Then stop — do not say anything else."
+                ),
+            }
+        else:
+            self._pending_result["caller_persona"] = "other"
+            return {
+                "ok":     True,
+                "instruction": (
+                    f"Say: 'Thank you, {caller_name.title()}. For security purposes, "
+                    "I can only share detailed policy information with the policyholder, owner, "
+                    "or payor on the account. I can connect you with a representative who can assist you. "
+                    "Would you like me to transfer you?' Then stop."
+                ),
+            }
 
     # ── Send helper ───────────────────────────────────────────────────────────
 

@@ -49,12 +49,16 @@ sys.stderr = _Tee(sys.__stderr__, _log_fh)
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
+import os
+from dotenv import load_dotenv
+load_dotenv()  # load .env so APP_PORT etc. are available via os.getenv
+
 import uvicorn
 
 if __name__ == "__main__":
     uvicorn.run(
         "main:app",
-        host="0.0.0.0",
-        port=8888,
-        log_level="info",
+        host=os.getenv("APP_HOST", "0.0.0.0"),
+        port=int(os.getenv("APP_PORT", "8082")),
+        log_level=os.getenv("LOG_LEVEL", "info").lower(),
     )
