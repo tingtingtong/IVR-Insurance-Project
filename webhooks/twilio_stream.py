@@ -119,6 +119,7 @@ class CallHandler:
         # Voice-digit buffering: accumulate split transcripts before processing
         self._voice_digit_buffer: list[str] = []
         self._voice_digit_timer: asyncio.TimerHandle | None = None
+        self._voice_digit_flush_delay: float = 2.5  # seconds to wait for all fragments
 
     # ── Main loop ─────────────────────────────────────────────────────────────
 
@@ -215,19 +216,31 @@ class CallHandler:
 
         # In DTMF mode, voice input is treated as the card/account number
         # (browser softphone callers speak instead of pressing keys).
-        # Buffer transcripts for 1.5s to accumulate split finals from Deepgram,
-        # then process all at once through OTP node's progressive capture.
+        # Buffer transcripts to accumulate split finals from Deepgram (300ms
+        # endpointing splits long digit sequences into multiple utterances).
+        # Flush when we have ≥16 digits or after a timeout.
         if self._dtmf_mode or self._voice_digit_buffer:
             log.info("dtmf_voice_fallback", call_sid=self.call_sid, text=text)
             self._dtmf_mode = False
             self._dtmf_collector = None
             self._voice_digit_buffer.append(text)
-            # Reset the flush timer on each new transcript
+            # Check if we have enough digits already
+            from utils.card_extractor import extract_card_digits
+            all_digits = extract_card_digits(" ".join(self._voice_digit_buffer))
+            if len(all_digits) >= 16:
+                # Got enough — flush immediately
+                if self._voice_digit_timer:
+                    self._voice_digit_timer.cancel()
+                    self._voice_digit_timer = None
+                asyncio.ensure_future(self._flush_voice_digits())
+                return
+            # Still accumulating — reset the flush timer
             if self._voice_digit_timer:
                 self._voice_digit_timer.cancel()
             loop = asyncio.get_event_loop()
             self._voice_digit_timer = loop.call_later(
-                1.5, lambda: asyncio.ensure_future(self._flush_voice_digits())
+                self._voice_digit_flush_delay,
+                lambda: asyncio.ensure_future(self._flush_voice_digits()),
             )
             return
 
