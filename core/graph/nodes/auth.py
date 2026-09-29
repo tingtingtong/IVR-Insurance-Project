@@ -268,18 +268,13 @@ async def _collecting_phone(state, last_human, pii_collected, auth_attempts, can
         }
 
     if not result["success"]:
-        # API error (network, timeout, etc.) — skip phone confirmation and go straight
-        # to policy number so the caller isn't asked to confirm digits we couldn't check.
-        tts = "No problem. " + get_retry_prompt("policy_number", "ask")
-        return {
-            "auth_step":       "collecting_policy",
-            "pii_collected":   pii_collected,
-            "candidate_party": {},
-            "tts_text":        tts,
-            "slot_attempts":   {},
-            "current_node":    "auth",
-            "active_flow":     "auth",
-        }
+        # API error (network, timeout, etc.) — transfer to agent immediately.
+        # Never continue auth when the backend is unreachable.
+        from core.graph.escalate import transfer_now
+        return transfer_now(
+            PROMPTS["escalation"]["error"],
+            auth_step="failed",
+        )
 
     # Phone not in system — read it back and ask to confirm (caller may have mis-spoken)
     formatted = _fmt_phone(digits)
@@ -418,6 +413,14 @@ async def _collecting_policy(state, last_human, pii_collected, auth_attempts, ca
             "current_node":    "auth",
             "active_flow":     "auth",
         }
+
+    if not result["success"]:
+        # API error — transfer immediately
+        from core.graph.escalate import transfer_now
+        return transfer_now(
+            PROMPTS["escalation"]["error"],
+            auth_step="failed",
+        )
 
     # Neither phone nor policy found → escalate
     return _escalate(state)

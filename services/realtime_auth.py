@@ -343,6 +343,16 @@ class RealtimeAuthSession:
                 "instruction": "Phone matched. Ask for the insured's date of birth.",
             }
 
+        if not result["success"]:
+            # API unreachable — tell the model to inform caller and end auth
+            return {
+                "ok": False,
+                "instruction": (
+                    "There is a technical issue and you cannot verify the caller right now. "
+                    "Apologize and tell them you are transferring them to a representative."
+                ),
+            }
+
         formatted = f"{digits[:3]}-{digits[3:6]}-{digits[6:]}"
         return {
             "ok":    True,
@@ -420,6 +430,17 @@ class RealtimeAuthSession:
                 "ok":    True,
                 "found": True,
                 "instruction": "Policy found. Now ask for the insured's date of birth.",
+            }
+
+        if not result["success"]:
+            # API unreachable — escalate immediately
+            self._pending_result = {"authenticated": False, "auth_step": "failed"}
+            return {
+                "ok": False,
+                "instruction": (
+                    "There is a technical issue and you cannot verify the caller right now. "
+                    "Apologize and tell them you are transferring them to a representative."
+                ),
             }
 
         self._attempts += 1
