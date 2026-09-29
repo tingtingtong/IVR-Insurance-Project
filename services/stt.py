@@ -41,11 +41,12 @@ class STTService:
     Wraps a live connection and exposes send_audio() + a transcript callback.
     """
 
-    def __init__(self, on_transcript: Callable[[str, bool], Awaitable[None]]):
+    def __init__(self, on_transcript: Callable[[str, bool, bool], Awaitable[None]]):
         """
-        on_transcript(text, is_final):
-          text     — transcript text
-          is_final — True when Deepgram considers the utterance complete
+        on_transcript(text, is_final, speech_final):
+          text         — transcript text
+          is_final     — True when this chunk is finalized (may not be end of utterance)
+          speech_final — True when Deepgram detects end of utterance (endpointing)
         """
         self._on_transcript = on_transcript
         self._dg = DeepgramClient(
@@ -110,7 +111,8 @@ class STTService:
             if not text:
                 return
             is_final = result.is_final
-            await self._on_transcript(text, is_final)
+            speech_final = getattr(result, "speech_final", is_final)
+            await self._on_transcript(text, is_final, speech_final)
         except (AttributeError, IndexError):
             pass
 
