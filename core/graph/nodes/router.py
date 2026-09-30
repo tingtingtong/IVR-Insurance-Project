@@ -98,6 +98,24 @@ def _caller_wants_goodbye(text: str) -> bool:
     return False
 
 
+def _is_post_payment_repeat(state: dict, messages: list, last_human: str) -> bool:
+    """True when the bot just offered to repeat payment numbers and the caller wants that."""
+    if state.get("otp_step") != "complete":
+        return False
+    if not state.get("otp_data", {}).get("last_confirmation_tts"):
+        return False
+    last_ai = ""
+    for msg in reversed(messages):
+        role = getattr(msg, "type", "") or getattr(msg, "role", "")
+        if role == "ai":
+            last_ai = msg.content or ""
+            break
+    if "repeat those numbers" not in last_ai.lower():
+        return False
+    from core.graph.nodes.otp import _wants_post_payment_repeat
+    return _wants_post_payment_repeat(last_human)
+
+
 def _is_confirmation_no(text: str) -> bool:
     """
     Return True when the utterance is a simple negation/correction in a confirmation step.
@@ -241,6 +259,13 @@ async def router_node(state: CNOState) -> dict:
             except Exception:
                 pass  # LLM failed — fall through to normal auth redirect
         return {"current_intent": _FLOW_TO_INTENT.get(active_flow, "faq"), "current_node": "router"}
+
+    # ── Post-payment repeat (#59) ─────────────────────────────────────────────
+    # The OTP flow is released after payment, so "yes" / "repeat that" in reply to
+    # "would you like me to repeat those numbers?" would go to the LLM and land in
+    # faq or policy_info. Route it back to OTP, which holds the numbers.
+    if _is_post_payment_repeat(state, messages, last_human):
+        return {"current_intent": "otp", "current_node": "router"}
 
     # ── Context switch enforcement ─────────────────────────────────────────────
     cs_mode = CONTEXT_SWITCH_CONFIG.get(active_flow, "open")
