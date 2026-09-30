@@ -9,6 +9,7 @@ from core.llm_factory import get_llm
 from config import settings
 from utils.date_utils import format_date_natural
 from utils.call_logger import log_event
+from utils.pii_redactor import redact_messages
 
 _llm = get_llm(temperature=0.3, max_tokens=200)
 
@@ -50,7 +51,7 @@ async def policy_node(state: CNOState) -> dict:
     t_llm = time.time()
     response = await _llm.ainvoke([
         SystemMessage(content=CNO_SYSTEM_PROMPT),
-        *messages[-4:],  # last 2 turns for context
+        *redact_messages(messages[-4:]),  # last 2 turns for context
         HumanMessage(content=f"Policy data retrieved:\n{context}\n\nGenerate a concise voice response."),
     ])
 
