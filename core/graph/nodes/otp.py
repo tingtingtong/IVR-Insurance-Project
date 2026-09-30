@@ -85,6 +85,35 @@ async def otp_node(state: CNOState) -> dict:
             "current_node": "otp", "active_flow": "",
         })
 
+    # ── Step: Complete — repeat numbers, hang up, or start a new payment ─────
+    # The flow is released after payment (#42), so never set active_flow="otp"
+    # here — OTP is "locked" and the caller could not get out (#59).
+    if otp_step == "complete":
+        stored_tts = otp_data.get("last_confirmation_tts", "")
+        if stored_tts and _wants_post_payment_repeat(last_human):
+            return {
+                "otp_step": "complete",
+                "otp_data": otp_data,
+                "tts_text": (
+                    f"Let me repeat that slowly. {stored_tts} "
+                    "Would you like me to repeat those numbers again, "
+                    "or is there anything else I can help you with today?"
+                ),
+                "current_node": "otp", "active_flow": "",
+            }
+        if _is_done_after_payment(last_human):
+            return {
+                "otp_step": "complete",
+                "otp_data": otp_data,
+                "tts_text": "Thank you for calling. Have a great day. Goodbye.",
+                "current_node": "goodbye", "active_flow": "",
+                "current_intent": "goodbye",
+            }
+        # Routed back to OTP for anything else = a new payment (BUG-020 re-entry)
+        log_event(call_sid, "otp_restart_after_complete")
+        otp_step = "start"
+        otp_data = {}
+
     # ── Step: Start — load due amount from holding inquiry ───────────────────
     if otp_step == "start":
         if not policy_number:
@@ -823,40 +852,6 @@ async def otp_node(state: CNOState) -> dict:
             "current_node": "otp", "active_flow": "otp",
         }
 
-    # ── Step: Complete — repeat numbers, hang up, or ask anything else ────────
-    if otp_step == "complete":
-        # "Yes" after "would you like me to repeat those numbers?" means repeat.
-        if _wants_repeat_confirmation(last_human) or _is_yes(last_human):
-            stored_tts = otp_data.get("last_confirmation_tts", "")
-            if stored_tts:
-                return {
-                    "otp_step": "complete",
-                    "otp_data": otp_data,
-                    "tts_text": (
-                        f"Let me repeat that slowly. {stored_tts} "
-                        "Would you like me to repeat those numbers again, "
-                        "or is there anything else I can help you with today?"
-                    ),
-                    "current_node": "otp", "active_flow": "otp",
-                }
-        if _is_done_after_payment(last_human):
-            return {
-                "otp_step": "complete",
-                "otp_data": otp_data,
-                "tts_text": "Thank you for calling. Have a great day. Goodbye.",
-                "current_node": "goodbye", "active_flow": "",
-                "current_intent": "goodbye",
-            }
-        # Keep confirmation numbers so a later "repeat that" still works
-        return {
-            "otp_step": "complete",
-            "otp_data": otp_data,
-            "tts_text": (
-                "Is there anything else I can help you with today? "
-                "You can also ask me to repeat your confirmation number."
-            ),
-            "current_node": "otp", "active_flow": "otp",
-        }
 
     tts_fallback = "Is there anything else I can help you with?"
     log_event(call_sid, "node_exit", node="otp",
@@ -1219,6 +1214,21 @@ def _wants_repeat_confirmation(utterance: str) -> bool:
     if "repeat" in words or "again" in words:
         return True
     return False
+
+
+_REPEAT_YES_WORDS = {"yes", "yeah", "yep", "sure", "ok", "okay", "please"}
+
+
+def _wants_post_payment_repeat(utterance: str) -> bool:
+    """Repeat request, or a short bare "yes", after "would you like me to repeat those numbers?".
+
+    Uses whole words — _is_yes() is substring-based and matches "insurance" (sure).
+    """
+    import re
+    if _wants_repeat_confirmation(utterance):
+        return True
+    words = re.sub(r"[^a-z0-9 ]", " ", utterance.lower()).split()
+    return 0 < len(words) <= 4 and bool(set(words) & _REPEAT_YES_WORDS)
 
 
 def _is_done_after_payment(utterance: str) -> bool:
