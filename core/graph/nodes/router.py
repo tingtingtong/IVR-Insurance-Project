@@ -5,6 +5,7 @@ from core.prompts.system_prompt import ROUTER_PROMPT
 from core.llm_factory import get_router_llm, ainvoke_limited
 from config import settings
 from utils.call_logger import log_event
+from utils.pii_redactor import redact_for_llm
 
 _llm = get_router_llm()
 
@@ -219,7 +220,7 @@ async def router_node(state: CNOState) -> dict:
         if not existing_pending and auth_just_started and len(last_human) > 15:
             try:
                 import time as _time_auth
-                prompt = ROUTER_PROMPT.format(utterance=last_human)
+                prompt = ROUTER_PROMPT.format(utterance=redact_for_llm(last_human))
                 t0 = _time_auth.time()
                 response = await _invoke_llm_with_retry([
                     SystemMessage(content="You are a call intent classifier. Reply with the intent label(s), comma-separated if multiple."),
@@ -285,7 +286,7 @@ async def router_node(state: CNOState) -> dict:
     # ── LLM intent classification (with retry for transient Groq errors) ──────
     # ISSUE-3-001 fix: added _invoke_llm_with_retry wrapper — see docstring above.
     import time as _time
-    prompt = ROUTER_PROMPT.format(utterance=last_human)
+    prompt = ROUTER_PROMPT.format(utterance=redact_for_llm(last_human))
     t_llm = _time.time()
 
     try:

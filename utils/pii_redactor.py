@@ -66,13 +66,35 @@ _REPLACEMENTS = [
 ]
 
 
-def redact(text: str) -> str:
-    """Return text with PII and payment info replaced by labeled placeholders."""
+def redact(text: str, keep_amounts: bool = False) -> str:
+    """Return text with PII and payment info replaced by labeled placeholders.
+
+    keep_amounts=True leaves dollar amounts intact — they identify no one and
+    LLM prompts need them to answer questions like "can I borrow $5,000?".
+    """
     if not text:
         return text
     for pattern, label in _REPLACEMENTS:
+        if keep_amounts and pattern is _DOLLAR:
+            continue
         text = pattern.sub(label, text)
     return text
+
+
+def redact_for_llm(text: str) -> str:
+    """Redact caller text before it is sent to an external LLM or embedding API."""
+    return redact(text, keep_amounts=True)
+
+
+def redact_messages(messages: list) -> list:
+    """Copies of LangChain messages with string content redacted for external LLM calls."""
+    out = []
+    for msg in messages:
+        content = getattr(msg, "content", None)
+        if isinstance(content, str) and hasattr(msg, "model_copy"):
+            msg = msg.model_copy(update={"content": redact_for_llm(content)})
+        out.append(msg)
+    return out
 
 
 def looks_like_isolated_cvv(text: str) -> bool:

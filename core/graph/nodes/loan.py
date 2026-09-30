@@ -8,6 +8,7 @@ from core.prompts.retry_prompts import PROMPTS
 from core.llm_factory import get_llm
 from config import settings
 from utils.call_logger import log_event
+from utils.pii_redactor import redact_messages
 
 _llm = get_llm(temperature=0.3, max_tokens=150)
 
@@ -43,7 +44,7 @@ async def loan_node(state: CNOState) -> dict:
     t_llm = time.time()
     response = await _llm.ainvoke([
         SystemMessage(content=CNO_SYSTEM_PROMPT),
-        *messages[-4:],
+        *redact_messages(messages[-4:]),
         HumanMessage(content=f"Loan data: {context}\nGenerate a concise voice response."),
     ])
     tts = response.content.strip()

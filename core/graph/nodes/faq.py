@@ -6,6 +6,7 @@ from services.rag import search_knowledge
 from core.llm_factory import get_llm
 from config import settings  # feature flags: enable_rag, faq_fallback_to_escalate
 from utils.call_logger import log_event
+from utils.pii_redactor import redact_messages, redact_for_llm
 
 _llm = get_llm(temperature=0.4, max_tokens=200)
 
@@ -31,7 +32,7 @@ async def faq_node(state: CNOState) -> dict:
 
     # Retrieve relevant knowledge chunks (skip if RAG disabled via feature flag)
     t0 = time.time()
-    context = await search_knowledge(last_human, k=3) if settings.enable_rag else ""
+    context = await search_knowledge(redact_for_llm(last_human), k=3) if settings.enable_rag else ""
     log_event(call_sid, "rag_retrieved",
               chunks=len(context.split('\n\n')) if context else 0,
               latency_ms=int((time.time() - t0) * 1000))
@@ -69,8 +70,8 @@ async def faq_node(state: CNOState) -> dict:
     t1 = time.time()
     response = await _llm.ainvoke([
         SystemMessage(content=CNO_SYSTEM_PROMPT + AUTH_OVERRIDE + "\n\n" + grounding),
-        *messages[-4:],
-        HumanMessage(content=f"Answer this caller question in 1-2 sentences for voice: {last_human}"),
+        *redact_messages(messages[-4:]),
+        HumanMessage(content=f"Answer this caller question in 1-2 sentences for voice: {redact_for_llm(last_human)}"),
     ])
 
     tts = response.content.strip()
