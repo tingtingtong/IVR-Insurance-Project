@@ -25,6 +25,7 @@ from langchain_core.messages import HumanMessage, AIMessage
 from config import settings
 import core.graph.graph as _graph_module
 from core.prompts.retry_prompts import PROMPTS
+from utils.pii_redactor import redact
 from services.session import SessionService
 from services.stt import STTService
 from services.tts import TTSService
@@ -231,7 +232,7 @@ class CallHandler:
                     await self._process_turn(text)
             return
 
-        log.info("transcript", call_sid=self.call_sid, text=text)
+        log.info("transcript", call_sid=self.call_sid, text=redact(text))
 
         # Don't process if we're already in the middle of a graph call
         if self._processing.locked():

@@ -75,7 +75,9 @@ async def lifespan(app: FastAPI):
         os.environ.setdefault("LANGCHAIN_API_KEY", settings.langchain_api_key)
         os.environ.setdefault("LANGCHAIN_PROJECT", settings.langchain_project)
         os.environ.setdefault("LANGCHAIN_ENDPOINT", settings.langchain_endpoint)
-        log.info("langsmith_tracing_enabled", project=settings.langchain_project)
+        from utils.trace_masking import install_masked_langsmith_client
+        install_masked_langsmith_client()
+        log.info("langsmith_tracing_enabled", project=settings.langchain_project, pii_masking=True)
     else:
         log.info("langsmith_tracing_disabled")
 
