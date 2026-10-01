@@ -69,6 +69,9 @@ def sync_webhooks(settings) -> None:
 
     voice_url = f"{base_url}/webhook/voice"
     phone_url = f"{base_url}/webhook/voice"
+    # Status callback ends the call on caller hang-up (end_call → dashboard + MLflow).
+    # Must be synced too — stale values pointed at destroyed deployments (#65).
+    status_url = f"{base_url}/webhook/status"
     changed = []
 
     # ── TwiML App (browser softphone) ────────────────────────────────────────
@@ -76,12 +79,14 @@ def sync_webhooks(settings) -> None:
     if twiml_sid:
         try:
             app = client.applications(twiml_sid).fetch()
-            if app.voice_url != voice_url:
+            if app.voice_url != voice_url or app.status_callback != status_url:
                 client.applications(twiml_sid).update(
                     voice_url=voice_url,
                     voice_method="POST",
+                    status_callback=status_url,
+                    status_callback_method="POST",
                 )
-                changed.append(f"TwiML app → {voice_url}")
+                changed.append(f"TwiML app → {voice_url} (status → {status_url})")
             else:
                 log.info("twilio_webhook_twiml_already_correct", url=voice_url)
         except Exception as e:
@@ -93,9 +98,10 @@ def sync_webhooks(settings) -> None:
         try:
             numbers = client.incoming_phone_numbers.list(phone_number=phone)
             for n in numbers:
-                if n.voice_url != phone_url:
-                    n.update(voice_url=phone_url, voice_method="POST")
-                    changed.append(f"Phone {phone} → {phone_url}")
+                if n.voice_url != phone_url or n.status_callback != status_url:
+                    n.update(voice_url=phone_url, voice_method="POST",
+                             status_callback=status_url, status_callback_method="POST")
+                    changed.append(f"Phone {phone} → {phone_url} (status → {status_url})")
                 else:
                     log.info("twilio_webhook_phone_already_correct", phone=phone, url=phone_url)
         except Exception as e:
