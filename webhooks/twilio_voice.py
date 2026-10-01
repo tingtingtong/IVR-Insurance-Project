@@ -18,11 +18,27 @@ from services.session import SessionService
 from services.conversation_store import start_call, add_call_turn, end_call, set_recording, update_call_metadata, get_call
 from langchain_core.messages import HumanMessage
 from utils.call_logger import log_event
+from utils.pii_redactor import redact_for_log, remember_identity
 from utils.tts_normalizer import normalize_tts_text
 from webhooks.security import validate_twilio_webhook
 from core.graph.escalate import is_terminal as _is_terminal
 
 _twilio = TwilioClient(settings.twilio_account_sid, settings.twilio_auth_token)
+
+# Twilio form fields safe to log as-is (#67) — no caller speech, digits or phone numbers
+_SAFE_FORM_KEYS = frozenset((
+    "CallSid", "AccountSid", "ApplicationSid", "CallStatus", "Direction",
+    "ApiVersion", "Confidence", "Language", "msg",
+))
+
+
+def _mask_number(number: str) -> str:
+    """Mask a caller phone number for logs; browser identities (client:...) are kept."""
+    if not number or number.startswith("client:"):
+        return number
+    digits = sum(c.isdigit() for c in number)
+    return number[:3] + "*" * max(0, len(number) - 5) + number[-2:] if digits >= 7 else number
+
 
 _RECORDING_ATTEMPTS = 5
 _RECORDING_RETRY_S = 1.0
@@ -164,7 +180,7 @@ async def incoming_call(request: Request, background_tasks: BackgroundTasks):
     call_sid  = form.get("CallSid", "")
     from_num  = form.get("From", "")
 
-    log.info("call_started", call_sid=call_sid, from_number=from_num)
+    log.info("call_started", call_sid=call_sid, from_number=_mask_number(from_num))
     start_call(call_sid, from_num)
     add_call_turn(call_sid, "bot", _GREETING, node="greeting")
     log_event(call_sid, "call_start", from_number=from_num, channel="webhook")
@@ -183,6 +199,7 @@ async def incoming_call(request: Request, background_tasks: BackgroundTasks):
             if len(digits) == 10:
                 result = await party_search(phone=digits)
                 if result["success"] and result["parties"]:
+                    remember_identity(result["parties"][0])  # mask this caller's name in logs/traces
                     state = await session.get_state(call_sid)
                     state["pii_collected"] = {"phoneNumber": digits}
                     state["candidate_party"] = result["parties"][0]
@@ -209,13 +226,18 @@ async def gather_speech(request: Request):
     transcript  = form.get("SpeechResult", "").strip()
     confidence  = form.get("Confidence", "0")
 
-    # ── Diagnostic: log ALL Twilio form params to detect missing/unexpected data ──
-    form_keys = {k: (v if k not in ("SpeechResult",) else v[:60]) for k, v in form.items()}
-    log.info("gather_raw", call_sid=call_sid, form_params=form_keys)
+    # ── Diagnostic: log Twilio form params, never the caller's words or digits ──
+    # SpeechResult / Digits carry CVV, expiry, DOB; From / Caller / To are phone
+    # numbers on PSTN calls (#67). Only sizes of those are logged.
+    form_log = {k: v for k, v in form.items() if k in _SAFE_FORM_KEYS}
+    form_log["speech_len"] = len(form.get("SpeechResult", ""))
+    form_log["digits_len"] = len(form.get("Digits", ""))
+    log.info("gather_raw", call_sid=call_sid, form_params=form_log)
 
+    safe_transcript = redact_for_log(transcript)
     log.info("speech_received", call_sid=call_sid,
-             transcript=transcript, confidence=confidence)
-    log_event(call_sid, "stt_result", transcript=transcript[:80],
+             transcript=safe_transcript, confidence=confidence)
+    log_event(call_sid, "stt_result", transcript=safe_transcript[:80],
               confidence=float(confidence) if confidence else 0.0,
               chars=len(transcript))
 
@@ -259,6 +281,7 @@ async def gather_speech(request: Request):
         )
 
         graph_latency = int((_time.time() - t_graph) * 1000)
+        remember_identity(result)  # names from auth → masked in later logs/traces
         tts_text     = result.get("tts_text", "")
         # BUG-015: Hint about pending intents so caller knows to confirm
         from utils.pending_intent_hint import append_pending_hint
