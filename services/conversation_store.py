@@ -78,7 +78,9 @@ def add_call_turn(
 
 
 def end_call(call_sid: str) -> None:
-    if call_sid in _calls:
+    # Idempotent: a call ended at the goodbye node also gets Twilio's status
+    # callback a few seconds later — don't re-log it to MLflow or move ended_at (#73)
+    if call_sid in _calls and _calls[call_sid].get("status") != "ended":
         _calls[call_sid]["ended_at"] = datetime.now().isoformat(timespec="seconds")
         _calls[call_sid]["status"]   = "ended"
         _db.upsert_call(call_sid, _calls[call_sid])
