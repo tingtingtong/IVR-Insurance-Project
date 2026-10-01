@@ -2,9 +2,12 @@
 CNO IVR Dashboard — served at /dashboard
 Tabs: WebChat | Calls | Softphone | Codebase | Graph | Logs | Analytics | Config
 """
+import re
 import secrets
-from fastapi import APIRouter, Depends, Request
+import httpx
+from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse
+from config import settings
 from services.conversation_store import get_calls, get_call
 from webhooks.security import require_dashboard_auth
 
@@ -41,6 +44,34 @@ async def get_call_events(call_sid: str):
     from services.conversation_store import get_call
     call = get_call(call_sid)
     return JSONResponse({"call_sid": call_sid, "events": call.get("events", [])})
+
+
+_RECORDING_SID = re.compile(r"^RE[0-9a-fA-F]{32}$")
+
+
+@router.get("/calls/{call_sid}/recording")
+async def call_recording(call_sid: str):
+    """Serve a call recording through the app (#69).
+
+    Twilio media URLs need the account credentials, so a direct browser link
+    returns 401. The URL is built from the stored recording SID, never taken
+    from stored data, so this can only ever fetch this account's recordings.
+    """
+    rec_sid = get_call(call_sid).get("recording_sid") or ""
+    if not _RECORDING_SID.match(rec_sid):
+        return JSONResponse({"error": "no recording for this call"}, status_code=404)
+    sid, token = settings.twilio_account_sid, settings.twilio_auth_token
+    url = f"https://api.twilio.com/2010-04-01/Accounts/{sid}/Recordings/{rec_sid}.mp3"
+    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+        resp = await client.get(url, auth=(sid, token))
+    if resp.status_code != 200:
+        return JSONResponse({"error": f"Twilio returned {resp.status_code}"}, status_code=502)
+    return Response(
+        content=resp.content,
+        media_type="audio/mpeg",
+        headers={"Content-Disposition": f'inline; filename="{call_sid}.mp3"',
+                 "Cache-Control": "private, max-age=3600"},
+    )
 
 
 @router.post("/calls/cleanup")
@@ -1366,8 +1397,11 @@ async function refreshCallDetail(csid) {
     const status = call.status === 'active'
       ? '<span style="color:#22c55e;font-size:11px;margin-left:8px">● Live</span>'
       : '<span style="color:#64748b;font-size:11px;margin-left:8px">Ended ' + (call.ended_at||'').slice(11,19) + '</span>';
-    const recBadge = call.recording_url
-      ? ' <a href="'+call.recording_url+'" target="_blank" style="font-size:11px;color:#22c55e;margin-left:8px">▶ Recording</a>'
+    // Served through the app — Twilio's own URL needs account auth (#69)
+    const recUrl = '/dashboard/calls/' + encodeURIComponent(call.call_sid) + '/recording';
+    const recBadge = call.recording_sid
+      ? ' <a href="'+recUrl+'" target="_blank" style="font-size:11px;color:#22c55e;margin-left:8px">▶ Recording</a>'
+        + ' <audio controls preload="none" src="'+recUrl+'" style="height:24px;vertical-align:middle;margin-left:6px"></audio>'
       : '';
     document.getElementById('call-hdr').innerHTML =
       esc(from || 'Softphone') + ' — ' + (call.started_at||'').slice(0,19) + status + recBadge;
