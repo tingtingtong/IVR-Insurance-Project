@@ -1311,6 +1311,25 @@ document.getElementById('inp').addEventListener('keydown', e => {
 let selCall = null;
 let _callsPollTimer = null;
 
+// ── Render only on change (#77) ──────────────────────────────────────────────
+// Polling used to rebuild every section each time: flicker, lost scroll and
+// selection. setHtml() skips the DOM write when the HTML is unchanged.
+const _rendered = {};
+let _detailSid = null;  // call currently shown in the detail pane
+function setHtml(id, html) {
+  if (_rendered[id] === html) return false;
+  const el = document.getElementById(id);
+  if (!el) return false;
+  el.innerHTML = html;
+  _rendered[id] = html;
+  return true;
+}
+function nearBottom(el) {
+  return el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+}
+// No polling work while the tab is hidden; catch up as soon as it's visible
+document.addEventListener('visibilitychange', () => { if (!document.hidden) loadCalls(); });
+
 function startCallsPoll() {
   if (_callsPollTimer) return;
   loadCalls();
@@ -1353,17 +1372,17 @@ function toggleRec(sid) {
 }));
 
 async function loadCalls() {
+  if (document.hidden) return;
   try {
     const res = await fetch('/dashboard/calls');
     const data = await res.json();
     const calls = data.calls || [];
     document.getElementById('call-cnt').textContent = calls.length;
-    const el = document.getElementById('call-list');
     if (!calls.length) {
-      el.innerHTML = '<div class="empty-msg">No calls recorded yet.<br>Make a call via the Softphone.</div>';
+      setHtml('call-list', '<div class="empty-msg">No calls recorded yet.<br>Make a call via the Softphone.</div>');
       return;
     }
-    el.innerHTML = calls.map(c => {
+    setHtml('call-list', calls.map(c => {
       const from = (c.from_number||'').replace('client:','').replace('+1','');
       const active = c.status === 'active';
       const sel = c.call_sid === selCall ? ' on' : '';
@@ -1374,7 +1393,7 @@ async function loadCalls() {
         + endBtn
         + ' &nbsp; '+c.turns.length+' turns &nbsp; '+c.started_at.slice(11,16)
         + recButtons(c) + '</div></div>';
-    }).join('');
+    }).join(''));
     // Auto-refresh selected call detail during polling
     if (selCall) refreshCallDetail(selCall);
   } catch(e) { console.error('loadCalls error', e); }
@@ -1430,7 +1449,7 @@ function renderStatePanel(call) {
     ${row('Auth Mode', na(mi.auth_mode))}
   </div>`;
 
-  document.getElementById('call-state-panel').innerHTML = authCard + piiCard + flowCard + intentModelCard;
+  return authCard + piiCard + flowCard + intentModelCard;
 }
 
 async function refreshCallDetail(csid) {
@@ -1445,27 +1464,53 @@ async function refreshCallDetail(csid) {
     // Served through the app (Twilio's URL needs account auth, #69); plays in the
     // persistent player so polling can't cut it off (#71)
     const recBadge = call.recording_sid ? ' <span style="margin-left:6px">' + recButtons(call, true) + '</span>' : '';
-    document.getElementById('call-hdr').innerHTML =
-      esc(from || 'Softphone') + ' — ' + (call.started_at||'').slice(0,19) + status + recBadge;
+
+    // Opening a different call: forget cached sections so everything renders
+    // and the transcript starts at the bottom (#77)
+    const switched = csid !== _detailSid;
+    if (switched) {
+      _detailSid = csid;
+      ['call-hdr', 'call-state-panel', 'call-turns', 'ev-rows'].forEach(id => delete _rendered[id]);
+    }
 
     // Share button — opens standalone call URL
     const shareBtn = '<a href="/dashboard/call/'+csid+'" target="_blank" style="font-size:11px;color:#a78bfa;margin-left:10px;text-decoration:none;border:1px solid rgba(167,139,250,.3);padding:2px 8px;border-radius:4px">&#x2197; Share</a>';
-    document.getElementById('call-hdr').innerHTML += shareBtn;
 
     // End Call button — only shown for active calls
-    if (call.status === 'active') {
-      const endBtn = '<button onclick="endCallFn(\\''+csid+'\\');event.stopPropagation()" style="font-size:11px;color:#ef4444;margin-left:10px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.4);padding:2px 10px;border-radius:4px;cursor:pointer">✕ End Call</button>';
-      document.getElementById('call-hdr').innerHTML += endBtn;
+    const endBtn = call.status === 'active'
+      ? '<button onclick="endCallFn(\\''+csid+'\\');event.stopPropagation()" style="font-size:11px;color:#ef4444;margin-left:10px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.4);padding:2px 10px;border-radius:4px;cursor:pointer">✕ End Call</button>'
+      : '';
+
+    if (setHtml('call-hdr', esc(from || 'Softphone') + ' — ' + (call.started_at||'').slice(0,19) + status + recBadge + shareBtn + endBtn)) {
+      // Copy session ID in header (re-added only when the header was redrawn)
+      const hdrEl = document.getElementById('call-hdr');
+      const idBtn = document.createElement('button');
+      idBtn.className = 'copy-btn'; idBtn.textContent = '⎘ SID';
+      idBtn.style.cssText = 'position:static;margin-left:10px;';
+      idBtn.onclick = () => copyToClipboard(csid, idBtn);
+      hdrEl.appendChild(idBtn);
     }
 
-    renderStatePanel(call);
-    renderEventTimeline(csid);
+    if (setHtml('call-state-panel', renderStatePanel(call))) {
+      const stateEl = document.getElementById('call-state-panel');
+      stateEl.style.position = 'relative';
+      const sBtn = document.createElement('button');
+      sBtn.className = 'copy-btn'; sBtn.textContent = '⎘ Copy State';
+      sBtn.onclick = () => copyToClipboard(stateEl.innerText, sBtn);
+      stateEl.insertBefore(sBtn, stateEl.firstChild);
+    }
+    renderEventTimeline(csid, switched);
 
     const el = document.getElementById('call-turns');
     if (!call.turns || !call.turns.length) {
-      el.innerHTML = '<div class="empty-msg">No turns recorded</div>'; return;
+      setHtml('call-turns', '<div class="empty-msg">No turns recorded</div>'); return;
     }
-    el.innerHTML = call.turns.map(t => {
+    // The detail pane scrolls, not the transcript box. Follow new turns only if
+    // you were already at the bottom — never yank it while you're reading
+    // further up; opening a call keeps the top (state cards) in view.
+    const scroller = el.closest('.call-detail-scroll') || el;
+    const stick = !switched && nearBottom(scroller);
+    const turnsHtml = call.turns.map(t => {
       const redacted = t.role === 'human' && t.text.includes('REDACTED');
       const redBadge = redacted ? '<span class="tk" style="background:rgba(251,146,60,.15);color:#fb923c">PII redacted</span>' : '';
       return '<div class="turn '+t.role+'"><span class="role">'+(t.role==='human'?'YOU':'BOT')+'</span>'
@@ -1476,42 +1521,17 @@ async function refreshCallDetail(csid) {
         +redBadge
         +'</div></div></div>';
     }).join('');
-    el.scrollTop = el.scrollHeight;
-
-    // ── Inject copy buttons ───────────────────────────────────────────────
-    // Copy transcript
-    const turnsEl = document.getElementById('call-turns');
-    if (turnsEl) {
-      turnsEl.style.position = 'relative';
-      const oldBtn = turnsEl.querySelector('.copy-btn');
-      if (oldBtn) oldBtn.remove();
+    if (setHtml('call-turns', turnsHtml)) {
+      if (stick) scroller.scrollTop = scroller.scrollHeight;
+      // Copy transcript (re-added only when the transcript was redrawn)
+      el.style.position = 'relative';
       const tBtn = document.createElement('button');
       tBtn.className = 'copy-btn'; tBtn.textContent = '⎘ Copy Transcript';
       tBtn.onclick = () => {
         const lines = (call.turns || []).map(t => (t.role==='human'?'USER: ':'BOT:  ') + t.text).join('\\n');
         copyToClipboard(lines, tBtn);
       };
-      turnsEl.insertBefore(tBtn, turnsEl.firstChild);
-    }
-    // Copy call-state-panel
-    const stateEl = document.getElementById('call-state-panel');
-    if (stateEl) {
-      stateEl.style.position = 'relative';
-      const oldBtn2 = stateEl.querySelector('.copy-btn');
-      if (oldBtn2) oldBtn2.remove();
-      const sBtn = document.createElement('button');
-      sBtn.className = 'copy-btn'; sBtn.textContent = '⎘ Copy State';
-      sBtn.onclick = () => copyToClipboard(stateEl.innerText, sBtn);
-      stateEl.insertBefore(sBtn, stateEl.firstChild);
-    }
-    // Copy session ID in header
-    const hdrEl = document.getElementById('call-hdr');
-    if (hdrEl && !hdrEl.querySelector('.copy-btn')) {
-      const idBtn = document.createElement('button');
-      idBtn.className = 'copy-btn'; idBtn.textContent = '⎘ SID';
-      idBtn.style.cssText = 'position:static;margin-left:10px;';
-      idBtn.onclick = () => copyToClipboard(csid, idBtn);
-      hdrEl.appendChild(idBtn);
+      el.insertBefore(tBtn, el.firstChild);
     }
   } catch(e) { console.error('refreshCallDetail error', e); }
 }
@@ -1535,22 +1555,24 @@ async function selCallFn(csid) {
   await refreshCallDetail(csid);
 }
 
-async function renderEventTimeline(csid) {
+async function renderEventTimeline(csid, switched) {
   const wrap = document.getElementById('event-timeline');
   const box  = document.getElementById('ev-rows');
   if (!wrap || !box) return;
   wrap.style.display = 'block';
-  box.innerHTML = '<div style="color:#475569;font-size:11px;font-family:monospace;padding:4px 0">Loading events…</div>';
+  // "Loading…" only when opening a call — not on every poll (#77)
+  if (switched) setHtml('ev-rows', '<div style="color:#475569;font-size:11px;font-family:monospace;padding:4px 0">Loading events…</div>');
   try {
     const res  = await fetch('/dashboard/calls/' + csid + '/events');
-    if (!res.ok) { box.innerHTML = '<div style="color:#ef4444;font-size:11px">Events API error: ' + res.status + '</div>'; return; }
+    if (!res.ok) { setHtml('ev-rows', '<div style="color:#ef4444;font-size:11px">Events API error: ' + res.status + '</div>'); return; }
     const data = await res.json();
     const evs  = data.events || [];
     if (!evs.length) {
-      box.innerHTML = '<div style="color:#475569;font-size:11px;font-family:monospace;padding:4px 0">No events recorded yet.</div>';
+      setHtml('ev-rows', '<div style="color:#475569;font-size:11px;font-family:monospace;padding:4px 0">No events recorded yet.</div>');
       return;
     }
-    box.innerHTML = evs.map(ev => {
+    const stick = switched || nearBottom(box);
+    const evHtml = evs.map(ev => {
       const ts_raw = typeof ev.ts === 'number' ? ev.ts : parseFloat(ev.ts || 0);
       const d   = new Date(ts_raw * 1000);
       const hms = d.toLocaleTimeString('en-GB', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
@@ -1565,7 +1587,8 @@ async function renderEventTimeline(csid) {
         + '<span class="ev-type '+cls+'">'+esc(ev.event_type||'')+'</span>'
         + '<span class="ev-data">'+esc(extra)+'</span></div>';
     }).join('');
-    box.scrollTop = box.scrollHeight;
+    if (!setHtml('ev-rows', evHtml)) return;  // unchanged — keep scroll + button
+    if (stick) box.scrollTop = box.scrollHeight;
 
     // Copy events button
     const oldEvBtn = wrap.querySelector('.copy-btn');
@@ -1584,12 +1607,13 @@ async function renderEventTimeline(csid) {
     wrap.style.position = 'relative';
     wrap.insertBefore(evBtn, wrap.firstChild);
   } catch(e) {
-    box.innerHTML = '<div style="color:#ef4444;font-size:11px;font-family:monospace">Event fetch error: ' + esc(String(e)) + '</div>';
+    setHtml('ev-rows', '<div style="color:#ef4444;font-size:11px;font-family:monospace">Event fetch error: ' + esc(String(e)) + '</div>');
     console.error('renderEventTimeline error:', e);
   }
 }
 
-setInterval(() => { if (selCall) selCallFn(selCall); }, 5000);
+// (#77) No separate 5 s detail poll: loadCalls() already refreshes the open
+// call, and redraws now happen only when something changed.
 
 // ── Live Logs ─────────────────────────────────────────────────
 let autoScroll = true, lc = 0, es = null;
