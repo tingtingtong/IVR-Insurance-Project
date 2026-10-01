@@ -6,8 +6,9 @@ Flow:
   POST /webhook/voice  → greet caller, start listening
   POST /webhook/gather → receive transcript, run LangGraph, respond
 """
+import asyncio
 import structlog
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, Request, Response
 from twilio.twiml.voice_response import VoiceResponse, Gather
 from twilio.rest import Client as TwilioClient
 
@@ -22,6 +23,45 @@ from webhooks.security import validate_twilio_webhook
 from core.graph.escalate import is_terminal as _is_terminal
 
 _twilio = TwilioClient(settings.twilio_account_sid, settings.twilio_auth_token)
+
+_RECORDING_ATTEMPTS = 5
+_RECORDING_RETRY_S = 1.0
+_public_base_url: str | None = None  # resolved once — the ngrok lookup is a blocking HTTP call
+
+
+async def _start_recording(call_sid: str) -> None:
+    """Start the call recording once Twilio has answered the call (#63).
+
+    Runs as a background task after the greeting TwiML is sent. The call is only
+    answered once Twilio has the TwiML, so asking earlier fails with "Requested
+    resource is not eligible for recording". Retries briefly to cover that gap.
+    """
+    global _public_base_url
+    if _public_base_url is None:
+        from services.twilio_webhook_sync import resolve_base_url
+        _public_base_url = await asyncio.to_thread(resolve_base_url, settings) or ""
+
+    kwargs = {}
+    if _public_base_url:
+        # REST API needs an absolute URL — a relative path never reaches the app
+        kwargs = {
+            "recording_status_callback": f"{_public_base_url}/webhook/recording-status",
+            "recording_status_callback_method": "POST",
+            "recording_status_callback_event": ["completed"],
+        }
+    else:
+        log.warning("recording_callback_url_unknown", call_sid=call_sid)
+
+    for attempt in range(1, _RECORDING_ATTEMPTS + 1):
+        try:
+            await asyncio.to_thread(_twilio.calls(call_sid).recordings.create, **kwargs)
+            log.info("recording_started", call_sid=call_sid, attempt=attempt)
+            return
+        except Exception as e:
+            if attempt == _RECORDING_ATTEMPTS or "not eligible" not in str(e):
+                log.warning("recording_start_failed", call_sid=call_sid, attempt=attempt, error=str(e))
+                return
+            await asyncio.sleep(_RECORDING_RETRY_S)
 
 log = structlog.get_logger()
 router = APIRouter()
@@ -118,7 +158,7 @@ def _gather_dtmf_or_speech(say_text: str) -> str:
 
 
 @router.post("/webhook/voice", dependencies=[Depends(validate_twilio_webhook)])
-async def incoming_call(request: Request):
+async def incoming_call(request: Request, background_tasks: BackgroundTasks):
     """Initial inbound call — initialize session and play greeting."""
     form = await request.form()
     call_sid  = form.get("CallSid", "")
@@ -154,16 +194,9 @@ async def incoming_call(request: Request):
         except Exception as e:
             log.warning("ani_check_failed", call_sid=call_sid, error=str(e))
 
-    # Start recording — status callback fires when recording is available
-    try:
-        _twilio.calls(call_sid).recordings.create(
-            recording_status_callback="/webhook/recording-status",
-            recording_status_callback_method="POST",
-            recording_status_callback_event=["completed"],
-        )
-        log.info("recording_started", call_sid=call_sid)
-    except Exception as e:
-        log.warning("recording_start_failed", call_sid=call_sid, error=str(e))
+    # Start recording after this response is sent — the call isn't answered until
+    # Twilio has the TwiML (#63). Status callback fires when the recording is ready.
+    background_tasks.add_task(_start_recording, call_sid)
 
     return Response(content=_gather_response(_GREETING), media_type="application/xml")
 
