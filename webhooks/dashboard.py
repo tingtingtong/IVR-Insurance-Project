@@ -50,14 +50,15 @@ _RECORDING_SID = re.compile(r"^RE[0-9a-fA-F]{32}$")
 
 
 @router.get("/calls/{call_sid}/recording")
-async def call_recording(call_sid: str):
+async def call_recording(call_sid: str, download: bool = False):
     """Serve a call recording through the app (#69).
 
     Twilio media URLs need the account credentials, so a direct browser link
     returns 401. The URL is built from the stored recording SID, never taken
     from stored data, so this can only ever fetch this account's recordings.
     """
-    rec_sid = get_call(call_sid).get("recording_sid") or ""
+    call = get_call(call_sid)
+    rec_sid = call.get("recording_sid") or ""
     if not _RECORDING_SID.match(rec_sid):
         return JSONResponse({"error": "no recording for this call"}, status_code=404)
     sid, token = settings.twilio_account_sid, settings.twilio_auth_token
@@ -66,10 +67,14 @@ async def call_recording(call_sid: str):
         resp = await client.get(url, auth=(sid, token))
     if resp.status_code != 200:
         return JSONResponse({"error": f"Twilio returned {resp.status_code}"}, status_code=502)
+    # ?download=1 saves the file (#71); default streams inline for the player
+    started = (call.get("started_at") or "")[:19].replace(":", "").replace("T", "_")
+    filename = f"{started + '_' if started else ''}{call_sid}.mp3"
+    disposition = "attachment" if download else "inline"
     return Response(
         content=resp.content,
         media_type="audio/mpeg",
-        headers={"Content-Disposition": f'inline; filename="{call_sid}.mp3"',
+        headers={"Content-Disposition": f'{disposition}; filename="{filename}"',
                  "Cache-Control": "private, max-age=3600"},
     )
 
@@ -520,6 +525,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;backgrou
 .refresh{background:none;border:1px solid #334155;color:#64748b;padding:2px 7px;border-radius:4px;cursor:pointer;font-size:11px}
 .calls-scroll{flex:1;overflow-y:auto}
 .call-item{padding:12px 14px;cursor:pointer;border-bottom:1px solid rgba(255,255,255,.05)}
+.rec-btn{display:inline-block;font-size:11px;line-height:1;color:#22c55e;background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.3);padding:2px 6px;border-radius:4px;cursor:pointer;margin-left:4px;text-decoration:none}
+.rec-btn:hover{background:rgba(34,197,94,.2)}
+.rec-bar{display:none;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid #334155;background:#0f172a}
+.rec-bar audio{height:28px;flex:1;min-width:0}
+.rec-bar .rec-label{font-size:10px;color:#94a3b8;font-family:monospace;white-space:nowrap}
 .call-item:hover{background:rgba(255,255,255,.04)}
 .call-item.on{background:rgba(59,130,246,.1);border-left:2px solid #3b82f6}
 .call-item .csid{font-size:10px;font-family:monospace;color:#64748b}
@@ -711,6 +721,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;backgrou
   <div class="calls-wrap">
     <div class="calls-list">
       <div class="panel-hdr">Phone Calls <span style="font-size:10px;color:#64748b;font-weight:400;margin-left:8px">Postgres-backed · PAN/CVV redacted</span> <button class="refresh" onclick="loadCalls()">Refresh</button></div>
+      <!-- Persistent player: outside #call-list so 3s polling never interrupts playback (#71) -->
+      <div class="rec-bar" id="rec-bar"><span class="rec-label" id="rec-label"></span><audio id="rec-player" controls preload="none"></audio></div>
       <div class="calls-scroll" id="call-list"><div class="empty-msg">No calls yet</div></div>
     </div>
     <div class="call-detail">
@@ -1308,6 +1320,38 @@ function stopCallsPoll() {
   if (_callsPollTimer) { clearInterval(_callsPollTimer); _callsPollTimer = null; }
 }
 
+// ── Recording playback / download (#71) ─────────────────────────────────────
+let playingSid = null;
+function recUrl(sid, download) {
+  return '/dashboard/calls/' + encodeURIComponent(sid) + '/recording' + (download ? '?download=1' : '');
+}
+function recButtons(c, labelled) {
+  if (!c.recording_sid) return '';
+  const player = document.getElementById('rec-player');
+  const playing = playingSid === c.call_sid && player && !player.paused;
+  return '<button class="rec-btn" title="'+(playing ? 'Pause' : 'Play recording')+'" '
+    + 'onclick="toggleRec(\\''+c.call_sid+'\\');event.stopPropagation()">'
+    + (playing ? '⏸' : '▶') + (labelled ? (playing ? ' Pause' : ' Play') : '') + '</button>'
+    + '<a class="rec-btn" title="Download recording (.mp3)" href="'+recUrl(c.call_sid, true)+'" download '
+    + 'onclick="event.stopPropagation()">⬇' + (labelled ? ' Download' : '') + '</a>';
+}
+function toggleRec(sid) {
+  const player = document.getElementById('rec-player');
+  if (playingSid === sid && !player.paused) { player.pause(); return; }
+  if (playingSid !== sid) {
+    playingSid = sid;
+    player.src = recUrl(sid, false);
+    document.getElementById('rec-label').textContent = '▶ ' + sid.slice(0, 14) + '…';
+  }
+  document.getElementById('rec-bar').style.display = 'flex';
+  player.play().catch(e => console.error('recording playback failed', e));
+}
+// Keep ▶/⏸ icons in sync with the player without waiting for the next poll
+['play', 'pause', 'ended'].forEach(ev => document.addEventListener('DOMContentLoaded', () => {
+  const player = document.getElementById('rec-player');
+  if (player) player.addEventListener(ev, () => { loadCalls(); });
+}));
+
 async function loadCalls() {
   try {
     const res = await fetch('/dashboard/calls');
@@ -1328,7 +1372,8 @@ async function loadCalls() {
         + '<div class="cfrom">'+(from||'Softphone')+'</div>'
         + '<div class="cmeta"><span class="dot '+(active?'active':'ended')+'"></span>'+(active?'Active':'Ended')
         + endBtn
-        + ' &nbsp; '+c.turns.length+' turns &nbsp; '+c.started_at.slice(11,16)+'</div></div>';
+        + ' &nbsp; '+c.turns.length+' turns &nbsp; '+c.started_at.slice(11,16)
+        + recButtons(c) + '</div></div>';
     }).join('');
     // Auto-refresh selected call detail during polling
     if (selCall) refreshCallDetail(selCall);
@@ -1397,12 +1442,9 @@ async function refreshCallDetail(csid) {
     const status = call.status === 'active'
       ? '<span style="color:#22c55e;font-size:11px;margin-left:8px">● Live</span>'
       : '<span style="color:#64748b;font-size:11px;margin-left:8px">Ended ' + (call.ended_at||'').slice(11,19) + '</span>';
-    // Served through the app — Twilio's own URL needs account auth (#69)
-    const recUrl = '/dashboard/calls/' + encodeURIComponent(call.call_sid) + '/recording';
-    const recBadge = call.recording_sid
-      ? ' <a href="'+recUrl+'" target="_blank" style="font-size:11px;color:#22c55e;margin-left:8px">▶ Recording</a>'
-        + ' <audio controls preload="none" src="'+recUrl+'" style="height:24px;vertical-align:middle;margin-left:6px"></audio>'
-      : '';
+    // Served through the app (Twilio's URL needs account auth, #69); plays in the
+    // persistent player so polling can't cut it off (#71)
+    const recBadge = call.recording_sid ? ' <span style="margin-left:6px">' + recButtons(call, true) + '</span>' : '';
     document.getElementById('call-hdr').innerHTML =
       esc(from || 'Softphone') + ' — ' + (call.started_at||'').slice(0,19) + status + recBadge;
 

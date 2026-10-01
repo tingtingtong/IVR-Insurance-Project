@@ -63,10 +63,32 @@ class DashboardRecordingTests(unittest.TestCase):
              patch.object(dash.httpx, "AsyncClient", return_value=_twilio_response(status=404)):
             self.assertEqual(_client().get("/dashboard/calls/CA_TEST/recording").status_code, 502)
 
+    def test_download_param_returns_attachment_with_dated_name(self):
+        call = {"recording_sid": REC_SID, "started_at": "2026-10-01T21:43:02"}
+        with patch.object(dash, "get_call", return_value=call),              patch.object(dash.httpx, "AsyncClient", return_value=_twilio_response()):
+            r = _client().get("/dashboard/calls/CA_TEST/recording?download=1")
+        self.assertEqual(r.headers["content-disposition"],
+                         'attachment; filename="2026-10-01_214302_CA_TEST.mp3"')
+
+    def test_default_is_inline_for_the_player(self):
+        with patch.object(dash, "get_call", return_value={"recording_sid": REC_SID}),              patch.object(dash.httpx, "AsyncClient", return_value=_twilio_response()):
+            r = _client().get("/dashboard/calls/CA_TEST/recording")
+        self.assertTrue(r.headers["content-disposition"].startswith("inline;"))
+
+    def test_single_persistent_player_outside_polled_list(self):
+        src = (ROOT / "webhooks" / "dashboard.py").read_text(encoding="utf-8")
+        self.assertEqual(src.count("<audio"), 1, "only the persistent player; polled HTML must not create <audio>")
+        bar, lst = src.index('id="rec-bar"'), src.index('id="call-list"')
+        self.assertLess(bar, lst)  # sibling before the re-rendered list, not inside it
+        self.assertIn("recButtons(c)", src)          # every list item
+        self.assertIn("recButtons(call, true)", src)  # call header
+        self.assertIn("?download=1", src)
+
     def test_dashboard_links_to_app_endpoint_not_twilio(self):
         src = (ROOT / "webhooks" / "dashboard.py").read_text(encoding="utf-8")
         self.assertNotIn("href=\"'+call.recording_url+'\"", src)
         self.assertIn("'/recording'", src)
+        self.assertNotIn("<audio controls preload=\"none\" src=", src)
 
     def test_endpoint_requires_dashboard_auth_when_password_set(self):
         import webhooks.security as security
