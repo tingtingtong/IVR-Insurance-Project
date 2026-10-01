@@ -5,6 +5,7 @@ Applied to both human and bot turns. Card number and CVV are read back for
 confirmation but must never land in the dashboard transcript or event log.
 """
 import re
+from collections import OrderedDict
 
 # ── Patterns ──────────────────────────────────────────────────────────────────
 
@@ -19,6 +20,18 @@ _DATE_VERBAL   = re.compile(
     r'[\s,]+\d{1,2}(?:st|nd|rd|th)?[\s,]+\d{4}\b',
     re.IGNORECASE,
 )
+
+_MONTHS = (r'(?:january|february|march|april|may|june|july|august|september|october|november|december'
+           r'|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)')
+
+# Day-first spoken dates: "15 July 1965", "15. July 1965", "15th of July, 1965"
+_DATE_DAY_FIRST = re.compile(
+    rf'\b\d{{1,2}}(?:st|nd|rd|th)?\.?\s+(?:of\s+)?{_MONTHS}\.?[\s,]+\d{{4}}\b',
+    re.IGNORECASE,
+)
+
+# Month + year (card expiry): "July 2029", "Jul, 2029"
+_MONTH_YEAR = re.compile(rf'\b{_MONTHS}\.?[\s,]+(?:of\s+)?\d{{4}}\b', re.IGNORECASE)
 
 # Policy numbers: P300XXXXXX format and common variations
 _POLICY = re.compile(r'\bP\d{3}\d{6,}\b', re.IGNORECASE)
@@ -60,6 +73,8 @@ _REPLACEMENTS = [
     (_BANK_ACCT,   "[BANK ACCT REDACTED]"),
     (_PHONE,       "[PHONE REDACTED]"),
     (_DATE_VERBAL, "[DOB REDACTED]"),
+    (_DATE_DAY_FIRST, "[DOB REDACTED]"),
+    (_MONTH_YEAR,  "[DATE REDACTED]"),
     (_DATE_NUMERIC,"[DATE REDACTED]"),
     (_POLICY,      "[POLICY REDACTED]"),
     (_DOLLAR,      "[AMOUNT REDACTED]"),
@@ -108,3 +123,64 @@ def redact_turn(role: str, text: str, node: str = "") -> str:
     if node == "otp" and looks_like_isolated_cvv(text):
         return "[CVV REDACTED]"
     return redact(text)
+
+
+# ── Known caller names (#67) ───────────────────────────────────────────────────
+# Names can't be matched by pattern, so names seen in identity fields of the call
+# state (party records, caller name, cardholder name) are remembered and masked
+# wherever they appear later — in caller utterances and bot replies.
+
+_NAME_KEYS = frozenset(k.lower() for k in (
+    "FirstName", "LastName", "first_name", "last_name",
+    "caller_name", "cardholder_name", "authenticated_name",
+))
+_NAME_STOPWORDS = frozenset((
+    "the", "and", "its", "it's", "this", "that", "only", "card", "name", "same",
+    "yes", "yeah", "not", "mister", "miss", "mrs", "sir", "madam", "corp", "inc", "llc",
+))
+_KNOWN_MAX = 500
+_known_names: "OrderedDict[str, None]" = OrderedDict()
+_known_re: "re.Pattern | None" = None
+
+
+def remember_identity(state) -> None:
+    """Record name tokens found under identity keys anywhere in state (dicts/lists)."""
+    global _known_re
+    added = False
+    stack = [state]
+    while stack:
+        obj = stack.pop()
+        if isinstance(obj, dict):
+            for k, v in obj.items():
+                if isinstance(k, str) and k.lower() in _NAME_KEYS and isinstance(v, str):
+                    for tok in re.findall(r"[A-Za-z][A-Za-z'\-]+", v):
+                        key = tok.lower()
+                        if len(key) < 3 or key in _NAME_STOPWORDS:
+                            continue
+                        if key not in _known_names:
+                            added = True
+                        _known_names[key] = None
+                        _known_names.move_to_end(key)
+                elif isinstance(v, (dict, list, tuple)):
+                    stack.append(v)
+        elif isinstance(obj, (list, tuple)):
+            stack.extend(obj)
+    while len(_known_names) > _KNOWN_MAX:
+        _known_names.popitem(last=False)
+    if added:
+        alts = sorted(_known_names, key=len, reverse=True)
+        _known_re = re.compile(r"\b(?:" + "|".join(map(re.escape, alts)) + r")\b", re.IGNORECASE)
+
+
+def redact_known_names(text: str) -> str:
+    """Mask caller names previously seen via remember_identity()."""
+    if not text or _known_re is None:
+        return text
+    return _known_re.sub("[NAME REDACTED]", text)
+
+
+def redact_for_log(text: str) -> str:
+    """Strictest redaction for application logs: patterns, known names, then any digit."""
+    if not text:
+        return text
+    return re.sub(r"\d", "#", redact_known_names(redact(text)))
