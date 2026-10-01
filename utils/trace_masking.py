@@ -6,7 +6,7 @@ LangSmith client whose hide_inputs / hide_outputs hooks drop sensitive state
 keys and run utils.pii_redactor.redact() over every remaining string, so card
 numbers, CVVs, tokens and caller identity never leave the process.
 """
-from utils.pii_redactor import redact
+from utils.pii_redactor import redact, redact_known_names, remember_identity
 
 REDACTED = "[REDACTED]"
 
@@ -28,10 +28,14 @@ _MAX_DEPTH = 40
 
 def mask_pii(value, _depth: int = 0):
     """Return a copy of value with sensitive keys dropped and strings redacted."""
+    if _depth == 0:
+        # Learn caller names from identity fields before those keys are dropped,
+        # so the same names are masked inside messages and TTS text (#67)
+        remember_identity(value)
     if _depth > _MAX_DEPTH:
         return REDACTED
     if isinstance(value, str):
-        return redact(value)
+        return redact_known_names(redact(value))
     if isinstance(value, dict):
         return {
             k: (REDACTED if isinstance(k, str) and k.lower() in SENSITIVE_KEYS
