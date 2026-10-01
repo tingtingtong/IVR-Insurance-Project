@@ -63,11 +63,12 @@ class Settings(BaseSettings):
     twilio_api_secret: str = ""
     twilio_twiml_app_sid: str = ""       # TwiML App SID pointing to /webhook/voice
 
-    # Redis
-    redis_url: str = "redis://localhost:6379/0"
+    # Redis / PostgreSQL — 127.0.0.1, not localhost: on Windows localhost tries IPv6
+    # first and Docker binds IPv4 only, adding ~2 s to every new connection (#61)
+    redis_url: str = "redis://127.0.0.1:6379/0"
 
     # PostgreSQL
-    database_url: str = "postgresql://insuranceCompany:cno_pass@localhost:5432/cno_ivr"
+    database_url: str = "postgresql://insuranceCompany:cno_pass@127.0.0.1:5432/cno_ivr"
 
     # UIC Backend APIs
     cno_api_base_url: str = "https://api.uic.example.com"

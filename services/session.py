@@ -1,34 +1,54 @@
+import asyncio
 import json
+import weakref
 import structlog
 import redis.asyncio as aioredis
 from config import settings
 
 log = structlog.get_logger()
 SESSION_TTL = 3600  # 1 hour — max IVR call duration
+_CONNECT_TIMEOUT_S = 3.0  # bounds a dead Redis; "localhost" needs ~2 s on Windows (IPv6 first)
 
 
 class SessionService:
     """Manages per-call session state in Redis (replaces transient variables)."""
 
-    def __init__(self):
-        self._redis: aioredis.Redis | None = None
+    # Shared across instances — webhooks create a SessionService per request, and
+    # reconnecting every turn cost ~2-4 s on Windows when "localhost" resolved to
+    # IPv6 first or Redis was down (#61). One client per event loop, since an
+    # asyncio connection pool must not be used from another loop.
+    _clients: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, aioredis.Redis]" = weakref.WeakKeyDictionary()
+    _use_fake: bool = False
 
     async def _get_redis(self) -> aioredis.Redis:
-        if self._redis is None:
-            try:
-                r = await aioredis.from_url(settings.redis_url, decode_responses=True)
-                await r.ping()
-                self._redis = r
-            except Exception:
-                if settings.is_prod:
-                    log.error("redis_unavailable_fail_closed", url=settings.redis_url)
-                    raise
-                log.warning("redis_unavailable_using_fakeredis", url=settings.redis_url)
-                import fakeredis.aioredis as fakeredis
-                if not hasattr(SessionService, '_fake_redis_instance'):
-                    SessionService._fake_redis_instance = fakeredis.FakeRedis(decode_responses=True)
-                self._redis = SessionService._fake_redis_instance
-        return self._redis
+        if SessionService._use_fake:
+            return SessionService._fake_redis()
+        loop = asyncio.get_running_loop()
+        client = SessionService._clients.get(loop)
+        if client is not None:
+            return client
+        try:
+            client = aioredis.from_url(
+                settings.redis_url, decode_responses=True,
+                socket_connect_timeout=_CONNECT_TIMEOUT_S,
+            )
+            await client.ping()
+        except Exception:
+            if settings.is_prod:
+                log.error("redis_unavailable_fail_closed", url=settings.redis_url)
+                raise
+            log.warning("redis_unavailable_using_fakeredis", url=settings.redis_url)
+            SessionService._use_fake = True  # dev only: don't pay the timeout every turn
+            return SessionService._fake_redis()
+        SessionService._clients[loop] = client
+        return client
+
+    @staticmethod
+    def _fake_redis():
+        if not hasattr(SessionService, "_fake_redis_instance"):
+            import fakeredis.aioredis as fakeredis
+            SessionService._fake_redis_instance = fakeredis.FakeRedis(decode_responses=True)
+        return SessionService._fake_redis_instance
 
     def _key(self, call_sid: str) -> str:
         return f"cno:session:{call_sid}"
