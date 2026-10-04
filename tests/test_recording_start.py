@@ -64,6 +64,18 @@ class RecordingStartTests(unittest.TestCase):
             asyncio.run(tv._start_recording("CA_TEST"))
         self.assertNotIn("recording_status_callback", create.call_args.kwargs)
 
+    def test_records_dual_channel_by_default(self):
+        twilio, create = _twilio_with([None])
+        with patch.object(tv, "_twilio", twilio):
+            asyncio.run(tv._start_recording("CA_TEST"))
+        self.assertEqual(create.call_args.kwargs["recording_channels"], "dual")
+
+    def test_channels_follow_setting_and_apply_without_callback_url(self):
+        twilio, create = _twilio_with([None])
+        with patch.object(tv, "_twilio", twilio), patch.object(tv, "_public_base_url", ""),                 patch.object(tv.settings, "recording_channels", "mono"):
+            asyncio.run(tv._start_recording("CA_TEST"))
+        self.assertEqual(create.call_args.kwargs["recording_channels"], "mono")
+
     def test_incoming_call_does_not_record_inline(self):
         src = (ROOT / "webhooks" / "twilio_voice.py").read_text(encoding="utf-8")
         handler = src[src.index("async def incoming_call"):src.index("@router.post", src.index("async def incoming_call"))]

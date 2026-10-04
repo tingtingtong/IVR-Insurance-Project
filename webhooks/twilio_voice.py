@@ -57,14 +57,14 @@ async def _start_recording(call_sid: str) -> None:
         from services.twilio_webhook_sync import resolve_base_url
         _public_base_url = await asyncio.to_thread(resolve_base_url, settings) or ""
 
-    kwargs = {}
+    kwargs = {"recording_channels": settings.recording_channels}
     if _public_base_url:
         # REST API needs an absolute URL — a relative path never reaches the app
-        kwargs = {
+        kwargs.update({
             "recording_status_callback": f"{_public_base_url}/webhook/recording-status",
             "recording_status_callback_method": "POST",
             "recording_status_callback_event": ["completed"],
-        }
+        })
     else:
         log.warning("recording_callback_url_unknown", call_sid=call_sid)
 
