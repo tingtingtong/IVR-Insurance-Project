@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     faq_fallback_to_escalate: bool = False     # True → no-RAG-match routes to agent instead of canned msg
     max_auth_attempts: int = 3                 # max PII retries before escalation
 
+    # Twilio <Gather> speechTimeout (s of silence before the transcript is returned), per turn type (#79)
+    gather_speech_timeout_default: int = 3     # names, DOB, numbers, free-form requests
+    gather_speech_timeout_confirm: int = 2     # yes/no confirmations and short choices
+
     # Deepgram STT
     deepgram_api_key: str
     deepgram_model: str = "nova-2"
