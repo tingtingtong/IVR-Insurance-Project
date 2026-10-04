@@ -15,10 +15,11 @@ _DEFAULT_HINTS = (
     "march, april, may, june, july, august, september, october, november, december, "
     "nineteen, twenty, sixty, seventy, eighty, ninety"
 )
-_CONFIRM_HINTS = "yes, no, yeah, yep, nope, correct, incorrect, right, wrong, that's right, that's wrong, repeat, agent"
+# Never narrower than the default list: even a short-answer turn can get a spoken correction.
+_CONFIRM_HINTS = _DEFAULT_HINTS + ", yeah, yep, nope, that's right, that's wrong, that's all"
 _CHOICE_HINTS = "card, credit card, debit card, bank, bank account, checking, savings, ach, agent, repeat"
 
-# A last prompt containing one of these expects a short yes/no answer.
+# A last prompt containing one of these means "say yes or no" (used for the timeout retry wording).
 CONFIRM_PHRASES = (
     "is that correct",
     "say yes",
@@ -28,9 +29,12 @@ CONFIRM_PHRASES = (
     "anything else i can help",
 )
 
-# Non-"confirming_*" steps that still expect a short yes/no answer.
-_CONFIRM_STEPS = frozenset({"ach_auth_script"})
+# Steps/prompts where the answer is genuinely short. Deliberately NOT every "confirming_*" step:
+# the app accepts corrections there ("no, my DOB is 15 June 1965"), which have natural pauses and
+# need the default 3 s and the full hints.
+_SHORT_STEPS = frozenset({"ach_auth_script"})
 _CHOICE_STEPS = frozenset({"choosing_method"})
+_SHORT_PROMPT_PHRASES = ("anything else i can help",)
 
 
 @dataclass(frozen=True)
@@ -58,14 +62,17 @@ def is_confirm_prompt(text: str) -> bool:
     return any(p in low for p in CONFIRM_PHRASES)
 
 
+def _is_short_prompt(text: str) -> bool:
+    low = (text or "").lower()
+    return any(p in low for p in _SHORT_PROMPT_PHRASES)
+
+
 def profile_for(state: dict | None = None, prompt: str = "") -> GatherProfile:
     """Pick the profile for the next Gather from graph state and the prompt being spoken."""
     state = state or {}
     steps = (state.get("auth_step") or "", state.get("otp_step") or "")
-    if any(s.startswith("confirming_") or s in _CONFIRM_STEPS for s in steps):
+    if any(s in _SHORT_STEPS for s in steps) or _is_short_prompt(prompt):
         return confirm_profile()
     if any(s in _CHOICE_STEPS for s in steps):
         return choice_profile()
-    if is_confirm_prompt(prompt):
-        return confirm_profile()
     return default_profile()

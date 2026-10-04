@@ -23,21 +23,24 @@ class GatherTwimlTests(unittest.TestCase):
         self.assertIn("policy", _attr(xml, "hints"))
         self.assertNotIn("speechModel", xml)
 
-    def test_confirm_turn_uses_short_timeout_and_yes_no_hints(self):
-        xml = tv._gather_response("Is that correct?", profile=profile_for({"auth_step": "confirming_dob"}))
+    def test_short_turn_uses_short_timeout(self):
+        xml = tv._gather_response("Anything else I can help with?",
+                                  profile=profile_for({}, "Anything else I can help with?"))
         self.assertEqual(_attr(xml, "speechTimeout"), str(settings.gather_speech_timeout_confirm))
         self.assertLess(int(_attr(xml, "speechTimeout")), 3)
-        self.assertNotIn("january", _attr(xml, "hints"))
+        self.assertIn("january", _attr(xml, "hints"))
+
+    def test_dob_confirmation_allows_spoken_correction(self):
+        xml = tv._gather_response("I heard June 15 1965. Is that correct?",
+                                  profile=profile_for({"auth_step": "confirming_dob"}))
+        self.assertEqual(_attr(xml, "speechTimeout"), "3")
+        self.assertIn("june", _attr(xml, "hints"))
 
     def test_collecting_turn_keeps_three_seconds(self):
         xml = tv._gather_response("What is your date of birth?",
                                   profile=profile_for({"auth_step": "collecting_dob"}))
         self.assertEqual(_attr(xml, "speechTimeout"), "3")
         self.assertIn("january", _attr(xml, "hints"))
-
-    def test_timeout_retry_prompt_is_short_when_last_prompt_was_confirmation(self):
-        xml = tv._gather_response(tv._CONFIRM_TIMEOUT_MSG, profile=profile_for({}, tv._CONFIRM_TIMEOUT_MSG))
-        self.assertEqual(_attr(xml, "speechTimeout"), str(settings.gather_speech_timeout_confirm))
 
     def test_dtmf_gather_unchanged(self):
         self.assertEqual(_attr(tv._gather_dtmf_or_speech("Enter your card number"), "speechTimeout"), "3")
