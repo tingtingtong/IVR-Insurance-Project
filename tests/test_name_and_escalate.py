@@ -212,6 +212,46 @@ class DobConfirmThenNameTests(unittest.TestCase):
             "Personas": [{"name": "John Smith", "role": "insured"}],
         }
 
+    def test_matching_dob_skips_readback_and_authenticates(self):
+        """#81: heard date equals the record → no 'Is that correct?' turn."""
+        from core.graph.nodes.auth import _collecting_dob
+        result = _collecting_dob(
+            {"call_sid": "CA_MATCH_DOB", "slot_attempts": {}},
+            "15 July 1965",
+            {"phoneNumber": "5551234567"},
+            0,
+            self._party(),
+        )
+        self.assertNotEqual(result["auth_step"], "confirming_dob")
+        self.assertTrue(result.get("authenticated"))
+        self.assertIn(result["auth_step"], ("complete", "collecting_caller_name"))
+        self.assertNotIn("Is that correct", result["tts_text"])
+
+    def test_matching_dob_with_multiple_policies_goes_to_selection(self):
+        from core.graph.nodes.auth import _collecting_dob
+        party = self._party()
+        party["Policies"] = [{"PolicyNumber": "P300123456"}, {"PolicyNumber": "P300999999"}]
+        result = _collecting_dob(
+            {"call_sid": "CA_MATCH_MULTI", "slot_attempts": {}},
+            "15 July 1965",
+            {"phoneNumber": "5551234567"},
+            0,
+            party,
+        )
+        self.assertEqual(result["auth_step"], "collecting_policy_selection")
+
+    def test_dob_without_verified_phone_or_policy_still_confirms(self):
+        """No phone/policy match → DOB alone is not auth; keep the read-back."""
+        from core.graph.nodes.auth import _collecting_dob
+        result = _collecting_dob(
+            {"call_sid": "CA_NO_PHONE", "slot_attempts": {}},
+            "15 July 1965",
+            {},
+            0,
+            self._party(),
+        )
+        self.assertEqual(result["auth_step"], "confirming_dob")
+
     def test_wrong_dob_confirms_before_name(self):
         from core.graph.nodes.auth import _collecting_dob
         result = _collecting_dob(

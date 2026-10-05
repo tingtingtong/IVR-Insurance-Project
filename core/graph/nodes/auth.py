@@ -472,9 +472,13 @@ def _collecting_dob(state, last_human, pii_collected, auth_attempts, candidate_p
             "active_flow":     "auth",
         }
 
-    # Always confirm the heard date before matching. STT often shifts the day
-    # (e.g. 15th → 16th / 17th). Name fallback only after the caller confirms.
+    # A heard date that already matches the verified record needs no read-back (#81).
+    # Otherwise confirm it: STT often shifts the day (e.g. 15th → 16th / 17th), and the
+    # caller can correct it. Name fallback only after the caller confirms.
     pii_collected["dateOfBirth"] = parsed
+    if check_auth_success(candidate_party, pii_collected):
+        log_event(call_sid, "auth_detail", step="collecting_dob", action="dob_matched_skip_confirm")
+        return _after_dob_confirmed(candidate_party, pii_collected)
     formatted = format_date_natural(parsed)
     log_event(call_sid, "auth_detail", step="collecting_dob", action="confirm_dob",
               given=parsed)

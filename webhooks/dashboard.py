@@ -907,7 +907,8 @@ POST /webhook/gather-payment:
   found     → collecting_dob
   not found → confirming_phone → yes → collecting_policy / no → collecting_phone
 
-collecting_dob → confirming_dob ("I heard Jul 16, 1938. Is that correct?")
+collecting_dob → heard date matches record → authenticated (no read-back)
+               → no match → confirming_dob ("I heard Jul 16, 1938. Is that correct?")
   yes + MATCH → authenticated (persona name only if not already collected)
   yes + NOMATCH → collecting_name (insured first/last)
   new date spoken → capture it, then match or re-confirm
