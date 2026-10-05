@@ -150,7 +150,7 @@ class InsuredNameRetryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("only heard", result["tts_text"].lower())
         self.assertIn("spell", result["tts_text"].lower())
 
-    async def test_two_word_name_confirms_before_match(self):
+    async def test_exact_name_match_skips_confirmation(self):
         from core.graph.nodes.auth import _collecting_name
         result = await _collecting_name(
             {"call_sid": "CA_JS", "slot_attempts": {}},
@@ -159,9 +159,32 @@ class InsuredNameRetryTests(unittest.IsolatedAsyncioTestCase):
             0,
             self._party(),
         )
+        self.assertEqual(result["auth_step"], "complete")
+        self.assertNotIn("Is that correct", result["tts_text"])
+
+    async def test_fuzzy_name_still_confirms(self):
+        from core.graph.nodes.auth import _collecting_name
+        result = await _collecting_name(
+            {"call_sid": "CA_JON", "slot_attempts": {}},
+            "Jon Smith",
+            {"phoneNumber": "5551234567"},
+            0,
+            self._party(),
+        )
         self.assertEqual(result["auth_step"], "confirming_name")
-        self.assertIn("I heard John Smith", result["tts_text"])
+        self.assertIn("I heard Jon Smith", result["tts_text"])
         self.assertIn("Is that correct", result["tts_text"])
+
+    async def test_different_name_confirms(self):
+        from core.graph.nodes.auth import _collecting_name
+        result = await _collecting_name(
+            {"call_sid": "CA_JD", "slot_attempts": {}},
+            "Jane Doe",
+            {"phoneNumber": "5551234567"},
+            0,
+            self._party(),
+        )
+        self.assertEqual(result["auth_step"], "confirming_name")
 
     def test_confirm_yes_matching_name_completes(self):
         from core.graph.nodes.auth import _confirming_name
@@ -335,7 +358,7 @@ class SkipSecondNameAskTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("May I ask your name please", result["tts_text"])
 
     async def test_collecting_name_success_skips_persona_ask(self):
-        from core.graph.nodes.auth import _collecting_name, _confirming_name
+        from core.graph.nodes.auth import _collecting_name
         state = {
             "call_sid": "CA_DOB_FAIL_NAME",
             "slot_attempts": {},
@@ -348,10 +371,8 @@ class SkipSecondNameAskTests(unittest.IsolatedAsyncioTestCase):
             0,
             _JOHN_PARTY,
         )
-        self.assertEqual(heard["auth_step"], "confirming_name")
-        result = _confirming_name(
-            state, "Yes", heard["pii_collected"], 0, _JOHN_PARTY
-        )
+        self.assertEqual(heard["auth_step"], "complete")
+        result = heard
         self.assertEqual(result["auth_step"], "complete")
         self.assertEqual(result["caller_persona"], "insured")
         self.assertEqual(result["caller_name"], "John Smith")

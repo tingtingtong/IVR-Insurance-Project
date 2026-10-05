@@ -625,6 +625,22 @@ def _spell_last_name_prompt() -> str:
     )
 
 
+def _name_exact_match(candidate_party, first, last) -> bool:
+    """Case-insensitive exact match of the heard name against the record."""
+    api_first = (candidate_party.get("FirstName") or "").strip().lower()
+    api_last  = (candidate_party.get("LastName")  or "").strip().lower()
+    return bool(api_first and api_last
+                and first.strip().lower() == api_first
+                and last.strip().lower() == api_last)
+
+
+def _complete_verified(candidate_party, pii_collected) -> dict:
+    policy_numbers = _get_policy_numbers(candidate_party)
+    if len(policy_numbers) > 1:
+        return _ask_policy_selection(candidate_party, pii_collected, policy_numbers)
+    return _auth_complete(candidate_party, pii_collected)
+
+
 async def _collecting_name(state, last_human, pii_collected, auth_attempts, candidate_party):
     slot = "insured_name"
     call_sid = state.get("call_sid", "unknown")
@@ -660,6 +676,11 @@ async def _collecting_name(state, last_human, pii_collected, auth_attempts, cand
 
     pii_collected["firstName"] = first
     pii_collected["lastName"]  = last
+    # A heard name that exactly matches the verified record needs no read-back (#89).
+    # Anything different (including fuzzy matches like Jon/John) is still confirmed.
+    if _name_exact_match(candidate_party, first, last) and check_auth_success(candidate_party, pii_collected):
+        log_event(call_sid, "auth_detail", step="collecting_name", action="name_matched_skip_confirm")
+        return _complete_verified(candidate_party, pii_collected)
     heard = f"{first} {last}"
     log_event(call_sid, "auth_detail", step="collecting_name",
               action="confirm_name", heard=heard)
@@ -698,10 +719,7 @@ def _confirming_name(state, last_human, pii_collected, auth_attempts, candidate_
     answer = _yes_no(last_human)
     if answer == "yes":
         if check_auth_success(candidate_party, pii_collected):
-            policy_numbers = _get_policy_numbers(candidate_party)
-            if len(policy_numbers) > 1:
-                return _ask_policy_selection(candidate_party, pii_collected, policy_numbers)
-            return _auth_complete(candidate_party, pii_collected)
+            return _complete_verified(candidate_party, pii_collected)
         log_event(call_sid, "auth_detail", step="confirming_name",
                   action="name_mismatch", heard=heard)
         tts = "I wasn't able to match that name. " + _spell_last_name_prompt()
