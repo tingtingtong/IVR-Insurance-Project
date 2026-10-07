@@ -1,6 +1,6 @@
 from langchain_core.messages import AIMessage
 from core.graph.state import CNOState
-from core.tools.party_search import party_search, check_auth_success
+from core.tools.party_search import party_search, check_auth_success, api_reachable
 from core.tools.auth_token import acquire_access_token
 from core.prompts.retry_prompts import get_retry_prompt, PROMPTS
 from utils.pii_validator import normalize_phone_with_hint, normalize_policy_number, normalize_dob
@@ -70,6 +70,13 @@ async def auth_node(state: CNOState) -> dict:
             PROMPTS["escalation"]["max_attempts"],
             auth_step="failed",
         )
+
+    # ── API pre-check: first auth turn, before asking the caller anything (#91) ──
+    if auth_step == "collecting_phone" and not candidate_party and not pii_collected:
+        if not await api_reachable():
+            log_event(call_sid, "auth_detail", step="collecting_phone", action="api_down_escalate")
+            from core.graph.escalate import transfer_now
+            return transfer_now(PROMPTS["escalation"]["error"], auth_step="failed")
 
     # ── Last human utterance ──────────────────────────────────────────────────
     last_human = ""
