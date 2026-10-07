@@ -2,7 +2,7 @@ import time
 import difflib
 import structlog
 from config import settings
-from core.tools.http import post_json
+from core.tools.http import post_json, probe
 
 _CACHE: dict[tuple, tuple[float, dict]] = {}
 _CACHE_TTL = 600  # seconds — phone/policy lookup does not change mid-call
@@ -57,6 +57,11 @@ async def party_search(
     _log.warning("api_party_search_failed", search_by=search_by, status=status,
                  error=str(error_msg)[:100], latency_ms=latency)
     return {"success": False, "parties": [], "error": str(error_msg)}
+
+
+async def api_reachable() -> bool:
+    """Fast pre-check that the backend API answers at all (#91)."""
+    return await probe(settings.cno_api_base_url)
 
 
 def validate_pii_match(party: dict, pii_collected: dict) -> list[str]:
