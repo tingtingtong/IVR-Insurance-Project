@@ -68,6 +68,18 @@ async def lifespan(app: FastAPI):
 
     log.info("cno_ivr_started", environment=settings.environment, port=settings.app_port)
 
+    # Stream path: synthesize the fixed greeting once so the first call hears it immediately (#106).
+    if (settings.voice_path or "").strip().lower() == "stream":
+        async def _warm_tts_cache():
+            try:
+                from services.tts import TTSService
+                from services import tts_cache
+                n = await tts_cache.warm(TTSService())
+                log.info("tts_cache_warmed", prompts=n)
+            except Exception as e:
+                log.warning("tts_cache_warm_failed", error=str(e))
+        app.state.tts_warm_task = asyncio.create_task(_warm_tts_cache())
+
     # LangSmith auto-tracing — env vars are picked up by LangChain/LangGraph automatically
     if settings.langchain_tracing_v2 and settings.langchain_api_key:
         import os
