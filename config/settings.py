@@ -28,6 +28,12 @@ class Settings(BaseSettings):
     faq_fallback_to_escalate: bool = False     # True → no-RAG-match routes to agent instead of canned msg
     max_auth_attempts: int = 3                 # max PII retries before escalation
 
+    # STT provider toggle: "deepgram" (the only supported provider today)
+    stt_provider: str = "deepgram"
+
+    # TTS provider toggle: "openai" (default) or "elevenlabs"
+    tts_provider: str = "openai"
+
     # Deepgram STT
     deepgram_api_key: str
     deepgram_model: str = "nova-2"
@@ -45,7 +51,7 @@ class Settings(BaseSettings):
     # ElevenLabs TTS
     elevenlabs_api_key: str
     elevenlabs_voice_id: str = "21m00Tcm4TlvDq8ikWAM"  # default: Rachel
-    elevenlabs_model: str = "eleven_monolingual_v1"
+    elevenlabs_model: str = "eleven_flash_v2_5"
     elevenlabs_stability: float = 0.5
     elevenlabs_similarity_boost: float = 0.75
     elevenlabs_optimize_streaming_latency: int = 3       # 0-4; 3 = low latency for IVR
