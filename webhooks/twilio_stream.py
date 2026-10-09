@@ -486,15 +486,36 @@ class CallHandler:
         to_cache: list[bytes] | None = [] if (cached is None and tts_cache.is_static(text)) else None
         first_audio_ms: int | None = None
         completed = False
+        stalled = False
+        chunks = None
 
-        async def _replay(chunks):
-            for c in chunks:
+        async def _replay(audio):
+            for c in audio:
                 yield c
                 await asyncio.sleep(0)   # let barge-in cancellation interrupt a long replay
 
         try:
             log.info("tts_start", call_sid=self.call_sid, stream_sid=self.stream_sid, text_len=len(text))
-            async for mulaw_chunk in (_replay(cached) if cached is not None else self.tts.stream(text)):
+            source = _replay(cached) if cached is not None else self.tts.stream(text)
+            chunks = source.__aiter__()
+            # Only the wait for the first chunk is bounded; a cached prompt has no wait (#110).
+            first_timeout = settings.tts_first_audio_timeout_s if cached is None else 0
+            while True:
+                try:
+                    if first_audio_ms is None and first_timeout and first_timeout > 0:
+                        mulaw_chunk = await asyncio.wait_for(chunks.__anext__(), timeout=first_timeout)
+                    else:
+                        mulaw_chunk = await chunks.__anext__()
+                except StopAsyncIteration:
+                    completed = True
+                    break
+                except asyncio.TimeoutError:
+                    stalled = True
+                    log.warning("tts_first_audio_timeout", call_sid=self.call_sid,
+                                timeout_s=first_timeout)
+                    # The prompt is already in the call history, so Gather re-asks it with Polly.
+                    await self._fallback_to_gather("tts_stalled")
+                    break
                 if self._tts_cancelled.is_set():
                     break
                 if first_audio_ms is None:
@@ -511,11 +532,10 @@ class CallHandler:
                     "media":     {"payload": payload},
                 }))
                 self._speaking = True   # audio is now playing: barge-in may interrupt it
-            else:
-                completed = True
             if completed and to_cache:
                 tts_cache.put(text, to_cache)   # whole fixed prompt only, never a cut-off one
-            log.info("tts_done", call_sid=self.call_sid, chunks_sent=chunk_count)
+            if not stalled:
+                log.info("tts_done", call_sid=self.call_sid, chunks_sent=chunk_count)
         except asyncio.CancelledError:
             pass
         except Exception as e:
@@ -523,6 +543,12 @@ class CallHandler:
         finally:
             self._speaking = False
             self.vad.reset()
+            aclose = getattr(chunks, "aclose", None)
+            if aclose:
+                try:
+                    await aclose()
+                except Exception:
+                    pass
 
     async def _cancel_tts(self):
         """Cancel in-progress TTS and clear Twilio's audio buffer."""
