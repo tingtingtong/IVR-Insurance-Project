@@ -63,6 +63,7 @@ class STTService:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._closed = False
         self._reconnecting = False
+        self._ready = False   # True once the Deepgram connection is up (#106)
 
     async def start(self) -> None:
         self._loop = asyncio.get_event_loop()
@@ -74,10 +75,12 @@ class STTService:
         # The SDK logs a failed connect and returns False instead of raising.
         if await self._connection.start(DEEPGRAM_OPTIONS) is False:
             raise RuntimeError("deepgram_start_failed")
+        self._ready = True
 
     async def send_audio(self, mulaw_bytes: bytes) -> None:
         """Forward raw mulaw audio from Twilio directly to Deepgram."""
-        if self._connection:
+        # start() may still be connecting while the greeting plays; drop audio until it is up.
+        if self._connection and self._ready:
             try:
                 await self._connection.send(mulaw_bytes)
             except Exception:
@@ -85,6 +88,7 @@ class STTService:
 
     async def finish(self) -> None:
         self._closed = True
+        self._ready = False
         if self._connection:
             try:
                 await self._connection.finish()
@@ -96,6 +100,7 @@ class STTService:
         if self._closed or self._reconnecting:
             return
         self._reconnecting = True
+        self._ready = False
         import structlog
         log = structlog.get_logger()
         try:

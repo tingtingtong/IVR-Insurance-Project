@@ -155,7 +155,7 @@ class StreamHandlerFallbackTests(unittest.IsolatedAsyncioTestCase):
         h.session.init_session = AsyncMock()
         return h
 
-    async def test_stt_start_failure_closes_stream_without_greeting(self):
+    async def test_stt_start_failure_closes_stream_and_falls_back(self):
         h = self._handler()
         stt = MagicMock()
         stt.start = AsyncMock(side_effect=RuntimeError("deepgram_start_failed"))
@@ -165,7 +165,6 @@ class StreamHandlerFallbackTests(unittest.IsolatedAsyncioTestCase):
             await h._on_start(start)
         h.ws.close.assert_awaited_once_with(code=1011)
         self.assertTrue(h._fell_back)
-        h._speak.assert_not_awaited()
 
     async def test_mid_call_stt_failure_closes_stream_once(self):
         h = self._handler()
@@ -198,6 +197,122 @@ class StreamTerminalTurnTests(unittest.IsolatedAsyncioTestCase):
             await h._invoke_graph_and_respond({"messages": []})
         end.assert_called_once_with("CA_TERM1")
         self.assertEqual(order, ["end_call", "hangup"])
+
+
+class StreamStartLatencyTests(unittest.IsolatedAsyncioTestCase):
+    """#106: greeting plays while Deepgram connects; fixed prompts are cached."""
+
+    def setUp(self):
+        from services import tts_cache
+        self.cache = tts_cache
+        tts_cache.clear()
+
+    def _handler(self):
+        with patch.object(ts, "TTSService"), patch.object(ts, "VADService"):
+            h = ts.CallHandler(FakeWS())
+        h.call_sid = "CA_LAT1"
+        h.stream_sid = "MZ1"
+        h.ws.send_text = AsyncMock()
+        return h
+
+    async def test_greeting_starts_while_deepgram_is_still_connecting(self):
+        import asyncio
+        h = self._handler()
+        h.session = MagicMock()
+        h.session.init_session = AsyncMock()
+        release = asyncio.Event()
+        stt = MagicMock()
+
+        async def slow_start():
+            await release.wait()
+        stt.start = slow_start
+        seen = {}
+
+        async def speak(text):
+            seen["stt_still_connecting"] = not h._stt_task.done()
+            release.set()
+        h._speak = speak
+        start = {"streamSid": "MZ1", "start": {"callSid": "CA_LAT1", "customParameters": {}}}
+        with patch.object(ts, "STTService", return_value=stt), _cfg(auth_mode="standard"):
+            await h._on_start(start)
+        self.assertTrue(seen["stt_still_connecting"])
+        self.assertTrue(h._stt_task.done())
+        self.assertFalse(h._fell_back)
+
+    async def test_fixed_prompt_is_synthesized_once_then_replayed_from_cache(self):
+        from core.prompts.retry_prompts import PROMPTS
+        text = PROMPTS["greeting"]["welcome"]
+        h = self._handler()
+        calls = []
+
+        async def gen(_text):
+            calls.append(_text)
+            yield b"aa"
+            yield b"bb"
+        h.tts.stream = gen
+        await h._stream_tts(text)
+        self.assertEqual(calls, [text])
+        self.assertEqual(self.cache.get(text), [b"aa", b"bb"])
+
+        async def boom(_text):
+            raise AssertionError("TTS must not be called again for a cached prompt")
+            yield b""
+        h.tts.stream = boom
+        h.ws.send_text.reset_mock()
+        await h._stream_tts(text)
+        self.assertEqual(h.ws.send_text.await_count, 2)   # both chunks replayed
+
+    async def test_dynamic_reply_is_never_cached(self):
+        h = self._handler()
+        text = "Thank you, John Smith. Your premium is 125.50."
+
+        async def gen(_text):
+            yield b"aa"
+        h.tts.stream = gen
+        await h._stream_tts(text)
+        self.assertIsNone(self.cache.get(text))
+        self.assertFalse(self.cache.is_static(text))
+
+    async def test_interrupted_fixed_prompt_is_not_cached(self):
+        from core.prompts.retry_prompts import PROMPTS
+        text = PROMPTS["greeting"]["welcome"]
+        h = self._handler()
+
+        async def gen(_text):
+            yield b"aa"
+            h._tts_cancelled.set()      # barge-in lands mid-prompt
+            yield b"bb"
+        h.tts.stream = gen
+        await h._stream_tts(text)
+        self.assertIsNone(self.cache.get(text))
+
+    async def test_warm_fills_registered_prompts_once(self):
+        from core.prompts.retry_prompts import PROMPTS
+        tts = MagicMock()
+
+        async def gen(_text):
+            yield b"aa"
+        tts.stream = gen
+        self.assertEqual(await self.cache.warm(tts), 1)
+        self.assertEqual(self.cache.get(PROMPTS["greeting"]["welcome"]), [b"aa"])
+        self.assertEqual(await self.cache.warm(tts), 0)
+
+
+class SttReadyGuardTests(unittest.IsolatedAsyncioTestCase):
+    async def test_audio_is_dropped_until_the_connection_is_up(self):
+        from services.stt import STTService
+        svc = STTService(on_transcript=AsyncMock())
+        conn = MagicMock()
+        conn.send = AsyncMock()
+        conn.start = AsyncMock(return_value=True)
+        svc._dg = MagicMock()
+        svc._dg.listen.asynclive.v.return_value = conn
+        svc._connection = conn
+        await svc.send_audio(b"\xff" * 160)
+        conn.send.assert_not_awaited()                # still connecting: dropped, no reconnect storm
+        await svc.start()
+        await svc.send_audio(b"\xff" * 160)
+        conn.send.assert_awaited_once()
 
 
 class SttServiceFailureTests(unittest.IsolatedAsyncioTestCase):

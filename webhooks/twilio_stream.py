@@ -17,6 +17,7 @@ import asyncio
 import base64
 import json
 import secrets
+import time
 import structlog
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -30,6 +31,7 @@ from services.session import SessionService
 from services.stt import STTService
 from services.tts import TTSService
 from services.vad import VADService
+from services import tts_cache
 from services.conversation_store import (
     update_call_metadata, start_call as _cs_start_call, add_call_turn, end_call as _cs_end_call,
 )
@@ -121,6 +123,7 @@ class CallHandler:
 
         # Set when this call is handed back to the Gather path (#83)
         self._fell_back = False
+        self._stt_task: asyncio.Task | None = None   # Deepgram connect, runs during the greeting (#106)
 
     # ── Main loop ─────────────────────────────────────────────────────────────
 
@@ -184,15 +187,23 @@ class CallHandler:
             # Standard mode: Deepgram STT → LangGraph → ElevenLabs TTS
             self.stt = STTService(on_transcript=self._on_transcript,
                                   on_failure=self._on_stt_failure)
-            try:
-                await self.stt.start()
-            except Exception as e:
-                log.error("stt_start_failed", call_sid=self.call_sid, error=str(e))
-                await self._fallback_to_gather("stt_start_failed")
-                return
+            # Connect Deepgram while the greeting plays: the caller does not speak for several
+            # seconds, and audio sent before the connection is up is dropped (#106).
+            self._stt_task = asyncio.create_task(self._start_stt())
             _cs_start_call(self.call_sid, from_number)
             add_call_turn(self.call_sid, "bot", PROMPTS["greeting"]["welcome"], node="greeting")
             await self._speak(PROMPTS["greeting"]["welcome"])
+            await self._stt_task
+
+    async def _start_stt(self) -> None:
+        t0 = time.monotonic()
+        try:
+            await self.stt.start()
+            log.info("stt_ready", call_sid=self.call_sid,
+                     stt_ready_ms=int((time.monotonic() - t0) * 1000))
+        except Exception as e:
+            log.error("stt_start_failed", call_sid=self.call_sid, error=str(e))
+            await self._fallback_to_gather("stt_start_failed")
 
     async def _on_stt_failure(self) -> None:
         await self._fallback_to_gather("stt_failed")
@@ -468,11 +479,28 @@ class CallHandler:
         self.vad.reset()
         chunk_count = 0
 
+        t0 = time.monotonic()
+        cached = tts_cache.get(text)
+        to_cache: list[bytes] | None = [] if (cached is None and tts_cache.is_static(text)) else None
+        first_audio_ms: int | None = None
+        completed = False
+
+        async def _replay(chunks):
+            for c in chunks:
+                yield c
+                await asyncio.sleep(0)   # let barge-in cancellation interrupt a long replay
+
         try:
             log.info("tts_start", call_sid=self.call_sid, stream_sid=self.stream_sid, text_len=len(text))
-            async for mulaw_chunk in self.tts.stream(text):
+            async for mulaw_chunk in (_replay(cached) if cached is not None else self.tts.stream(text)):
                 if self._tts_cancelled.is_set():
                     break
+                if first_audio_ms is None:
+                    first_audio_ms = int((time.monotonic() - t0) * 1000)
+                    log.info("tts_first_audio", call_sid=self.call_sid,
+                             tts_first_audio_ms=first_audio_ms, cache_hit=cached is not None)
+                if to_cache is not None:
+                    to_cache.append(mulaw_chunk)
                 chunk_count += 1
                 payload = base64.b64encode(mulaw_chunk).decode("utf-8")
                 await self.ws.send_text(json.dumps({
@@ -480,6 +508,10 @@ class CallHandler:
                     "streamSid": self.stream_sid,
                     "media":     {"payload": payload},
                 }))
+            else:
+                completed = True
+            if completed and to_cache:
+                tts_cache.put(text, to_cache)   # whole fixed prompt only, never a cut-off one
             log.info("tts_done", call_sid=self.call_sid, chunks_sent=chunk_count)
         except asyncio.CancelledError:
             pass
@@ -532,6 +564,8 @@ class CallHandler:
     # ── Cleanup ───────────────────────────────────────────────────────────────
 
     async def _cleanup(self):
+        if self._stt_task and not self._stt_task.done():
+            self._stt_task.cancel()
         if self._realtime_auth:
             await self._realtime_auth.close()
         if self.stt:
