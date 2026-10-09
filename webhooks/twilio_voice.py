@@ -14,6 +14,7 @@ from twilio.rest import Client as TwilioClient
 
 from config import settings
 import core.graph.graph as _graph_module
+from core.prompts.retry_prompts import PROMPTS
 from services.session import SessionService
 from services.conversation_store import start_call, add_call_turn, end_call, set_recording, update_call_metadata, get_call
 from langchain_core.messages import HumanMessage
@@ -82,11 +83,7 @@ async def _start_recording(call_sid: str) -> None:
 log = structlog.get_logger()
 router = APIRouter()
 
-_GREETING = (
-    "Thank you for calling. "
-    "I'm your virtual assistant and I'm here to help you with your life insurance policy. "
-    "How can I help you today?"
-)
+_GREETING = PROMPTS["greeting"]["welcome"]   # same text on the stream path (#98)
 _TIMEOUT_MSG = "I didn't catch that. Please say your request after the tone."
 _CONFIRM_TIMEOUT_MSG = "I didn't catch that. Please say yes or no."
 _ERROR_MSG   = "I'm sorry, I'm having trouble right now. Please hold while I connect you to an agent."
