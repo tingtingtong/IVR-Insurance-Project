@@ -41,6 +41,11 @@ pgvector==0.5.0
 psycopg2-binary==2.9.9
 sqlalchemy==2.0.48
 
+# Call tracking (services/mlflow_tracker.py, sqlite store). Skinny is enough to log runs;
+# install full "mlflow" locally only if you want the "mlflow ui" browser.
+mlflow-skinny==3.14.0
+alembic==1.20.0
+
 # Twilio helper
 twilio==9.2.3
 
