@@ -21,7 +21,7 @@ boto3>=1.35.0
 openai==2.41.1
 
 # STT — Deepgram
-deepgram-sdk==3.7.3
+deepgram-sdk==3.11.0
 
 # TTS — ElevenLabs
 elevenlabs==2.60.0
