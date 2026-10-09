@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from typing import Callable, Awaitable
 from deepgram import (
     DeepgramClient,
@@ -7,6 +8,31 @@ from deepgram import (
     LiveTranscriptionEvents,
 )
 from config import settings
+
+
+# Closing a Deepgram connection cancels its background tasks, and the SDK reports that
+# at ERROR level ("tasks cancelled error:"). It is the close we asked for, so drop that one
+# message while we are closing, and still log it if it ever happens mid-call (#102).
+_closing = 0
+
+
+class _DropExpectedCancelLog(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        return not (_closing > 0 and record.getMessage().startswith("tasks cancelled error"))
+
+
+logging.getLogger("deepgram.clients.common.v1.abstract_async_websocket").addFilter(
+    _DropExpectedCancelLog()
+)
+
+
+async def _finish_connection(connection) -> None:
+    global _closing
+    _closing += 1
+    try:
+        await connection.finish()
+    finally:
+        _closing -= 1
 
 # Deepgram options — driven by settings so they can be changed via the dashboard
 def _build_deepgram_options() -> LiveOptions:
@@ -78,7 +104,7 @@ class STTService:
         self._closed = True
         if self._connection:
             try:
-                await self._connection.finish()
+                await _finish_connection(self._connection)
             except Exception:
                 pass
             self._connection = None
@@ -92,7 +118,7 @@ class STTService:
         try:
             if self._connection:
                 try:
-                    await self._connection.finish()
+                    await _finish_connection(self._connection)
                 except Exception:
                     pass
             await asyncio.sleep(0.5)
