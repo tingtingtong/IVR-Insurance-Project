@@ -331,7 +331,8 @@ class CallHandler:
             if transfer_to:
                 await self._transfer_call(transfer_to)
             else:
-                await self._speak("Thank you for calling. Goodbye.")
+                if not tts_text:   # the terminal turn already said goodbye (#104)
+                    await self._speak("Thank you for calling. Goodbye.")
                 try:
                     from twilio.rest import Client
                     Client(settings.twilio_account_sid, settings.twilio_auth_token).calls(
