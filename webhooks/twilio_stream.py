@@ -143,6 +143,9 @@ class CallHandler:
                     await self._on_dtmf(msg)
 
                 elif event == "stop":
+                    # The call is over (caller hung up or we ended it). Twilio still requests
+                    # the <Redirect> after the stream, so mark it ended first (#111).
+                    _cs_end_call(self.call_sid)
                     break
 
         except WebSocketDisconnect:
