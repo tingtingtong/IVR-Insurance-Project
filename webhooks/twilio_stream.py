@@ -75,6 +75,22 @@ class DTMFCollector:
 router = APIRouter()
 
 
+# ── Sensitive payment fields (#108) ──────────────────────────────────────────
+# SessionService.save_state masks these before writing to Redis (BUG-029), and the stream
+# handler rebuilds the graph input from Redis each turn. Without help the payment step sees
+# "****1234" instead of the card number. They are kept in the handler's memory only, for
+# the life of the call, and never persisted.
+_SENSITIVE_OTP_KEYS = ("card_number", "account_number", "cvv", "card_groups")
+
+
+def _is_masked(value) -> bool:
+    if isinstance(value, str):
+        return value.startswith("*") or value.startswith("[REDACTED]")
+    if isinstance(value, list):
+        return bool(value) and all(isinstance(v, str) and v.startswith("[REDACTED]") for v in value)
+    return False
+
+
 @router.websocket("/stream")
 async def media_stream(websocket: WebSocket):
     # Validate shared secret when WS_AUTH_TOKEN is configured in .env.
@@ -121,6 +137,7 @@ class CallHandler:
 
         # Set when this call is handed back to the Gather path (#83)
         self._fell_back = False
+        self._sensitive_otp: dict = {}   # unmasked card/account/CVV, memory only (#108)
 
     # ── Main loop ─────────────────────────────────────────────────────────────
 
@@ -196,6 +213,26 @@ class CallHandler:
             _cs_start_call(self.call_sid, from_number)
             add_call_turn(self.call_sid, "bot", PROMPTS["greeting"]["welcome"], node="greeting")
             await self._speak(PROMPTS["greeting"]["welcome"])
+
+    def _restore_sensitive_otp(self, state: dict) -> None:
+        """Put remembered card/account/CVV back where Redis returned masked or missing values."""
+        if not self._sensitive_otp:
+            return
+        otp = dict(state.get("otp_data") or {})
+        for key, value in self._sensitive_otp.items():
+            if key not in otp or _is_masked(otp[key]):
+                otp[key] = value
+        state["otp_data"] = otp
+
+    def _remember_sensitive_otp(self, otp_data) -> None:
+        """Track the graph's current sensitive values; a value the node cleared is forgotten."""
+        otp_data = otp_data or {}
+        for key in _SENSITIVE_OTP_KEYS:
+            value = otp_data.get(key)
+            if value and not _is_masked(value):
+                self._sensitive_otp[key] = value
+            else:
+                self._sensitive_otp.pop(key, None)
 
     async def _on_stt_failure(self) -> None:
         await self._fallback_to_gather("stt_failed")
@@ -289,6 +326,7 @@ class CallHandler:
 
     async def _invoke_graph_and_respond(self, state: dict):
         """Run LangGraph with the given state → speak response → handle DTMF/transfer."""
+        self._restore_sensitive_otp(state)
         try:
             result = await _graph_module.cno_graph.ainvoke(
                 state,
@@ -301,6 +339,7 @@ class CallHandler:
             await self._speak(PROMPTS["escalation"]["error"])
             return
 
+        self._remember_sensitive_otp(result.get("otp_data"))
         await self.session.save_state(self.call_sid, result)
         update_call_metadata(self.call_sid, result)
 
@@ -535,6 +574,7 @@ class CallHandler:
     # ── Cleanup ───────────────────────────────────────────────────────────────
 
     async def _cleanup(self):
+        self._sensitive_otp.clear()
         if self._realtime_auth:
             await self._realtime_auth.close()
         if self.stt:
