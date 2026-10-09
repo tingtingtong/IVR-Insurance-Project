@@ -117,6 +117,9 @@ class CallHandler:
         self._dtmf_mode      = False               # suppresses STT processing
         self._dtmf_collector: DTMFCollector | None = None
 
+        # Set when this call is handed back to the Gather path (#83)
+        self._fell_back = False
+
     # ── Main loop ─────────────────────────────────────────────────────────────
 
     async def run(self):
@@ -177,11 +180,41 @@ class CallHandler:
             # Model speaks the greeting itself — don't call _speak()
         else:
             # Standard mode: Deepgram STT → LangGraph → ElevenLabs TTS
-            self.stt = STTService(on_transcript=self._on_transcript)
-            await self.stt.start()
+            self.stt = STTService(on_transcript=self._on_transcript,
+                                  on_failure=self._on_stt_failure)
+            try:
+                await self.stt.start()
+            except Exception as e:
+                log.error("stt_start_failed", call_sid=self.call_sid, error=str(e))
+                await self._fallback_to_gather("stt_start_failed")
+                return
             _cs_start_call(self.call_sid, from_number)
             add_call_turn(self.call_sid, "bot", PROMPTS["greeting"]["welcome"], node="greeting")
             await self._speak(PROMPTS["greeting"]["welcome"])
+
+    async def _on_stt_failure(self) -> None:
+        await self._fallback_to_gather("stt_failed")
+
+    async def _fallback_to_gather(self, reason: str) -> None:
+        """Hand this call back to the Gather path (#83).
+
+        Closing the WebSocket without hanging up lets Twilio continue with the verb
+        after <Connect><Stream> (a <Redirect> to /webhook/stream-fallback), which
+        re-prompts on Gather. State is keyed on call_sid, so it carries over.
+        """
+        if self._fell_back:
+            return
+        self._fell_back = True
+        from services.metrics import inc
+        inc("stream_fallbacks")
+        log.warning("stream_fallback_to_gather", call_sid=self.call_sid, reason=reason)
+        self._tts_cancelled.set()
+        if self._tts_task and not self._tts_task.done():
+            self._tts_task.cancel()
+        try:
+            await self.ws.close(code=1011)
+        except Exception:
+            pass
 
     async def _on_media(self, msg: dict):
         payload = msg.get("media", {}).get("payload", "")
@@ -415,6 +448,8 @@ class CallHandler:
 
     async def _speak(self, text: str):
         """Stream TTS audio to Twilio. Supports cancellation via barge-in."""
+        if self._fell_back:
+            return
         if self._tts_task and not self._tts_task.done():
             self._tts_task.cancel()
 

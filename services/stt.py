@@ -41,13 +41,20 @@ class STTService:
     Wraps a live connection and exposes send_audio() + a transcript callback.
     """
 
-    def __init__(self, on_transcript: Callable[[str, bool], Awaitable[None]]):
+    def __init__(
+        self,
+        on_transcript: Callable[[str, bool], Awaitable[None]],
+        on_failure: Callable[[], Awaitable[None]] | None = None,
+    ):
         """
         on_transcript(text, is_final):
           text     — transcript text
           is_final — True when Deepgram considers the utterance complete
+        on_failure(): called once if the connection is lost and cannot be re-established,
+          so the caller can drop the call to the Gather path (#83).
         """
         self._on_transcript = on_transcript
+        self._on_failure = on_failure
         self._dg = DeepgramClient(
             settings.deepgram_api_key,
             DeepgramClientOptions(options={"keepalive": "true"}),
@@ -64,7 +71,9 @@ class STTService:
         self._connection.on(LiveTranscriptionEvents.Transcript, self._handle_transcript)
         self._connection.on(LiveTranscriptionEvents.Error, self._handle_error)
 
-        await self._connection.start(DEEPGRAM_OPTIONS)
+        # The SDK logs a failed connect and returns False instead of raising.
+        if await self._connection.start(DEEPGRAM_OPTIONS) is False:
+            raise RuntimeError("deepgram_start_failed")
 
     async def send_audio(self, mulaw_bytes: bytes) -> None:
         """Forward raw mulaw audio from Twilio directly to Deepgram."""
@@ -100,6 +109,12 @@ class STTService:
             log.info("deepgram_reconnected")
         except Exception as exc:
             log.error("deepgram_reconnect_failed", error=str(exc))
+            if self._on_failure and not self._closed:
+                self._closed = True   # no further reconnect attempts; the call is leaving this path
+                try:
+                    await self._on_failure()
+                except Exception as cb_exc:
+                    log.error("deepgram_on_failure_error", error=str(cb_exc))
         finally:
             self._reconnecting = False
 
