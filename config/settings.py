@@ -106,6 +106,16 @@ class Settings(BaseSettings):
     # Leave empty to skip validation (dev only).
     ws_auth_token: str = ""
 
+    # Voice path (#83): "gather" (default, Twilio <Gather> + Polly) or "stream"
+    # (Media Streams + Deepgram). Flip back to "gather" to put every new call back
+    # on the Gather path; a stream that cannot start also falls back per call.
+    voice_path: str = "gather"
+    # Only used when VOICE_PATH=stream. Callers listed in STREAM_NUMBERS (comma
+    # separated, e.g. "5551234567,client:browser_tester") always stream; every other
+    # call streams with STREAM_CANARY_PERCENT probability (0-100, default 100).
+    stream_numbers: str = ""
+    stream_canary_percent: int = 100
+
     # CORS — comma-separated allowed origins; "*" for dev, restrict in prod
     allowed_origins: str = "*"
 
