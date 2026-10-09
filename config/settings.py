@@ -115,6 +115,9 @@ class Settings(BaseSettings):
     # call streams with STREAM_CANARY_PERCENT probability (0-100, default 100).
     stream_numbers: str = ""
     stream_canary_percent: int = 100
+    # Stream path: if TTS produces no audio within this many seconds, drop the call to the
+    # Gather path (which re-asks the last prompt with Polly). 0 disables the guard (#110).
+    tts_first_audio_timeout_s: float = 6.0
 
     # CORS — comma-separated allowed origins; "*" for dev, restrict in prod
     allowed_origins: str = "*"
