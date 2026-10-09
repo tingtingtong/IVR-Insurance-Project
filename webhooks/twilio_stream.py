@@ -475,7 +475,9 @@ class CallHandler:
         await self._tts_task
 
     async def _stream_tts(self, text: str):
-        self._speaking = True
+        # _speaking arms the local VAD barge-in. It is set when the first audio chunk is sent,
+        # not here: TTS takes ~2.5 s to produce its first byte, and noise in that gap used to
+        # cancel a prompt the caller had not heard yet (#109).
         self.vad.reset()
         chunk_count = 0
 
@@ -508,6 +510,7 @@ class CallHandler:
                     "streamSid": self.stream_sid,
                     "media":     {"payload": payload},
                 }))
+                self._speaking = True   # audio is now playing: barge-in may interrupt it
             else:
                 completed = True
             if completed and to_cache:
