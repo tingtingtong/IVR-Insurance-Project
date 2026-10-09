@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     # ElevenLabs TTS
     elevenlabs_api_key: str
     elevenlabs_voice_id: str = "21m00Tcm4TlvDq8ikWAM"  # default: Rachel
-    elevenlabs_model: str = "eleven_monolingual_v1"
+    elevenlabs_model: str = "eleven_flash_v2_5"
     elevenlabs_stability: float = 0.5
     elevenlabs_similarity_boost: float = 0.75
     elevenlabs_optimize_streaming_latency: int = 3       # 0-4; 3 = low latency for IVR
