@@ -56,7 +56,9 @@ async def otp_node(state: CNOState) -> dict:
 
     t0           = time.time()
     customer     = state.get("customer", {})
-    otp_step     = state.get("otp_step", "start")
+    # The stream path seeds the graph with the session state, where a fresh call has
+    # otp_step == "" (not absent as on Gather). Treat blank as the start of the flow (#96).
+    otp_step     = state.get("otp_step") or "start"
     otp_data     = dict(state.get("otp_data", {}))
     messages     = state.get("messages", [])
     access_token = state.get("access_token", "")
