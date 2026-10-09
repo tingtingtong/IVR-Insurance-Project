@@ -85,6 +85,18 @@ class DueAmountFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["otp_data"]["due_amount"], 125.50)
 
     @patch("core.graph.nodes.otp.holding_inquiry", new_callable=AsyncMock)
+    async def test_blank_otp_step_from_stream_session_starts_payment(self, holding):
+        """#96: the stream path seeds otp_step="" (session init); it must act like "start"."""
+        holding.return_value = {
+            "success": True,
+            "data": {"AmountDue": "125.50", "PremiumAmount": "125.50", "PaidToDate": "2026-07-01"},
+        }
+        result = await otp_node(_state("", "I want to do a one time payment."))
+        self.assertEqual(result["otp_step"], "confirming_due_amount")
+        self.assertIn("May we proceed", result["tts_text"])
+        self.assertNotIn("anything else", result["tts_text"].lower())
+
+    @patch("core.graph.nodes.otp.holding_inquiry", new_callable=AsyncMock)
     async def test_start_no_due_offers_premium(self, holding):
         holding.return_value = {
             "success": True,
