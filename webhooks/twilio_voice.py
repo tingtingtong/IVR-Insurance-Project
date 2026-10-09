@@ -280,6 +280,12 @@ async def stream_fallback(request: Request):
     call_sid = form.get("CallSid", "")
     from_num = form.get("From", "")
 
+    if (get_call(call_sid) or {}).get("status") == "ended":
+        # The stream ended because the call did (goodbye / transfer / caller hung up):
+        # Twilio still runs the <Redirect>. Do not re-prompt a finished call.
+        log.info("stream_ended_call_redirect", call_sid=call_sid)
+        return _hangup_response("")
+
     if not get_call(call_sid):
         # Stream never started: do the setup /webhook/voice skipped for this call.
         start_call(call_sid, from_num)

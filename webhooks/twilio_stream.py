@@ -30,7 +30,9 @@ from services.session import SessionService
 from services.stt import STTService
 from services.tts import TTSService
 from services.vad import VADService
-from services.conversation_store import update_call_metadata, start_call as _cs_start_call, add_call_turn
+from services.conversation_store import (
+    update_call_metadata, start_call as _cs_start_call, add_call_turn, end_call as _cs_end_call,
+)
 
 log = structlog.get_logger()
 
@@ -322,6 +324,10 @@ class CallHandler:
 
         from core.graph.escalate import is_terminal
         if is_terminal(result):
+            # Mark the call ended before hanging up, as the Gather path does. Twilio runs the
+            # <Redirect> after the stream when the call ends; /webhook/stream-fallback
+            # sees "ended" and hangs up instead of re-prompting (#83).
+            _cs_end_call(self.call_sid)
             if transfer_to:
                 await self._transfer_call(transfer_to)
             else:

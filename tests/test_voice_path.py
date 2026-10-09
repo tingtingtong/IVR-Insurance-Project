@@ -121,6 +121,23 @@ class StreamFallbackEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(cs.get_call(sid)["turns"]), 3)   # nothing re-added or reset
 
 
+class EndedCallFallbackTests(unittest.IsolatedAsyncioTestCase):
+    async def test_redirect_after_a_finished_call_hangs_up_instead_of_reprompting(self):
+        sid = "CA_FB_ENDED"
+        cs.start_call(sid, "")
+        cs.add_call_turn(sid, "bot", "Thank you for calling. Have a great day. Goodbye.", node="goodbye")
+        cs.end_call(sid)
+        turns_before = len(cs.get_call(sid)["turns"])
+        with patch.object(tv, "SessionService") as sess:
+            sess.return_value.init_session = AsyncMock()
+            resp = await tv.stream_fallback(FakeRequest({"CallSid": sid}))
+        body = resp.body.decode()
+        self.assertIn("<Hangup", body)
+        self.assertNotIn("<Gather", body)
+        self.assertNotIn("Goodbye", body)
+        self.assertEqual(len(cs.get_call(sid)["turns"]), turns_before)
+
+
 class FakeWS:
     def __init__(self):
         self.close = AsyncMock()
@@ -162,6 +179,25 @@ class StreamHandlerFallbackTests(unittest.IsolatedAsyncioTestCase):
         await h._fallback_to_gather("test")
         await h._speak("hello")
         h._stream_tts.assert_not_called()
+
+
+class StreamTerminalTurnTests(unittest.IsolatedAsyncioTestCase):
+    async def test_terminal_turn_marks_the_call_ended_before_hanging_up(self):
+        with patch.object(ts, "TTSService"), patch.object(ts, "VADService"):
+            h = ts.CallHandler(FakeWS())
+        h.call_sid = "CA_TERM1"
+        h.session = MagicMock()
+        h.session.save_state = AsyncMock()
+        h._speak = AsyncMock()
+        order = []
+        graph = MagicMock()
+        graph.ainvoke = AsyncMock(return_value={"tts_text": "Goodbye.", "current_node": "goodbye"})
+        twilio_client = MagicMock()
+        twilio_client.return_value.calls.return_value.update.side_effect = lambda **k: order.append("hangup")
+        with patch.object(ts._graph_module, "cno_graph", graph),              patch.object(ts, "_cs_end_call", side_effect=lambda sid: order.append("end_call")) as end,              patch.object(ts, "update_call_metadata"), patch.object(ts, "add_call_turn"),              patch("twilio.rest.Client", twilio_client):
+            await h._invoke_graph_and_respond({"messages": []})
+        end.assert_called_once_with("CA_TERM1")
+        self.assertEqual(order, ["end_call", "hangup"])
 
 
 class SttServiceFailureTests(unittest.IsolatedAsyncioTestCase):
