@@ -141,7 +141,11 @@ PROMPTS: dict = {
 
     # ── Greetings ─────────────────────────────────────────────────────────────
     "greeting": {
-        "welcome": "Thank you for calling insuranceCompany. How can I help you today?",
+        "welcome": (
+            "Thank you for calling. "
+            "I'm your virtual assistant and I'm here to help you with your life insurance policy. "
+            "How can I help you today?"
+        ),
         "authenticated": "I've verified your identity. How can I help you today?",
         "auth_failed": "I'm sorry, I wasn't able to verify your information after several attempts.",
     },
