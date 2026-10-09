@@ -9,7 +9,7 @@ Flow:
 import asyncio
 import structlog
 from fastapi import APIRouter, BackgroundTasks, Depends, Request, Response
-from twilio.twiml.voice_response import VoiceResponse, Gather
+from twilio.twiml.voice_response import VoiceResponse, Gather, Connect, Stream
 from twilio.rest import Client as TwilioClient
 
 from config import settings
@@ -21,6 +21,7 @@ from utils.call_logger import log_event
 from utils.pii_redactor import redact_for_log, remember_identity
 from utils.tts_normalizer import normalize_tts_text
 from webhooks.security import validate_twilio_webhook
+from services.voice_path import use_stream_path
 from core.graph.escalate import is_terminal as _is_terminal
 
 _twilio = TwilioClient(settings.twilio_account_sid, settings.twilio_auth_token)
@@ -43,6 +44,46 @@ def _mask_number(number: str) -> str:
 _RECORDING_ATTEMPTS = 5
 _RECORDING_RETRY_S = 1.0
 _public_base_url: str | None = None  # resolved once — the ngrok lookup is a blocking HTTP call
+
+
+async def _get_public_base_url() -> str:
+    """Public base URL (explicit setting > ngrok), resolved once. '' when unknown."""
+    global _public_base_url
+    if _public_base_url is None:
+        from services.twilio_webhook_sync import resolve_base_url
+        _public_base_url = await asyncio.to_thread(resolve_base_url, settings) or ""
+    return _public_base_url
+
+
+async def _stream_twiml(request: Request, call_sid: str, from_num: str) -> str:
+    """TwiML for the Media Stream path (#83), or '' when no public WebSocket URL is known.
+
+    <Connect><Stream> blocks until the WebSocket closes. If the stream cannot start or
+    ends early, Twilio continues with the <Redirect>, which resumes the call on Gather.
+    """
+    from urllib.parse import quote
+    base = await _get_public_base_url()
+    if base:
+        ws_base = ("wss://" + base[len("https://"):]) if base.startswith("https://")             else ("ws://" + base[len("http://"):]) if base.startswith("http://") else ""
+    else:
+        host = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
+        proto = request.headers.get("x-forwarded-proto") or request.url.scheme
+        ws_base = f"{'wss' if proto == 'https' else 'ws'}://{host}" if host else ""
+    if not ws_base:
+        return ""
+    url = f"{ws_base}/stream"
+    if settings.ws_auth_token:
+        url += f"?token={quote(settings.ws_auth_token, safe='')}"
+
+    response = VoiceResponse()
+    connect = Connect()
+    stream = Stream(url=url)
+    stream.parameter(name="callSid", value=call_sid)
+    stream.parameter(name="from", value=from_num)
+    connect.append(stream)
+    response.append(connect)
+    response.redirect("/webhook/stream-fallback", method="POST")
+    return str(response)
 
 
 async def _start_recording(call_sid: str) -> None:
@@ -180,6 +221,15 @@ async def incoming_call(request: Request, background_tasks: BackgroundTasks):
     call_sid  = form.get("CallSid", "")
     from_num  = form.get("From", "")
 
+    # Voice path (#83): default VOICE_PATH=gather skips this block entirely.
+    if use_stream_path(call_sid, from_num):
+        twiml = await _stream_twiml(request, call_sid, from_num)
+        if twiml:
+            log.info("voice_path_stream", call_sid=call_sid, from_number=_mask_number(from_num))
+            background_tasks.add_task(_start_recording, call_sid)
+            return Response(content=twiml, media_type="application/xml")
+        log.warning("stream_url_unknown_using_gather", call_sid=call_sid)
+
     log.info("call_started", call_sid=call_sid, from_number=_mask_number(from_num))
     start_call(call_sid, from_num)
     add_call_turn(call_sid, "bot", _GREETING, node="greeting")
@@ -216,6 +266,38 @@ async def incoming_call(request: Request, background_tasks: BackgroundTasks):
     background_tasks.add_task(_start_recording, call_sid)
 
     return Response(content=_gather_response(_GREETING), media_type="application/xml")
+
+
+@router.post("/webhook/stream-fallback", dependencies=[Depends(validate_twilio_webhook)])
+async def stream_fallback(request: Request):
+    """Resume a call on the Gather path after its Media Stream ended or never started (#83).
+
+    State is keyed on call_sid (session + graph checkpoint), so the call carries on from
+    where the stream left off. Re-asks the last thing the bot said, or greets if the
+    stream failed before anything was spoken.
+    """
+    form = await request.form()
+    call_sid = form.get("CallSid", "")
+    from_num = form.get("From", "")
+
+    if (get_call(call_sid) or {}).get("status") == "ended":
+        # The stream ended because the call did (goodbye / transfer / caller hung up):
+        # Twilio still runs the <Redirect>. Do not re-prompt a finished call.
+        log.info("stream_ended_call_redirect", call_sid=call_sid)
+        return _hangup_response("")
+
+    if not get_call(call_sid):
+        # Stream never started: do the setup /webhook/voice skipped for this call.
+        start_call(call_sid, from_num)
+        await SessionService().init_session(call_sid)
+    last = _last_bot_text(call_sid)
+    resumed = bool(last)
+    if not resumed:
+        last = _GREETING
+        add_call_turn(call_sid, "bot", _GREETING, node="greeting")
+    log.warning("stream_fallback_gather", call_sid=call_sid, resumed=resumed)
+    log_event(call_sid, "stream_fallback", resumed=resumed)
+    return Response(content=_gather_response(last), media_type="application/xml")
 
 
 @router.post("/webhook/gather", dependencies=[Depends(validate_twilio_webhook)])
