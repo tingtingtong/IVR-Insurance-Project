@@ -452,6 +452,13 @@ function cpySection(id) {{
     return HTMLResponse(html)
 
 
+@router.get("/graph.mmd")
+async def graph_source():
+    """Mermaid source of the LangGraph flow, built from the real compiled graph (#115)."""
+    from utils.graph_diagram import graph_mermaid
+    return Response(content=graph_mermaid(), media_type="text/plain; charset=utf-8")
+
+
 @router.get("", response_class=HTMLResponse)
 async def dashboard():
     return _HTML
@@ -618,6 +625,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;backgrou
 .graph-wrap{padding:28px 36px;overflow-y:auto;width:100%;display:flex;gap:36px;flex-wrap:wrap}
 .graph-wrap h2{font-size:18px;font-weight:700;margin-bottom:20px;width:100%}
 .gdiag{font-family:monospace;font-size:12px;color:#94a3b8;line-height:1.9;white-space:pre;background:#1e293b;border:1px solid #334155;border-radius:10px;padding:20px 24px;flex:1;min-width:460px}
+.lg-box{width:100%;background:#1e293b;border:1px solid #334155;border-radius:10px;padding:16px;overflow:auto;text-align:center}
+.lg-box svg{max-width:100%;height:auto}
+.lg-note{color:#94a3b8;font-size:12px}
+.lg-src{width:100%;font-size:12px;color:#94a3b8}
+.lg-src pre{background:#0f172a;border:1px solid #334155;border-radius:6px;padding:12px;margin-top:8px;overflow:auto;color:#cbd5e1;font-size:11px;line-height:1.5}
+.graph-wrap h3.lg-h{font-size:13px;font-weight:600;color:#38bdf8;width:100%;margin:6px 0 -14px}
 .state-ref{flex:1;min-width:300px}
 .state-ref h3{font-size:13px;font-weight:600;color:#38bdf8;margin-bottom:10px}
 .sg{margin-bottom:18px}
@@ -1023,6 +1036,9 @@ Max 3 auth failures → transfer_now() (Say + Dial + Hangup, never Gather)</div>
   <div class="graph-wrap">
     <h2>LangGraph — IVR Flow (current)</h2>
     <p style="font-size:12px;color:#7dd3fc;margin:0 0 12px;max-width:720px">Auth is a guard inside each restricted node, not a graph vertex. Every service node ends at END; Twilio then Gather, DTMF-gather, or Hangup based on <code>is_terminal</code> / <code>otp_step</code>.</p>
+    <div class="lg-box" id="lg-diagram"><span class="lg-note">Loading the live graph…</span></div>
+    <details class="lg-src"><summary>Mermaid source (also in docs/langgraph_flow.mmd)</summary><pre id="lg-source"></pre></details>
+    <h3 class="lg-h">Routing notes</h3>
     <div class="gdiag">[START]
    |
    v
@@ -1967,6 +1983,7 @@ async function loadConfig() {
 // Load config when tab clicked; allow refresh via button
 document.querySelectorAll('.tab').forEach(t => {
   if (t.dataset.pane === 'cfg') t.addEventListener('click', loadConfig);
+if (t.dataset.pane === 'graph') t.addEventListener('click', loadLangGraphDiagram);
 });
 
 // ── Analytics ─────────────────────────────────────────────────
@@ -2051,6 +2068,41 @@ connectLogs();
 loadCalls();
 setInterval(loadCalls, 10000);
 initChats();
+
+// ── Live LangGraph diagram (#115) ───────────────────────────────────────
+let _lgLoaded = false;
+async function loadLangGraphDiagram() {
+  if (_lgLoaded) return;
+  const box = document.getElementById('lg-diagram');
+  const src = document.getElementById('lg-source');
+  let text = '';
+  try {
+    const r = await fetch('/dashboard/graph.mmd');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    text = await r.text();
+    src.textContent = text;
+  } catch (e) {
+    box.innerHTML = '<span class="lg-note">Could not load the graph: ' + e.message + '</span>';
+    return;
+  }
+  try {
+    const m = await import('https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs');
+    m.default.initialize({ startOnLoad: false, theme: 'dark' });
+    // The generated diagram colours nodes light lilac; restyle for the dark dashboard (render only).
+    const themed = text.trimEnd() + `
+  classDef default fill:#1e293b,stroke:#38bdf8,color:#e2e8f0
+  classDef first fill-opacity:0,stroke:#94a3b8,color:#e2e8f0
+  classDef last fill:#0e7490,stroke:#38bdf8,color:#ffffff
+`;
+    const out = await m.default.render('lg-svg', themed);
+    box.innerHTML = out.svg;
+    _lgLoaded = true;
+  } catch (e) {
+    box.innerHTML = '<span class="lg-note">The diagram renderer could not load (' + e.message +
+      '). The source is below; paste it into mermaid.live to view it.</span>';
+    document.querySelector('.lg-src').open = true;
+  }
+}
 </script>
 </body>
 </html>"""
