@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -27,6 +29,10 @@ class Settings(BaseSettings):
     enable_rag: bool = True                    # False → skip pgvector, use canned FAQ fallback
     faq_fallback_to_escalate: bool = False     # True → no-RAG-match routes to agent instead of canned msg
     max_auth_attempts: int = 3                 # max PII retries before escalation
+
+    # Call recording channels (#87): "dual" = caller and bot on separate channels (measurable
+    # dead air), "mono" = single mixed channel (previous behaviour)
+    recording_channels: Literal["mono", "dual"] = "dual"
 
     # Deepgram STT
     deepgram_api_key: str
