@@ -200,6 +200,32 @@ class StreamTerminalTurnTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(order, ["end_call", "hangup"])
 
 
+class StreamGoodbyeOnceTests(unittest.IsolatedAsyncioTestCase):
+    async def _terminal_turn(self, result):
+        with patch.object(ts, "TTSService"), patch.object(ts, "VADService"):
+            h = ts.CallHandler(FakeWS())
+        h.call_sid = "CA_BYE1"
+        h.session = MagicMock()
+        h.session.save_state = AsyncMock()
+        h._speak = AsyncMock()
+        graph = MagicMock()
+        graph.ainvoke = AsyncMock(return_value=result)
+        with patch.object(ts._graph_module, "cno_graph", graph),              patch.object(ts, "_cs_end_call"), patch.object(ts, "update_call_metadata"),              patch.object(ts, "add_call_turn"), patch("twilio.rest.Client"):
+            await h._invoke_graph_and_respond({"messages": []})
+        return h._speak
+
+    async def test_goodbye_node_text_is_not_followed_by_a_second_goodbye(self):
+        speak = await self._terminal_turn({
+            "tts_text": "Thank you for calling. Have a great day. Goodbye.",
+            "current_node": "goodbye",
+        })
+        speak.assert_awaited_once_with("Thank you for calling. Have a great day. Goodbye.")
+
+    async def test_terminal_turn_with_no_text_still_says_goodbye(self):
+        speak = await self._terminal_turn({"tts_text": "", "current_node": "goodbye"})
+        speak.assert_awaited_once_with("Thank you for calling. Goodbye.")
+
+
 class SttServiceFailureTests(unittest.IsolatedAsyncioTestCase):
     def _svc(self, on_failure=None):
         from services.stt import STTService
