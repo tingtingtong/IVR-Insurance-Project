@@ -18,6 +18,7 @@ from services.session import SessionService
 from services.conversation_store import start_call, add_call_turn, end_call, set_recording, update_call_metadata, get_call
 from langchain_core.messages import HumanMessage
 from utils.call_logger import log_event
+from utils.gather_profiles import GatherProfile, default_profile, is_confirm_prompt, profile_for
 from utils.pii_redactor import redact_for_log, remember_identity
 from utils.tts_normalizer import normalize_tts_text
 from webhooks.security import validate_twilio_webhook
@@ -105,15 +106,7 @@ def _last_bot_text(call_sid: str) -> str:
 
 def _timeout_prompt(call_sid: str) -> str:
     """Use a yes/no retry when the last prompt was a confirmation — not a generic IDK."""
-    last = _last_bot_text(call_sid).lower()
-    if any(p in last for p in (
-        "is that correct",
-        "say yes",
-        "yes or no",
-        "please confirm",
-        "repeat those numbers",
-        "anything else i can help",
-    )):
+    if is_confirm_prompt(_last_bot_text(call_sid)):
         return _CONFIRM_TIMEOUT_MSG
     return _TIMEOUT_MSG
 
@@ -129,19 +122,26 @@ def _hangup_response(say_text: str, transfer_to: str = "") -> Response:
     return Response(content=str(response), media_type="application/xml")
 
 
-def _gather_response(say_text: str, action: str = "/webhook/gather") -> str:
-    """Build TwiML that speaks text and waits for speech input."""
+def _gather_response(say_text: str, action: str = "/webhook/gather",
+                     profile: GatherProfile | None = None) -> str:
+    """Build TwiML that speaks text and waits for speech input.
+
+    `profile` (#79) sets speechTimeout/hints for the turn; None keeps the default.
+    """
+    profile = profile or default_profile()
     response = VoiceResponse()
+    kwargs = {"speechModel": profile.speech_model} if profile.speech_model else {}
     gather = Gather(
         input="speech",
         action=action,
         method="POST",
-        speechTimeout="3",
+        speechTimeout=str(profile.speech_timeout),
         language="en-US",
         timeout=10,
         profanityFilter=False,
         actionOnEmptyResult=True,
-        hints="yes, no, correct, incorrect, right, wrong, confirm, cancel, repeat, policy, beneficiary, payment, loan, status, help, agent, transfer, january, february, march, april, may, june, july, august, september, october, november, december, nineteen, twenty, sixty, seventy, eighty, ninety",
+        hints=profile.hints,
+        **kwargs,
     )
     gather.say(normalize_tts_text(say_text), voice="Polly.Joanna")
     response.append(gather)
@@ -248,7 +248,7 @@ async def gather_speech(request: Request):
         add_call_turn(call_sid, "human", "[no speech detected]")
         add_call_turn(call_sid, "bot", timeout_msg, node="gather_timeout")
         return Response(
-            content=_gather_response(timeout_msg),
+            content=_gather_response(timeout_msg, profile=profile_for({}, timeout_msg)),
             media_type="application/xml",
         )
 
@@ -320,7 +320,7 @@ async def gather_speech(request: Request):
             "Is there anything else I can help you with today?"
         )
         return Response(
-            content=_gather_response(speak),
+            content=_gather_response(speak, profile=profile_for(result, speak)),
             media_type="application/xml",
         )
 
@@ -413,7 +413,8 @@ async def gather_payment(request: Request):
 
         # Otherwise continue with normal speech gather
         return Response(
-            content=_gather_response(tts_text or "How can I help you?"),
+            content=_gather_response(tts_text or "How can I help you?",
+                                     profile=profile_for(result2, tts_text)),
             media_type="application/xml",
         )
 
